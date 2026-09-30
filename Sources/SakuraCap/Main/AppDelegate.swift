@@ -8,8 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hud: RecordingHUDController?
     private var cancellables = Set<AnyCancellable>()
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // 单实例：已有实例则激活它并退出
+    func applicationDidFinishLaunching(_ notification: Notification) {        // 单实例：已有实例则激活它并退出
         let bundleID = Bundle.main.bundleIdentifier ?? "com.sakura.sakuracap"
         let current = NSRunningApplication.current
         let existing = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).filter { $0 != current }
@@ -30,15 +29,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 摄像头画中画：绑定录制状态
         CameraPiP.shared.attach(controller: controller)
 
-        HotKeyManager.shared.onToggle = { [weak controller] in
-            Task { @MainActor in controller?.toggle() }
-        }
-        HotKeyManager.shared.register(AppSettings.shared.hotKeyCombo)
+        applyHotKeys()
 
         // 可视化选择（菜单「开始录制」/ 设置面板「框选区域」）的统一出口：
         // 把选择结果写进设置并立即开始录制
         SelectionController.shared.onPicked = { [weak self] result in
             guard let self, let controller = self.controller else { return }
+            // 截图用途：不进入录制流程
+            if SelectionController.shared.currentPurpose == .screenshot {
+                switch result {
+                case .display(let id): ScreenshotController.shared.captureDisplay(id)
+                case .region(let region): ScreenshotController.shared.captureRegion(region)
+                }
+                return
+            }
+            // OCR 用途：识别文字并复制到剪贴板
+            if SelectionController.shared.currentPurpose == .ocr {
+                switch result {
+                case .display(let id): ScreenshotController.shared.ocrDisplay(id)
+                case .region(let region): ScreenshotController.shared.ocrRegion(region)
+                }
+                return
+            }
+            // 滚动截屏：框选后进入长截图
+            if SelectionController.shared.currentPurpose == .scrolling {
+                if case .region(let region) = result { ScrollingCapture.shared.start(region: region) }
+                return
+            }
             let settings = AppSettings.shared
             switch result {
             case .display(let id):
@@ -59,17 +76,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.statusItem?.showSettings()
             }
         }
-        let reRegisterHotKey = { HotKeyManager.shared.register(AppSettings.shared.hotKeyCombo) }
-
         // 若开启了需要「输入监控」的功能，启动时即请求授权（首次会弹系统框）
         if AppSettings.shared.clickIndicatorEnabled { IndicatorEngine.shared.start() }
         if AppSettings.shared.keyDisplayEnabled { KeyDisplay.shared.start() }
-        AppSettings.shared.$hotKeyCode
+        AppSettings.shared.$hotKeys
             .dropFirst().receive(on: DispatchQueue.main)
-            .sink { _ in reRegisterHotKey() }.store(in: &cancellables)
-        AppSettings.shared.$hotKeyModifiers
-            .dropFirst().receive(on: DispatchQueue.main)
-            .sink { _ in reRegisterHotKey() }.store(in: &cancellables)
+            .sink { [weak self] _ in self?.applyHotKeys() }.store(in: &cancellables)
 
         // 退出前尽力收尾（写入 moov，避免文件不可播放）
         NotificationCenter.default.addObserver(
@@ -80,5 +92,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 启动时不主动弹出设置窗口：仅当用户从菜单栏点击「设置…」时才打开。
         // 未选输出目录等前置条件由录制启动流程自行兜底（OutputDirectoryPicker）。
+    }
+
+    /// 菜单栏应用：关掉所有窗口（比如关掉「定住」的图）不应退出应用
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    private func applyHotKeys() {
+        let combos = HotKeyAction.allCases.compactMap { action -> (HotKeyAction, HotKeyCombo)? in
+            guard let combo = AppSettings.shared.hotKeys[action] else { return nil }
+            return (action, combo)
+        }
+        HotKeyManager.shared.register(combos) { [weak self] action in
+            self?.performHotKey(action)
+        }
+    }
+
+    private func performHotKey(_ action: HotKeyAction) {
+        guard let statusItem else { return }
+        switch action {
+        case .recordFull: statusItem.recordFullScreen()
+        case .recordWindow: statusItem.startWindowRecording()
+        case .recordRegion: statusItem.recordRegionSelection()
+        case .shotFull: statusItem.screenshotFullScreen()
+        case .shotRegion: statusItem.screenshotRegionSelection()
+        case .ocr: statusItem.recognizeText()
+        case .scrolling: statusItem.scrollingScreenshot()
+        }
     }
 }

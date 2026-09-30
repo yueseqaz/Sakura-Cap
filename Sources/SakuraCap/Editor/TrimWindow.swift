@@ -133,7 +133,7 @@ final class TrimViewModel: ObservableObject {
         alert.accessoryView = checkbox
         alert.addButton(withTitle: L("导出"))
         alert.addButton(withTitle: L("取消"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard runModalAlert(alert) == .alertFirstButtonReturn else { return }
         let deleteOriginal = checkbox.state == .on
         Task { await self.export(deleteOriginal: deleteOriginal) }
     }
@@ -184,7 +184,7 @@ final class TrimViewModel: ObservableObject {
             alert.messageText = L("导出失败")
             alert.informativeText = error.localizedDescription
             alert.addButton(withTitle: L("好"))
-            alert.runModal()
+            runModalAlert(alert)
         }
     }
 

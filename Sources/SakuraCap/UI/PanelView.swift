@@ -14,6 +14,8 @@ struct PanelView: View {
         case audio
         case appearance
         case video
+        case hotkeys
+        case permissions
         case general
 
         var id: String { rawValue }
@@ -22,6 +24,8 @@ struct PanelView: View {
             case .audio: return L("音频")
             case .appearance: return L("标记")
             case .video: return L("画质")
+            case .hotkeys: return L("快捷键")
+            case .permissions: return L("权限")
             case .general: return L("通用")
             }
         }
@@ -75,13 +79,15 @@ struct PanelView: View {
         case .video:
             optionsCard
                 .disabled(controller.isBusy)
+        case .hotkeys:
+            hotKeySection
+        case .permissions:
+            permissionsSection
         case .general:
             outputCard
             loginCard
             postRecordingCard
             dndCard
-            hotKeyCard
-            permissionCards
         }
     }
 
@@ -123,6 +129,14 @@ struct PanelView: View {
                 .onChange(of: settings.recordMicrophone) { enabled in
                     if enabled { viewModel.ensureMicrophonePermission() }
                 }
+            if settings.recordMicrophone {
+                Picker("麦克风设备", selection: $settings.microphoneDeviceID) {
+                    Text("系统默认").tag("")
+                    ForEach(CaptureDevices.microphones(), id: \.uniqueID) { device in
+                        Text(device.localizedName).tag(device.uniqueID)
+                    }
+                }
+            }
             Text("系统声音与麦克风会分开录制，可在播放器中切换。")
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -156,13 +170,6 @@ struct PanelView: View {
                     Text(String(format: "%.1fs", settings.indicatorDuration)).monospacedDigit().frame(width: 36)
                 }
                 Toggle("包含右键点击", isOn: $settings.indicatorIncludeRightClick)
-                if indicator.permissionDenied {
-                    permissionCard(title: "缺少「输入监控」权限",
-                                   detail: "授权后点击标记才会显示，不影响录制。请在系统设置中勾选 Sakura-Cap。",
-                                   buttonTitle: "打开系统设置") {
-                        PermissionCenter.openInputMonitoringSettings()
-                    }
-                }
             }
         }
     }
@@ -181,13 +188,6 @@ struct PanelView: View {
                 }
             Text("录制时在画面左下角浮出所按的按键，约 1 秒后淡出。")
                 .font(.caption).foregroundStyle(.secondary)
-            if settings.keyDisplayEnabled && keyDisplay.permissionDenied {
-                permissionCard(title: "缺少「输入监控」权限",
-                               detail: "授权后按键提示才会显示，不影响录制。请在系统设置中勾选 Sakura-Cap 并重启应用。",
-                               buttonTitle: "打开系统设置") {
-                    PermissionCenter.openInputMonitoringSettings()
-                }
-            }
         }
     }
 
@@ -224,13 +224,6 @@ struct PanelView: View {
                     .onChange(of: settings.cameraPiPMirror) { _ in CameraPiP.shared.refreshConfiguration() }
                 Text("录制时摄像头以圆角小窗显示在所选角落，可拖动调整位置。")
                     .font(.caption).foregroundStyle(.secondary)
-                if camera.permissionDenied {
-                    permissionCard(title: "缺少「摄像头」权限",
-                                   detail: "授权后摄像头画面才会显示，不影响录制。请在系统设置中允许 Sakura-Cap 使用摄像头。",
-                                   buttonTitle: "打开系统设置") {
-                        PermissionCenter.openCameraSettings()
-                    }
-                }
             }
         }
     }
@@ -336,46 +329,58 @@ struct PanelView: View {
         }
     }
 
-    private var hotKeyCard: some View {
+    private var hotKeySection: some View {
         card("全局快捷键") {
-            HotKeyRecorderView().frame(height: 30)
-            Text(String(format: L("开始 / 停止录制，当前：%@"), settings.hotKeyDisplay))
+            ForEach(HotKeyAction.allCases) { action in
+                HStack {
+                    Text(action.label).font(.callout).frame(width: 120, alignment: .leading)
+                    HotKeyRecorderView(action: action).frame(height: 28)
+                }
+            }
+            Text("默认为空（未设置）。点一下输入框后按下组合键即可设置，按 Delete 清除。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
 
     // MARK: - 权限
 
-    @ViewBuilder
-    private var permissionCards: some View {
-        if !PermissionCenter.screenCaptureGranted() {
-            permissionCard(title: "缺少「屏幕录制」权限",
-                           detail: "授权后 Sakura-Cap 才能录制屏幕画面。若已勾选但仍无效，请重启应用。",
-                           buttonTitle: "打开系统设置") {
-                PermissionCenter.openScreenCaptureSettings()
-            }
-        }
-        if settings.recordMicrophone && PermissionCenter.microphoneDenied {
-            permissionCard(title: "麦克风权限被拒绝",
-                           detail: "录制可以继续，但不会包含麦克风声音。",
-                           buttonTitle: "打开系统设置") {
-                PermissionCenter.openMicrophoneSettings()
-            }
+    private var permissionsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            permissionRow(name: L("屏幕录制"),
+                          granted: PermissionCenter.screenCaptureGranted(),
+                          detail: L("录制与截图需要。"),
+                          action: { PermissionCenter.openScreenCaptureSettings() })
+            permissionRow(name: L("麦克风"),
+                          granted: !PermissionCenter.microphoneDenied,
+                          detail: L("录制麦克风声音需要。"),
+                          action: { PermissionCenter.openMicrophoneSettings() })
+            permissionRow(name: L("输入监控"),
+                          granted: PermissionCenter.inputMonitoringGranted(),
+                          detail: L("鼠标点击标记 / 键盘按键显示需要。"),
+                          action: { PermissionCenter.openInputMonitoringSettings() })
+            permissionRow(name: L("摄像头"),
+                          granted: AVCaptureDevice.authorizationStatus(for: .video) == .authorized,
+                          detail: L("摄像头画中画需要。"),
+                          action: { PermissionCenter.openCameraSettings() })
         }
     }
 
-    private func permissionCard(title: LocalizedStringKey, detail: LocalizedStringKey, buttonTitle: LocalizedStringKey,
-                                action: @escaping () -> Void) -> some View {
+    private func permissionRow(name: String, granted: Bool, detail: String, action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: "exclamationmark.shield.fill")
-                .font(.callout)
-                .foregroundStyle(.orange)
+            HStack {
+                Text(name).font(.callout).fontWeight(.medium)
+                Label(granted ? L("已授权") : L("未授权"),
+                      systemImage: granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(granted ? Color.green : Color.orange)
+                Spacer()
+                Button(granted ? L("打开系统设置") : L("去授权")) { action() }.controlSize(.small)
+            }
             Text(detail).font(.caption).foregroundStyle(.secondary)
-            Button(buttonTitle, action: action).controlSize(.small)
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
     }
 
     // MARK: - 通用

@@ -18,6 +18,24 @@ enum StreamPlanner {
         let stamp = timestamp()
         var specs: [StreamSpec] = []
 
+        // 窗口录制：若由系统共享选择器选定了窗口，优先按窗口出片
+        if #available(macOS 14.0, *), let pending = WindowCaptureStore.shared.consume() {
+            let filter = pending.filter
+            let scale = CGFloat(filter.pointPixelScale)
+            let (w, h) = evenDimensions(Int((filter.contentRect.width * scale).rounded()),
+                                        Int((filter.contentRect.height * scale).rounded()))
+            specs.append(StreamSpec(displayID: nil,
+                                    filter: filter,
+                                    config: baseConfig(settings: settings, width: w, height: h, source: .zero),
+                                    fileURL: fileURL(in: directory, stamp: stamp, suffix: " - \(pending.name)"),
+                                    pixelWidth: w,
+                                    pixelHeight: h,
+                                    cropRect: nil,
+                                    capturesSystemAudio: settings.recordSystemAudio,
+                                    displayName: pending.name))
+            return specs
+        }
+
         switch settings.captureMode {
         case .display:
             let chosen: [DisplayInfo]

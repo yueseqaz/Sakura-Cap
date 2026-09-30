@@ -1,12 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// 快捷键录制控件：点击获得焦点，按下任意「修饰键+按键」即注册为新的全局快捷键。
+/// 快捷键录制控件：点击获得焦点，按下「修饰键+按键」即注册为新的全局快捷键；Delete 清除。
 struct HotKeyRecorderView: NSViewRepresentable {
+    let action: HotKeyAction
+
     func makeNSView(context: Context) -> HotKeyCaptureView {
         let view = HotKeyCaptureView()
+        view.action = action
         view.onCombo = { combo in
-            AppSettings.shared.updateHotKey(combo)
+            AppSettings.shared.updateHotKey(action, combo: combo)
             view.needsDisplay = true
         }
         return view
@@ -18,17 +21,10 @@ struct HotKeyRecorderView: NSViewRepresentable {
 }
 
 final class HotKeyCaptureView: NSView {
-    var onCombo: ((HotKeyCombo) -> Void)?
+    var action: HotKeyAction = .recordFull
+    var onCombo: ((HotKeyCombo?) -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -36,12 +32,19 @@ final class HotKeyCaptureView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        // Delete / Backspace：清除该快捷键
+        if event.keyCode == 51 || event.keyCode == 117 {
+            onCombo?(nil)
+            needsDisplay = true
+            return
+        }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let modifiers = HotKeyManager.carbonModifiers(from: flags)
         guard modifiers != 0 else { return } // 必须含修饰键，避免吞掉普通输入
         let glyph = (event.charactersIgnoringModifiers ?? "").uppercased()
         let display = HotKeyManager.modifiersDisplay(modifiers) + glyph
         onCombo?(HotKeyCombo(keyCode: UInt32(event.keyCode), modifiers: modifiers, display: display))
+        needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -55,7 +58,7 @@ final class HotKeyCaptureView: NSView {
 
         let text = focused
             ? L("按下新的快捷键组合…")
-            : AppSettings.shared.hotKeyDisplay + L("（点击修改）")
+            : (AppSettings.shared.hotKeys[action]?.display ?? L("未设置"))
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12),
             .foregroundColor: focused ? NSColor.labelColor : NSColor.secondaryLabelColor,

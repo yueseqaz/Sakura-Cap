@@ -101,7 +101,7 @@ final class RecordingController: ObservableObject {
                 alert.messageText = L("无法开始录制")
                 alert.informativeText = message
                 alert.addButton(withTitle: L("好"))
-                alert.runModal()
+                runModalAlert(alert)
             }
             state = .idle
         }
@@ -325,7 +325,7 @@ final class RecordingController: ObservableObject {
                 alert.messageText = L("未捕获到有效画面")
                 alert.informativeText = message
                 alert.addButton(withTitle: L("好"))
-                alert.runModal()
+                runModalAlert(alert)
             } else {
                 for url in files {
                     CompletionNotifier.shared.postSaved(url: url, duration: duration)

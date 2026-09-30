@@ -13,7 +13,10 @@ final class MicCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     private(set) var audioFormat: (sampleRate: Double, channels: Int)?
 
     func start() throws {
-        guard let device = AVCaptureDevice.default(for: .audio) else {
+        let selectedID = AppSettings.shared.microphoneDeviceID
+        let device = CaptureDevices.microphones().first { $0.uniqueID == selectedID }
+            ?? AVCaptureDevice.default(for: .audio)
+        guard let device else {
             throw RecordingError.noMicrophone
         }
         let input: AVCaptureDeviceInput

@@ -99,6 +99,9 @@ private struct RecordingHUDView: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            WindowDragHandle()
+                .frame(width: 14, height: 22)
+                .help(L("拖动移动"))
             switch controller.state {
             case .ready:
                 Circle().fill(Color.red).frame(width: 8, height: 8)
@@ -106,10 +109,16 @@ private struct RecordingHUDView: View {
                 Spacer(minLength: 4)
                 inputToggles
                 resolutionPicker
-                Button("开始录制") { controller.start() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .controlSize(.small)
+                Button(action: { controller.start() }) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.red))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("开始录制")
                 cancelButton({ controller.cancelArmed() }, help: "取消")
             case .preparing, .countdown:
                 ProgressView().controlSize(.small)
@@ -148,18 +157,75 @@ private struct RecordingHUDView: View {
     /// 每次录屏需求不同：在 HUD 上直接开关麦克风 / 系统声音 / 摄像头
     private var inputToggles: some View {
         HStack(spacing: 2) {
-            inputToggle("mic.fill", on: settings.recordMicrophone, help: "麦克风") {
-                settings.recordMicrophone.toggle()
-                if settings.recordMicrophone { requestMicrophone() }
-            }
+            InputMenuButton(
+                symbol: "mic.fill",
+                isOn: settings.recordMicrophone,
+                toggleTitle: settings.recordMicrophone ? L("关闭麦克风") : L("开启麦克风"),
+                onToggle: micToggle,
+                deviceNames: CaptureDevices.microphones().map { $0.localizedName },
+                onSelect: selectMicrophone
+            )
+            .frame(width: 24, height: 24)
+            .help("麦克风")
             inputToggle("speaker.wave.2.fill", on: settings.recordSystemAudio, help: "系统声音") {
                 settings.recordSystemAudio.toggle()
             }
-            inputToggle("video.fill", on: settings.cameraPiPEnabled, help: "摄像头画中画") {
-                settings.cameraPiPEnabled.toggle()
-                CameraPiP.shared.setEnabled(settings.cameraPiPEnabled)
+            InputMenuButton(
+                symbol: "video.fill",
+                isOn: settings.cameraPiPEnabled,
+                toggleTitle: settings.cameraPiPEnabled ? L("关闭摄像头") : L("开启摄像头"),
+                onToggle: cameraToggle,
+                deviceNames: CameraPiP.shared.devices.map { $0.localizedName },
+                onSelect: selectCamera
+            )
+            .frame(width: 24, height: 24)
+            .help("摄像头画中画")
+            inputToggle("cursorarrow.click", on: settings.clickIndicatorEnabled, help: "鼠标点击标记") {
+                settings.clickIndicatorEnabled.toggle()
+                if settings.clickIndicatorEnabled { IndicatorEngine.shared.start() } else { IndicatorEngine.shared.stop() }
+            }
+            inputToggle("keyboard", on: settings.keyDisplayEnabled, help: "键盘按键显示") {
+                settings.keyDisplayEnabled.toggle()
+                if settings.keyDisplayEnabled { KeyDisplay.shared.start() } else { KeyDisplay.shared.stop() }
             }
         }
+    }
+
+    private func micToggle() {
+        settings.recordMicrophone.toggle()
+        if settings.recordMicrophone { requestMicrophone() }
+    }
+
+    private func selectMicrophone(_ index: Int) {
+        let devices = CaptureDevices.microphones()
+        if index < 0 {
+            settings.microphoneDeviceID = ""
+        } else if devices.indices.contains(index) {
+            settings.microphoneDeviceID = devices[index].uniqueID
+            if !settings.recordMicrophone {
+                settings.recordMicrophone = true
+                requestMicrophone()
+            }
+        }
+    }
+
+    private func cameraToggle() {
+        settings.cameraPiPEnabled.toggle()
+        CameraPiP.shared.setEnabled(settings.cameraPiPEnabled)
+    }
+
+    private func selectCamera(_ index: Int) {
+        let devices = CameraPiP.shared.devices
+        if index < 0 {
+            settings.cameraPiPDeviceID = ""
+        } else if devices.indices.contains(index) {
+            settings.cameraPiPDeviceID = devices[index].uniqueID
+        }
+        if !settings.cameraPiPEnabled {
+            settings.cameraPiPEnabled = true
+            CameraPiP.shared.setEnabled(true)
+        }
+        CameraPiP.shared.refreshConfiguration()
     }
 
     private func inputToggle(_ symbol: String, on: Bool, help: String, action: @escaping () -> Void) -> some View {
@@ -232,5 +298,95 @@ private struct RecordingHUDView: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+/// HUD 的拖动把手：SwiftUI 内容会吃掉背景拖动事件，用原生视图调用 performDrag 才拖得动。
+struct WindowDragHandle: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragHandleView { DragHandleView() }
+    func updateNSView(_ nsView: DragHandleView, context: Context) {}
+}
+
+final class DragHandleView: NSView {
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.secondaryLabelColor.setFill()
+        let dot: CGFloat = 3
+        for row in 0..<2 {
+            for col in 0..<2 {
+                let rect = NSRect(x: bounds.midX - dot + CGFloat(col) * 6 - 3,
+                                  y: bounds.midY - dot + CGFloat(row) * 6 - 3,
+                                  width: dot, height: dot)
+                NSBezierPath(ovalIn: rect).fill()
+            }
+        }
+    }
+}
+
+/// HUD 里的输入设备按钮：用 AppKit 按钮（contentTintColor 可靠着色）+ 点击弹出 NSMenu 选设备
+struct InputMenuButton: NSViewRepresentable {
+    let symbol: String
+    let isOn: Bool
+    let toggleTitle: String
+    let onToggle: () -> Void
+    let deviceNames: [String]
+    let onSelect: (Int) -> Void
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton()
+        button.isBordered = false
+        button.bezelStyle = .regularSquare
+        button.imagePosition = .imageOnly
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.tapped)
+        context.coordinator.button = button
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        context.coordinator.parent = self
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        button.contentTintColor = isOn ? .controlAccentColor : .secondaryLabelColor
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject {
+        var parent: InputMenuButton
+        weak var button: NSButton?
+        init(_ parent: InputMenuButton) { self.parent = parent }
+
+        @objc func tapped() {
+            let menu = NSMenu()
+            let toggle = NSMenuItem(title: parent.toggleTitle, action: #selector(toggleAction), keyEquivalent: "")
+            toggle.target = self
+            menu.addItem(toggle)
+            menu.addItem(.separator())
+            let defaultItem = NSMenuItem(title: L("系统默认设备"), action: #selector(selectDefault), keyEquivalent: "")
+            defaultItem.target = self
+            menu.addItem(defaultItem)
+            for (index, name) in parent.deviceNames.enumerated() {
+                let item = NSMenuItem(title: name, action: #selector(selectDevice(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = index
+                menu.addItem(item)
+            }
+            if let button {
+                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 2), in: button)
+            }
+        }
+
+        @objc func toggleAction() { parent.onToggle() }
+        @objc func selectDefault() { parent.onSelect(-1) }
+        @objc func selectDevice(_ sender: NSMenuItem) { parent.onSelect(sender.tag) }
     }
 }

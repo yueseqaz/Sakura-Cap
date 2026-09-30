@@ -3,6 +3,7 @@ import ScreenCaptureKit
 import AVFoundation
 import CoreMedia
 import CoreImage
+import AppKit
 
 /// 一路输出的完整描述（一个 SCStream + 一个 FileWriter）
 struct StreamSpec {
@@ -114,8 +115,8 @@ final class StreamSession: NSObject, SCStreamOutput {
         let sourceHeight = CVPixelBufferGetHeight(sourceBuffer)
 
         var image = CIImage(cvPixelBuffer: sourceBuffer)
-        var regionWidth = sourceWidth
-        var regionHeight = sourceHeight
+        var contentWidth = CGFloat(sourceWidth)
+        var contentHeight = CGFloat(sourceHeight)
 
         if let crop = spec.cropRect {
             let top = max(0, min(sourceHeight - 2, Int(crop.minY.rounded(.down))))
@@ -128,20 +129,21 @@ final class StreamSession: NSObject, SCStreamOutput {
             // 原点非 (0,0)，不平移回原点则整帧落在目标缓冲区之外，录出来全黑。
             image = image.cropped(to: cropRect)
                 .transformed(by: CGAffineTransform(translationX: -cropRect.minX, y: -cropRect.minY))
-            regionWidth = width
-            regionHeight = height
+            contentWidth = CGFloat(width)
+            contentHeight = CGFloat(height)
         }
 
         let outWidth = spec.pixelWidth
         let outHeight = spec.pixelHeight
-        guard spec.cropRect != nil || outWidth != regionWidth || outHeight != regionHeight else {
+        let needsScale = Int(contentWidth.rounded()) != outWidth || Int(contentHeight.rounded()) != outHeight
+        guard spec.cropRect != nil || needsScale else {
             return sampleBuffer
         }
         // CIContext.render(_:to:) 不会缩放，只会 1:1 渲染并裁掉超出部分；
         // 因此先把图像显式缩放到输出尺寸，再 1:1 渲染进等尺寸缓冲区。
-        if regionWidth != outWidth || regionHeight != outHeight {
-            image = image.transformed(by: CGAffineTransform(scaleX: CGFloat(outWidth) / CGFloat(regionWidth),
-                                                            y: CGFloat(outHeight) / CGFloat(regionHeight)))
+        if needsScale {
+            image = image.transformed(by: CGAffineTransform(scaleX: CGFloat(outWidth) / contentWidth,
+                                                            y: CGFloat(outHeight) / contentHeight))
         }
 
         var output: CVPixelBuffer?

@@ -72,15 +72,26 @@ final class StatusItemController: NSObject {
             let submenu = NSMenu()
             submenu.addItem(makeItem(L("全屏录制"), #selector(recordDisplay)))
             submenu.addItem(makeItem(L("框选区域"), #selector(recordRegion)))
+            submenu.addItem(makeItem(L("窗口录制…"), #selector(recordWindow)))
             record.submenu = submenu
             menu.addItem(record)
+
+            let shot = NSMenuItem(title: L("截图"), action: nil, keyEquivalent: "")
+            let shotMenu = NSMenu()
+            shotMenu.addItem(makeItem(L("全屏截图"), #selector(screenshotDisplay)))
+            shotMenu.addItem(makeItem(L("区域截图"), #selector(screenshotRegion)))
+            shotMenu.addItem(makeItem(L("识别文字（OCR）"), #selector(ocrRegion)))
+            shotMenu.addItem(makeItem(L("滚动截屏…"), #selector(scrollingCapture)))
+            shot.submenu = shotMenu
+            menu.addItem(shot)
         }
         menu.addItem(.separator())
         menu.addItem(makeItem(L("打开文件夹"), #selector(menuOpenFolder)))
+        menu.addItem(makeItem(L("标注图片…"), #selector(annotateImage)))
         menu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
         menu.addItem(makeItem(L("设置…"), #selector(menuSettings)))
-        menu.addItem(makeItem(L("关于 Sakura-Cap"), #selector(menuAbout)))
-        menu.addItem(makeItem(L("退出 Sakura-Cap"), #selector(menuQuit)))
+        menu.addItem(makeItem(L("关于"), #selector(menuAbout)))
+        menu.addItem(makeItem(L("退出"), #selector(menuQuit)))
         return menu
     }
 
@@ -94,10 +105,41 @@ final class StatusItemController: NSObject {
     @objc private func menuCancelArmed() { controller.cancelArmed() }
     @objc private func menuPause() { controller.togglePause() }
 
-    @objc private func recordDisplay() { beginSelection(.displayOnly) }
-    @objc private func recordRegion() { beginSelection(.regionOnly) }
+    // 菜单项 / 全局快捷键 共用入口
+    func recordFullScreen() { beginSelection(.displayOnly) }
+    func recordRegionSelection() { beginSelection(.regionOnly) }
+    func screenshotFullScreen() { beginSelection(.displayOnly, purpose: .screenshot) }
+    func screenshotRegionSelection() { beginSelection(.regionOnly, purpose: .screenshot) }
+    func recognizeText() { beginSelection(.regionOnly, purpose: .ocr) }
+    func scrollingScreenshot() { beginSelection(.regionOnly, purpose: .scrolling) }
 
-    private func beginSelection(_ intent: SelectionIntent) {
+    @objc private func recordDisplay() { recordFullScreen() }
+    @objc private func recordRegion() { recordRegionSelection() }
+    @objc private func screenshotDisplay() { screenshotFullScreen() }
+    @objc private func screenshotRegion() { screenshotRegionSelection() }
+    @objc private func ocrRegion() { recognizeText() }
+    @objc private func scrollingCapture() { scrollingScreenshot() }
+    @objc private func recordWindow() { startWindowRecording() }
+
+    func startWindowRecording() {
+        Task { @MainActor in
+            guard #available(macOS 14.0, *) else {
+                let alert = NSAlert()
+                alert.messageText = L("窗口录制需要 macOS 14 或更高版本")
+                alert.addButton(withTitle: L("好"))
+                runModalAlert(alert)
+                return
+            }
+            guard PermissionCenter.screenCaptureGranted() else {
+                PermissionCenter.openScreenCaptureSettings()
+                return
+            }
+            WindowPicker.shared.onPicked = { [weak self] in self?.controller.arm() }
+            WindowPicker.shared.present()
+        }
+    }
+
+    private func beginSelection(_ intent: SelectionIntent, purpose: SelectionPurpose = .record) {
         Task { @MainActor in
             guard PermissionCenter.screenCaptureGranted() else {
                 PermissionCenter.openScreenCaptureSettings()
@@ -105,17 +147,28 @@ final class StatusItemController: NSObject {
                 alert.messageText = L("需要「屏幕录制」权限")
                 alert.informativeText = L("请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许 Sakura-Cap，然后重新开始录制。")
                 alert.addButton(withTitle: L("好"))
-                alert.runModal()
+                runModalAlert(alert)
                 return
             }
             // 刷新显示器列表（同时验证权限有效），再进入对应的选择层
             _ = try? await DisplayCatalog.shared.refresh()
-            SelectionController.shared.begin(intent)
+            SelectionController.shared.begin(intent, purpose: purpose)
         }
     }
 
     @objc private func menuSettings() { showSettings() }
     @objc private func menuAbout() { AboutWindowController.shared.show() }
+    @objc private func annotateImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.message = L("选择要标注的图片")
+        guard panel.runModal() == .OK, let url = panel.url,
+              let image = NSImage(contentsOf: url),
+              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let base = url.deletingPathExtension().lastPathComponent
+        AnnotationEditorController.shared.open(image: cg, suggestedName: "\(base) - \(L("标注")).png")
+    }
     @objc private func menuTrim() {
         if let url = controller.lastSavedFiles.first {
             TrimWindowController.shared.show(url: url)

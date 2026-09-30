@@ -31,6 +31,24 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
         center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
+    func postSavedImage(url: URL) {
+        let content = UNMutableNotificationContent()
+        content.title = L("截图完成")
+        content.body = url.lastPathComponent
+        content.categoryIdentifier = Self.categoryID
+        content.userInfo = ["path": url.path]
+        content.sound = .default
+        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    func postCopiedText(count: Int) {
+        let content = UNMutableNotificationContent()
+        content.title = L("文字已复制")
+        content.body = String(format: L("识别到 %d 个字符，已复制到剪贴板。"), count)
+        content.sound = .default
+        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
     static func format(_ interval: TimeInterval) -> String {
         let seconds = Int(interval)
         if seconds >= 3600 {

@@ -9,6 +9,14 @@ enum SelectionIntent {
     case regionOnly
 }
 
+/// 选区用途：录制 / 截图 / OCR
+enum SelectionPurpose {
+    case record
+    case screenshot
+    case ocr
+    case scrolling
+}
+
 enum SelectionResult {
     case display(CGDirectDisplayID)
     case region(RegionSelection)
@@ -22,6 +30,7 @@ final class SelectionController: NSObject {
     var onCancelled: ((SelectionIntent) -> Void)?
 
     private(set) var currentIntent: SelectionIntent = .displayOnly
+    private(set) var currentPurpose: SelectionPurpose = .record
 
     private var windows: [SelectionOverlayWindow] = []
     private var keyMonitor: Any?
@@ -30,9 +39,10 @@ final class SelectionController: NSObject {
 
     var isActive: Bool { !windows.isEmpty }
 
-    func begin(_ intent: SelectionIntent) {
+    func begin(_ intent: SelectionIntent, purpose: SelectionPurpose = .record) {
         guard windows.isEmpty else { return }
         currentIntent = intent
+        currentPurpose = purpose
         NSApp.activate(ignoringOtherApps: true)
         for screen in NSScreen.screens {
             let window = SelectionOverlayWindow(screen: screen, controller: self)

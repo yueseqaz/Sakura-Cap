@@ -16,6 +16,7 @@ final class AppSettings: ObservableObject {
         static let region = "lastRegionData"
         static let systemAudio = "recordSystemAudio"
         static let microphone = "recordMicrophone"
+        static let microphoneDevice = "microphoneDeviceID"
         static let indicator = "clickIndicatorEnabled"
         static let indicatorColor = "indicatorColorRGBA"
         static let indicatorSize = "indicatorSize"
@@ -40,9 +41,7 @@ final class AppSettings: ObservableObject {
         static let colorSpace = "colorSpace"
         static let showCursor = "showCursor"
         static let fps = "frameRate"
-        static let hotKeyCode = "hotKeyCode"
-        static let hotKeyMods = "hotKeyModifiers"
-        static let hotKeyDisplay = "hotKeyDisplay"
+        static let hotKeys = "hotKeys"
     }
 
     private let d = UserDefaults.standard
@@ -55,6 +54,7 @@ final class AppSettings: ObservableObject {
 
     @Published var recordSystemAudio = true { didSet { d.set(recordSystemAudio, forKey: Keys.systemAudio) } }
     @Published var recordMicrophone = false { didSet { d.set(recordMicrophone, forKey: Keys.microphone) } }
+    @Published var microphoneDeviceID = "" { didSet { d.set(microphoneDeviceID, forKey: Keys.microphoneDevice) } }
 
     // 点击指示：默认关闭（产品确认）
     @Published var clickIndicatorEnabled = false { didSet { d.set(clickIndicatorEnabled, forKey: Keys.indicator) } }
@@ -98,10 +98,13 @@ final class AppSettings: ObservableObject {
     @Published var launchAtLogin: Bool = false { didSet { applyLaunchAtLogin() } }
     private var applyingLaunchAtLogin = false
 
-    // 全局快捷键，默认 ⌘⇧R
-    @Published var hotKeyCode: Int = Int(kVK_ANSI_R) { didSet { d.set(hotKeyCode, forKey: Keys.hotKeyCode) } }
-    @Published var hotKeyModifiers: Int = Int(cmdKey | shiftKey) { didSet { d.set(hotKeyModifiers, forKey: Keys.hotKeyMods) } }
-    @Published var hotKeyDisplay: String = "⌘⇧R" { didSet { d.set(hotKeyDisplay, forKey: Keys.hotKeyDisplay) } }
+    // 全局快捷键（默认全部为空，用户自行设置）
+    @Published var hotKeys: [HotKeyAction: HotKeyCombo] = [:] {
+        didSet {
+            let raw = Dictionary(uniqueKeysWithValues: hotKeys.map { ($0.key.rawValue, $0.value) })
+            if let data = try? JSONEncoder().encode(raw) { d.set(data, forKey: Keys.hotKeys) }
+        }
+    }
 
     private init() {
         outputDirectory = d.string(forKey: Keys.outputDir).map { URL(fileURLWithPath: $0) }
@@ -111,6 +114,7 @@ final class AppSettings: ObservableObject {
         lastRegionData = d.data(forKey: Keys.region)
         recordSystemAudio = d.object(forKey: Keys.systemAudio) == nil ? true : d.bool(forKey: Keys.systemAudio)
         recordMicrophone = d.bool(forKey: Keys.microphone)
+        microphoneDeviceID = d.string(forKey: Keys.microphoneDevice) ?? ""
         clickIndicatorEnabled = d.bool(forKey: Keys.indicator)
         if let rgba = d.array(forKey: Keys.indicatorColor) as? [Double], rgba.count == 4 { indicatorColorRGBA = rgba }
         if d.object(forKey: Keys.indicatorSize) != nil { indicatorSize = d.double(forKey: Keys.indicatorSize) }
@@ -136,9 +140,12 @@ final class AppSettings: ObservableObject {
         if d.object(forKey: Keys.showCursor) != nil { showCursor = d.bool(forKey: Keys.showCursor) }
         if let f = FPSOption(rawValue: d.integer(forKey: Keys.fps)) { fps = f }
         launchAtLogin = SMAppService.mainApp.status == .enabled
-        if d.object(forKey: Keys.hotKeyCode) != nil { hotKeyCode = d.integer(forKey: Keys.hotKeyCode) }
-        if d.object(forKey: Keys.hotKeyMods) != nil { hotKeyModifiers = d.integer(forKey: Keys.hotKeyMods) }
-        if let display = d.string(forKey: Keys.hotKeyDisplay) { hotKeyDisplay = display }
+        if let data = d.data(forKey: Keys.hotKeys),
+           let raw = try? JSONDecoder().decode([String: HotKeyCombo].self, from: data) {
+            hotKeys = Dictionary(uniqueKeysWithValues: raw.compactMap { key, combo in
+                HotKeyAction(rawValue: key).map { ($0, combo) }
+            })
+        }
     }
 
     // MARK: - 开机自启
@@ -192,13 +199,7 @@ final class AppSettings: ObservableObject {
 
     // MARK: - 快捷键
 
-    var hotKeyCombo: HotKeyCombo {
-        HotKeyCombo(keyCode: UInt32(hotKeyCode), modifiers: UInt32(hotKeyModifiers), display: hotKeyDisplay)
-    }
-
-    func updateHotKey(_ combo: HotKeyCombo) {
-        hotKeyCode = Int(combo.keyCode)
-        hotKeyModifiers = Int(combo.modifiers)
-        hotKeyDisplay = combo.display
+    func updateHotKey(_ action: HotKeyAction, combo: HotKeyCombo?) {
+        if let combo { hotKeys[action] = combo } else { hotKeys.removeValue(forKey: action) }
     }
 }
