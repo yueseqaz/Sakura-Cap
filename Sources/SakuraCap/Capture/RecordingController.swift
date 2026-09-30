@@ -12,6 +12,7 @@ final class RecordingController: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var elapsed: TimeInterval = 0
+    @Published private(set) var isPaused = false
     @Published var banner: String?
 
     private(set) var lastSavedFiles: [URL] = []
@@ -22,6 +23,8 @@ final class RecordingController: ObservableObject {
     private var mic: MicCapture?
     private var timer: Timer?
     private var recordStart: Date?
+    private var pauseStartedAt: Date?
+    private var pausedTotal: TimeInterval = 0
     private var generation = 0
     private let screenMonitor = ScreenChangeMonitor()
 
@@ -36,6 +39,23 @@ final class RecordingController: ObservableObject {
             start()
         } else {
             stop()
+        }
+    }
+
+    /// 暂停/继续（仅录制中有意义）
+    func togglePause() {
+        guard state == .recording else { return }
+        if isPaused {
+            if let start = pauseStartedAt { pausedTotal += Date().timeIntervalSince(start) }
+            pauseStartedAt = nil
+            isPaused = false
+            for session in sessions { session.resume() }
+            Log.app.info("录制已继续")
+        } else {
+            isPaused = true
+            pauseStartedAt = Date()
+            for session in sessions { session.pause() }
+            Log.app.info("录制已暂停")
         }
     }
 
@@ -211,6 +231,9 @@ final class RecordingController: ObservableObject {
         // 10. 正式开录
         for session in sessions { session.armWriter() }
         recordStart = Date()
+        pauseStartedAt = nil
+        pausedTotal = 0
+        isPaused = false
         elapsed = 0
         startTimer()
         state = .recording
@@ -251,6 +274,8 @@ final class RecordingController: ObservableObject {
         let wasRecording = state == .recording
         state = .finalizing
         stopTimer()
+        isPaused = false
+        pauseStartedAt = nil
         IndicatorEngine.shared.endCapture()
         mic?.stop(); mic = nil
 
@@ -310,7 +335,9 @@ final class RecordingController: ObservableObject {
 
     private func tick() {
         guard let start = recordStart else { return }
-        elapsed = Date().timeIntervalSince(start)
+        var paused = pausedTotal
+        if let pauseStart = pauseStartedAt { paused += Date().timeIntervalSince(pauseStart) }
+        elapsed = max(0, Date().timeIntervalSince(start) - paused)
     }
 
     // MARK: - 显示器热插拔（录制中被拔屏 → 优雅停止并保存该路文件）

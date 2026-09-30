@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import SwiftUI
+import ServiceManagement
 import Carbon.HIToolbox
 
 /// 全部设置项，UserDefaults 持久化。更改即时生效并写盘。
@@ -60,6 +61,10 @@ final class AppSettings: ObservableObject {
     @Published var showCursor = true { didSet { d.set(showCursor, forKey: Keys.showCursor) } }
     @Published var fps: FPSOption = .fps30 { didSet { d.set(fps.rawValue, forKey: Keys.fps) } }
 
+    /// 开机自启（登录项）。真实状态以系统 SMAppService 为准。
+    @Published var launchAtLogin: Bool = false { didSet { applyLaunchAtLogin() } }
+    private var applyingLaunchAtLogin = false
+
     // 全局快捷键，默认 ⌘⇧R
     @Published var hotKeyCode: Int = Int(kVK_ANSI_R) { didSet { d.set(hotKeyCode, forKey: Keys.hotKeyCode) } }
     @Published var hotKeyModifiers: Int = Int(cmdKey | shiftKey) { didSet { d.set(hotKeyModifiers, forKey: Keys.hotKeyMods) } }
@@ -86,9 +91,30 @@ final class AppSettings: ObservableObject {
         if let raw = d.string(forKey: Keys.colorSpace), let cs = ColorSpaceOption(rawValue: raw) { colorSpace = cs }
         if d.object(forKey: Keys.showCursor) != nil { showCursor = d.bool(forKey: Keys.showCursor) }
         if let f = FPSOption(rawValue: d.integer(forKey: Keys.fps)) { fps = f }
+        launchAtLogin = SMAppService.mainApp.status == .enabled
         if d.object(forKey: Keys.hotKeyCode) != nil { hotKeyCode = d.integer(forKey: Keys.hotKeyCode) }
         if d.object(forKey: Keys.hotKeyMods) != nil { hotKeyModifiers = d.integer(forKey: Keys.hotKeyMods) }
         if let display = d.string(forKey: Keys.hotKeyDisplay) { hotKeyDisplay = display }
+    }
+
+    // MARK: - 开机自启
+
+    private func applyLaunchAtLogin() {
+        guard !applyingLaunchAtLogin else { return }
+        let desired = launchAtLogin
+        do {
+            if desired {
+                if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
+            } else {
+                if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
+            }
+        } catch {
+            Log.app.error("设置开机自启失败: \(error.localizedDescription, privacy: .public)")
+            // 回滚开关到系统真实状态，避免 UI 与实际不符
+            applyingLaunchAtLogin = true
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+            applyingLaunchAtLogin = false
+        }
     }
 
     // MARK: - 区域

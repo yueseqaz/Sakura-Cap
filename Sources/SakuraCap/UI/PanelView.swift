@@ -71,6 +71,7 @@ struct PanelView: View {
                 .disabled(controller.isBusy)
         case .general:
             outputCard
+            loginCard
             hotKeyCard
             permissionCards
         }
@@ -289,6 +290,14 @@ struct PanelView: View {
                 Spacer()
                 Button("更改…") { viewModel.chooseOutputDirectory() }
             }
+        }
+    }
+
+    private var loginCard: some View {
+        card("启动") {
+            Toggle("开机时自动启动", isOn: $settings.launchAtLogin)
+            Text("随系统登录自动在菜单栏启动（首次需在系统设置→通用→登录项中允许）。")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 

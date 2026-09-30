@@ -35,10 +35,18 @@ final class FileWriter {
     private var videoFrameCount = 0
     private var audioFrameCount = 0
 
+    // 暂停/继续：暂停期间丢帧，继续时把暂停造成的 PTS 间隔从时间轴上抹掉，输出连续无缝
+    private var isPaused = false
+    private var needsResumeAdjust = false
+    private var ptsOffset = CMTime.zero
+    private var frameDuration: CMTime
+    private var lastInputVideoPTS: CMTime?
+
     init(fileURL: URL, pixelWidth: Int, pixelHeight: Int, codec: AVVideoCodecType,
          quality: VideoQuality = .high, frameRate: Int = 30, customBitrateMbps: Double = 20,
          audioTracks: [AudioTrackSetup] = []) throws {
         self.fileURL = fileURL
+        self.frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, frameRate)))
         try? FileManager.default.removeItem(at: fileURL)
         writer = try AVAssetWriter(outputURL: fileURL, fileType: .mp4)
 
@@ -95,10 +103,28 @@ final class FileWriter {
         queue.async { self.armed = true }
     }
 
+    /// 暂停：暂停期间到达的样本全部丢弃（视频与音频都丢）
+    func pause() {
+        queue.async { self.isPaused = true }
+    }
+
+    /// 继续：标记下一次视频样本到达时重新对齐时间轴
+    func resume() {
+        queue.async {
+            self.isPaused = false
+            self.needsResumeAdjust = true
+        }
+    }
+
     func appendVideo(_ sampleBuffer: CMSampleBuffer) {
         queue.async {
-            guard self.armed, !self.finished, self.writer.status == .writing else { return }
-            let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            guard self.armed, !self.finished, self.writer.status == .writing, !self.isPaused else { return }
+            let inputPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            if self.needsResumeAdjust {
+                self.applyResumeOffset(inputPTS: inputPTS)
+            }
+            let buffer = self.ptsOffset == .zero ? sampleBuffer : FileWriter.retimed(sampleBuffer, by: self.ptsOffset)
+            let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
             if !self.started {
                 self.writer.startSession(atSourceTime: pts)
                 self.started = true
@@ -106,8 +132,9 @@ final class FileWriter {
             }
             guard self.videoInput.isReadyForMoreMediaData else { return } // 过载丢帧，绝不阻塞采集
             // SCK 交付的 CMSampleBuffer（内含 CVPixelBuffer）直通写入，零转换
-            if self.videoInput.append(sampleBuffer) {
+            if self.videoInput.append(buffer) {
                 self.videoFrameCount += 1
+                self.lastInputVideoPTS = inputPTS
                 if self.lastPTS == nil || CMTimeCompare(pts, self.lastPTS!) > 0 { self.lastPTS = pts }
             } else if !self.warnedAppendFailure {
                 // append 失败后 writer 进入 failed 状态；记录编码器给出的具体错误
@@ -119,9 +146,12 @@ final class FileWriter {
 
     func appendAudio(_ sampleBuffer: CMSampleBuffer, track: AudioTrackKind) {
         queue.async {
-            guard self.armed, !self.finished, self.writer.status == .writing else { return }
+            guard self.armed, !self.finished, self.writer.status == .writing, !self.isPaused else { return }
             guard let input = self.audioInputs[track] else { return } // 未启用的轨道直接丢弃
-            let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            // 暂停间隙里的音频先丢，等下一帧视频建立新时间基准后再恢复
+            if self.needsResumeAdjust { return }
+            let buffer = self.ptsOffset == .zero ? sampleBuffer : FileWriter.retimed(sampleBuffer, by: self.ptsOffset)
+            let pts = CMSampleBufferGetPresentationTimeStamp(buffer)
             if !self.started {
                 self.writer.startSession(atSourceTime: pts)
                 self.started = true
@@ -132,7 +162,7 @@ final class FileWriter {
             // 格式与建轨时不符则丢弃（避免编码器报错；正常不应发生）
             if let expected = self.expectedAudioFormats[track] {
                 let matches: Bool = {
-                    guard let desc = CMSampleBufferGetFormatDescription(sampleBuffer),
+                    guard let desc = CMSampleBufferGetFormatDescription(buffer),
                           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee else { return false }
                     return abs(asbd.mSampleRate - expected.sampleRate) < 1
                         && Int(asbd.mChannelsPerFrame) == expected.channels
@@ -146,11 +176,44 @@ final class FileWriter {
                 }
             }
             guard input.isReadyForMoreMediaData else { return }
-            if input.append(sampleBuffer) {
+            if input.append(buffer) {
                 self.audioFrameCount += 1
                 if self.lastPTS == nil || CMTimeCompare(pts, self.lastPTS!) > 0 { self.lastPTS = pts }
             }
         }
+    }
+
+    /// 继续录制后，根据暂停前后的视频 PTS 间隔累加时间偏移，使输出时间轴连续（去掉暂停时段）
+    private func applyResumeOffset(inputPTS: CMTime) {
+        needsResumeAdjust = false
+        guard let last = lastInputVideoPTS else { return }
+        let gap = CMTimeSubtract(inputPTS, last)
+        if CMTimeCompare(gap, frameDuration) > 0 {
+            ptsOffset = CMTimeAdd(ptsOffset, CMTimeSubtract(gap, frameDuration))
+        }
+    }
+
+    /// 把样本的时间戳整体前移 offset（拷贝样本、仅改时间，不动像素/音频数据）
+    private static func retimed(_ sampleBuffer: CMSampleBuffer, by offset: CMTime) -> CMSampleBuffer {
+        let count = CMSampleBufferGetNumSamples(sampleBuffer)
+        guard count > 0 else { return sampleBuffer }
+        var timing = [CMSampleTimingInfo](repeating: CMSampleTimingInfo(), count: count)
+        let status = CMSampleBufferGetSampleTimingInfoArray(sampleBuffer, entryCount: count,
+                                                            arrayToFill: &timing, entriesNeededOut: nil)
+        guard status == noErr else { return sampleBuffer }
+        for i in 0..<count {
+            timing[i].presentationTimeStamp = CMTimeSubtract(timing[i].presentationTimeStamp, offset)
+            if timing[i].decodeTimeStamp.isValid && !timing[i].decodeTimeStamp.isIndefinite {
+                timing[i].decodeTimeStamp = CMTimeSubtract(timing[i].decodeTimeStamp, offset)
+            }
+        }
+        var out: CMSampleBuffer?
+        let createStatus = CMSampleBufferCreateCopyWithNewTiming(allocator: kCFAllocatorDefault,
+                                                                 sampleBuffer: sampleBuffer,
+                                                                 sampleTimingEntryCount: count,
+                                                                 sampleTimingArray: &timing,
+                                                                 sampleBufferOut: &out)
+        return createStatus == noErr ? (out ?? sampleBuffer) : sampleBuffer
     }
 
     /// 停止并落盘。未写入任何帧时返回 nil 并删除半成品文件。

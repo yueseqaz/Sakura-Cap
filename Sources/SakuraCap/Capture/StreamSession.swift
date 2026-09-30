@@ -82,6 +82,9 @@ final class StreamSession: NSObject, SCStreamOutput {
         writer.arm()
     }
 
+    func pause() { writer.pause() }
+    func resume() { writer.resume() }
+
     // MARK: - SCStreamOutput
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {

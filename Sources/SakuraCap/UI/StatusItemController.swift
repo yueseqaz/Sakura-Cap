@@ -34,6 +34,10 @@ final class StatusItemController: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshIcon() }
             .store(in: &cancellables)
+        controller.$isPaused
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshIcon() }
+            .store(in: &cancellables)
         controller.$elapsed
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshTimerTitle() }
@@ -52,8 +56,14 @@ final class StatusItemController: NSObject {
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
-        if controller.isBusy {
+        if controller.state == .recording {
+            let pauseTitle = controller.isPaused
+                ? "继续录制（\(Self.mmss(controller.elapsed))）"
+                : "暂停录制（\(Self.mmss(controller.elapsed))）"
+            menu.addItem(makeItem(pauseTitle, #selector(menuPause)))
             menu.addItem(makeItem("停止录制（\(Self.mmss(controller.elapsed))）", #selector(menuToggle)))
+        } else if controller.isBusy {
+            menu.addItem(makeItem("取消录制", #selector(menuToggle)))
         } else {
             let record = NSMenuItem(title: "开始录制", action: nil, keyEquivalent: "")
             let submenu = NSMenu()
@@ -76,6 +86,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func menuToggle() { controller.toggle() }
+    @objc private func menuPause() { controller.togglePause() }
 
     @objc private func recordDisplay() { beginSelection(.displayOnly) }
     @objc private func recordRegion() { beginSelection(.regionOnly) }
@@ -151,8 +162,13 @@ final class StatusItemController: NSObject {
             button.contentTintColor = .systemOrange
             button.image = NSImage(systemSymbolName: "circle.dotted", accessibilityDescription: nil)
         case .recording:
-            button.contentTintColor = .systemRed
-            button.image = NSImage(systemSymbolName: "stop.circle.fill", accessibilityDescription: nil)
+            if controller.isPaused {
+                button.contentTintColor = .systemOrange
+                button.image = NSImage(systemSymbolName: "pause.circle.fill", accessibilityDescription: nil)
+            } else {
+                button.contentTintColor = .systemRed
+                button.image = NSImage(systemSymbolName: "stop.circle.fill", accessibilityDescription: nil)
+            }
         }
         refreshTimerTitle()
     }

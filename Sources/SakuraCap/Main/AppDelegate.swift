@@ -5,6 +5,7 @@ import Combine
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: RecordingController?
     private var statusItem: StatusItemController?
+    private var hud: RecordingHUDController?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -24,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.controller = controller
         let statusItem = StatusItemController(controller: controller)
         self.statusItem = statusItem
+        // 录制悬浮控制条（自己订阅 controller 状态，此处仅保留引用）
+        self.hud = RecordingHUDController(controller: controller)
 
         HotKeyManager.shared.onToggle = { [weak controller] in
             Task { @MainActor in controller?.toggle() }
