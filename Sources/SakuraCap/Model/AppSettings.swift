@@ -28,6 +28,7 @@ final class AppSettings: ObservableObject {
         static let cameraSize = "cameraPiPSize"
         static let cameraMirror = "cameraPiPMirror"
         static let cameraCorner = "cameraPiPCorner"
+        static let outputResolution = "outputResolution"
         static let countdown = "countdownEnabled"
         static let codec = "videoCodec"
         static let quality = "videoQuality"
@@ -70,6 +71,9 @@ final class AppSettings: ObservableObject {
     @Published var cameraPiPMirror = true { didSet { d.set(cameraPiPMirror, forKey: Keys.cameraMirror) } }
     @Published var cameraPiPCorner: PiPCorner = .bottomRight { didSet { d.set(cameraPiPCorner.rawValue, forKey: Keys.cameraCorner) } }
 
+    // 输出分辨率（按需缩小；默认原始）
+    @Published var outputResolution: OutputResolution = .native { didSet { d.set(outputResolution.rawValue, forKey: Keys.outputResolution) } }
+
     @Published var countdownEnabled = true { didSet { d.set(countdownEnabled, forKey: Keys.countdown) } }
     @Published var codec: VideoCodec = .h264 { didSet { d.set(codec.rawValue, forKey: Keys.codec) } }
     @Published var quality: VideoQuality = .high { didSet { d.set(quality.rawValue, forKey: Keys.quality) } }
@@ -107,6 +111,7 @@ final class AppSettings: ObservableObject {
         if d.object(forKey: Keys.cameraSize) != nil { cameraPiPSize = d.double(forKey: Keys.cameraSize) }
         cameraPiPMirror = d.object(forKey: Keys.cameraMirror) == nil ? true : d.bool(forKey: Keys.cameraMirror)
         if let raw = d.string(forKey: Keys.cameraCorner), let corner = PiPCorner(rawValue: raw) { cameraPiPCorner = corner }
+        if let raw = d.string(forKey: Keys.outputResolution), let r = OutputResolution(rawValue: raw) { outputResolution = r }
         countdownEnabled = d.object(forKey: Keys.countdown) == nil ? true : d.bool(forKey: Keys.countdown)
         if let raw = d.string(forKey: Keys.codec), let c = VideoCodec(rawValue: raw) { codec = c }
         if let raw = d.string(forKey: Keys.quality), let q = VideoQuality(rawValue: raw) { quality = q }

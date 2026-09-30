@@ -98,6 +98,30 @@ enum VideoQuality: String, CaseIterable, Identifiable {
     }
 }
 
+/// 输出分辨率：录制范围不变，按需缩小输出尺寸（不放大）。
+enum OutputResolution: String, CaseIterable, Identifiable {
+    case native
+    case p1080
+    case p720
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .native: return "原始"
+        case .p1080: return "1080p"
+        case .p720: return "720p"
+        }
+    }
+    /// 等比缩放的包围盒（宽 × 高）；nil = 保持原始
+    var box: (width: Int, height: Int)? {
+        switch self {
+        case .native: return nil
+        case .p1080: return (1920, 1080)
+        case .p720: return (1280, 720)
+        }
+    }
+}
+
 /// 画中画位置（录制区域的四角）
 enum PiPCorner: String, CaseIterable, Identifiable {
     case topLeft, topRight, bottomLeft, bottomRight

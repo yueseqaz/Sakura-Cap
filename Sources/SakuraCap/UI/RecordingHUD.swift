@@ -8,6 +8,7 @@ import Combine
 final class RecordingHUDController {
     private let controller: RecordingController
     private var window: NSWindow?
+    private var hosting: NSHostingView<RecordingHUDView>?
     private var cancellables = Set<AnyCancellable>()
 
     init(controller: RecordingController) {
@@ -32,6 +33,19 @@ final class RecordingHUDController {
         let window = window ?? makeWindow()
         self.window = window
         window.orderFrontRegardless()
+        // 等 SwiftUI 根据新状态布局后，再按内容尺寸调整窗口（保持右上角不动）
+        DispatchQueue.main.async { [weak self] in self?.resizeToFit() }
+    }
+
+    private func resizeToFit() {
+        guard let window, let hosting else { return }
+        hosting.layoutSubtreeIfNeeded()
+        let size = hosting.fittingSize
+        guard size.width > 1, size.height > 1 else { return }
+        guard abs(window.frame.width - size.width) > 0.5 || abs(window.frame.height - size.height) > 0.5 else { return }
+        let topRight = NSPoint(x: window.frame.maxX, y: window.frame.maxY)
+        window.setFrame(NSRect(x: topRight.x - size.width, y: topRight.y - size.height,
+                               width: size.width, height: size.height), display: true)
     }
 
     private func hide() {
@@ -40,6 +54,7 @@ final class RecordingHUDController {
 
     private func makeWindow() -> NSWindow {
         let hosting = NSHostingView(rootView: RecordingHUDView(controller: controller))
+        self.hosting = hosting
         let size = NSSize(width: 226, height: 44)
         let window = HUDPanel(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.borderless, .nonactivatingPanel],
@@ -78,6 +93,7 @@ private final class HUDPanel: NSPanel {
 
 private struct RecordingHUDView: View {
     @ObservedObject var controller: RecordingController
+    @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         HStack(spacing: 10) {
@@ -86,6 +102,7 @@ private struct RecordingHUDView: View {
                 Circle().fill(Color.red).frame(width: 8, height: 8)
                 Text("准备就绪").font(.system(size: 13, weight: .medium))
                 Spacer(minLength: 4)
+                resolutionPicker
                 Button("开始录制") { controller.start() }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
@@ -102,9 +119,27 @@ private struct RecordingHUDView: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(width: 226, height: 44)
+        .frame(height: 44)
+        .fixedSize()
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().stroke(Color.black.opacity(0.12), lineWidth: 0.5))
+    }
+
+    private var resolutionPicker: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "rectangle.compress.vertical")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Picker("", selection: $settings.outputResolution) {
+                ForEach(OutputResolution.allCases) { resolution in
+                    Text(resolution.label).tag(resolution)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+        }
+        .help("输出分辨率")
     }
 
     @ViewBuilder

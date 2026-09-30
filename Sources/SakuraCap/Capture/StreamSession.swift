@@ -97,7 +97,7 @@ final class StreamSession: NSObject, SCStreamOutput {
                     Log.capture.info("首帧 \(CVPixelBufferGetWidth(pixelBuffer))×\(CVPixelBufferGetHeight(pixelBuffer))，期望 \(self.spec.pixelWidth)×\(self.spec.pixelHeight)（\(self.spec.displayName, privacy: .public)）")
                 }
             }
-            writer.appendVideo(croppedSampleBufferIfNeeded(sampleBuffer))
+            writer.appendVideo(transformedSampleBufferIfNeeded(sampleBuffer))
         case .audio:
             writer.appendAudio(sampleBuffer, track: .system)
         default:
@@ -105,37 +105,56 @@ final class StreamSession: NSObject, SCStreamOutput {
         }
     }
 
-    /// 将整屏帧裁剪为选区帧，避免依赖 SCK sourceRect 的系统版本差异。
-    private func croppedSampleBufferIfNeeded(_ sampleBuffer: CMSampleBuffer) -> CMSampleBuffer {
-        guard let crop = spec.cropRect,
-              let sourceBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+    /// 需要时裁剪（区域）并按输出分辨率缩小；1:1 且无需裁剪时原样返回（零拷贝）。
+    private func transformedSampleBufferIfNeeded(_ sampleBuffer: CMSampleBuffer) -> CMSampleBuffer {
+        guard let sourceBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return sampleBuffer
         }
         let sourceWidth = CVPixelBufferGetWidth(sourceBuffer)
         let sourceHeight = CVPixelBufferGetHeight(sourceBuffer)
-        let top = max(0, min(sourceHeight - 2, Int(crop.minY.rounded(.down))))
-        let left = max(0, min(sourceWidth - 2, Int(crop.minX.rounded(.down))))
-        let width = max(2, min(sourceWidth - left, spec.pixelWidth)) & ~1
-        let height = max(2, min(sourceHeight - top, spec.pixelHeight)) & ~1
-        let image = CIImage(cvPixelBuffer: sourceBuffer)
-        let y = CGFloat(sourceHeight - top - height)
-        let cropRect = CGRect(x: CGFloat(left), y: y,
-                              width: CGFloat(width), height: CGFloat(height))
-        // 关键：CIContext.render(_:to:) 按图像自身坐标空间渲染。cropped(to:) 后图像 extent
-        // 原点非 (0,0)，不平移回原点则整帧落在目标缓冲区之外，录出来全黑。
-        let cropped = image.cropped(to: cropRect)
-            .transformed(by: CGAffineTransform(translationX: -cropRect.minX, y: -cropRect.minY))
+
+        var image = CIImage(cvPixelBuffer: sourceBuffer)
+        var regionWidth = sourceWidth
+        var regionHeight = sourceHeight
+
+        if let crop = spec.cropRect {
+            let top = max(0, min(sourceHeight - 2, Int(crop.minY.rounded(.down))))
+            let left = max(0, min(sourceWidth - 2, Int(crop.minX.rounded(.down))))
+            let width = max(2, min(sourceWidth - left, Int(crop.width.rounded()))) & ~1
+            let height = max(2, min(sourceHeight - top, Int(crop.height.rounded()))) & ~1
+            let y = CGFloat(sourceHeight - top - height)
+            let cropRect = CGRect(x: CGFloat(left), y: y, width: CGFloat(width), height: CGFloat(height))
+            // 关键：CIContext.render(_:to:) 按图像自身坐标空间渲染。cropped(to:) 后 extent
+            // 原点非 (0,0)，不平移回原点则整帧落在目标缓冲区之外，录出来全黑。
+            image = image.cropped(to: cropRect)
+                .transformed(by: CGAffineTransform(translationX: -cropRect.minX, y: -cropRect.minY))
+            regionWidth = width
+            regionHeight = height
+        }
+
+        let outWidth = spec.pixelWidth
+        let outHeight = spec.pixelHeight
+        guard spec.cropRect != nil || outWidth != regionWidth || outHeight != regionHeight else {
+            return sampleBuffer
+        }
+        // CIContext.render(_:to:) 不会缩放，只会 1:1 渲染并裁掉超出部分；
+        // 因此先把图像显式缩放到输出尺寸，再 1:1 渲染进等尺寸缓冲区。
+        if regionWidth != outWidth || regionHeight != outHeight {
+            image = image.transformed(by: CGAffineTransform(scaleX: CGFloat(outWidth) / CGFloat(regionWidth),
+                                                            y: CGFloat(outHeight) / CGFloat(regionHeight)))
+        }
+
         var output: CVPixelBuffer?
         let attrs: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey: width,
-            kCVPixelBufferHeightKey: height,
+            kCVPixelBufferWidthKey: outWidth,
+            kCVPixelBufferHeightKey: outHeight,
             kCVPixelBufferIOSurfacePropertiesKey: [:],
         ]
-        guard CVPixelBufferCreate(kCFAllocatorDefault, width, height,
+        guard CVPixelBufferCreate(kCFAllocatorDefault, outWidth, outHeight,
                                   kCVPixelFormatType_32BGRA, attrs as CFDictionary, &output) == kCVReturnSuccess,
               let output else { return sampleBuffer }
-        cropContext.render(cropped, to: output)
+        cropContext.render(image, to: output)
         var formatDescription: CMVideoFormatDescription?
         guard CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
                                                             imageBuffer: output,

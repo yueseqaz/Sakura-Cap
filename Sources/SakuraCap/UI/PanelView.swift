@@ -253,6 +253,13 @@ struct PanelView: View {
                     Text("\(Int(settings.customBitrateMbps)) Mbps").monospacedDigit().frame(width: 70)
                 }
             }
+            Picker("输出分辨率", selection: $settings.outputResolution) {
+                ForEach(OutputResolution.allCases) { resolution in
+                    Text(resolution.label).tag(resolution)
+                }
+            }
+            Text("录制前可在悬浮控制条上临时切换；这里设为默认值。")
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Text("编码")
                 Picker("", selection: $settings.codec) {

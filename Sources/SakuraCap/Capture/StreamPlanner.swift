@@ -33,7 +33,9 @@ enum StreamPlanner {
             for info in chosen {
                 guard let display = catalog.scDisplay(for: info.id) else { continue }
                 let filter = SCContentFilter(display: display, excludingWindows: [])
-                let (w, h) = pixelSize(filter: filter, fallback: (info.widthPx, info.heightPx))
+                let native = pixelSize(filter: filter, fallback: (info.widthPx, info.heightPx))
+                // 输出分辨率：需要缩小就直接让 SCK 输出目标尺寸（原生采样、无中间缩放）
+                let (w, h) = outputSize(native, resolution: settings.outputResolution)
                 // 全屏过滤器已经限定了显示器范围；不传 sourceRect，避免不同 macOS 版本
                 // 对 sourceRect 单位（pt/px）解释不一致，导致 Retina 画面被二次缩放。
                 let source = CGRect.zero
@@ -60,13 +62,15 @@ enum StreamPlanner {
             // 用过滤器真实的「像素/点」比例换算选区；缩放分辨率下 backingScaleFactor
             // 未必等于真实比例，直接用它会造成尺寸/位置偏差。
             let scale = pointScale(filter: filter, fallback: info.scaleFactor)
-            let (w, h) = evenDimensions(Int((region.sckRect.width * scale).rounded()),
+            let native = evenDimensions(Int((region.sckRect.width * scale).rounded()),
                                         Int((region.sckRect.height * scale).rounded()))
             let crop = CGRect(x: region.sckRect.minX * scale,
                               y: region.sckRect.minY * scale,
-                              width: CGFloat(w),
-                              height: CGFloat(h))
-            // 先采集整屏（原生像素），再在 StreamSession 中按像素裁剪（1:1，无缩放），保证清晰度。
+                              width: CGFloat(native.0),
+                              height: CGFloat(native.1))
+            // 区域：先采集整屏（原生像素）作裁剪源，再在 StreamSession 中裁剪到选区、
+            // 并按输出分辨率缩小。
+            let (w, h) = outputSize(native, resolution: settings.outputResolution)
             let (fullWidth, fullHeight) = pixelSize(filter: filter, fallback: (info.widthPx, info.heightPx))
             specs.append(StreamSpec(displayID: region.displayID,
                                     filter: filter,
@@ -107,6 +111,15 @@ enum StreamPlanner {
     /// 4:2:0 编码要求宽高为偶数
     private static func evenDimensions(_ w: Int, _ h: Int) -> (Int, Int) {
         (max(2, w & ~1), max(2, h & ~1))
+    }
+
+    /// 按输出分辨率等比缩小（不放大）：结果落在档位的包围盒内，尺寸取偶。
+    private static func outputSize(_ size: (Int, Int), resolution: OutputResolution) -> (Int, Int) {
+        let (w, h) = evenDimensions(size.0, size.1)
+        guard let box = resolution.box else { return (w, h) }
+        let factor = min(1.0, Double(box.width) / Double(w), Double(box.height) / Double(h))
+        guard factor < 1.0 else { return (w, h) }
+        return evenDimensions(Int((Double(w) * factor).rounded()), Int((Double(h) * factor).rounded()))
     }
 
     private static func baseConfig(settings: AppSettings, width: Int, height: Int, source: CGRect) -> SCStreamConfiguration {
