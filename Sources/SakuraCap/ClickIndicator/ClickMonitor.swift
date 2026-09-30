@@ -47,6 +47,10 @@ final class ClickMonitor {
 
     /// 事件回调挂在主 RunLoop 上，此处必然在主线程
     fileprivate func dispatch(type: CGEventType, event: CGEvent) {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
+            return
+        }
         let location = event.location // CG 全局坐标（左上原点，pt）
         MainActor.assumeIsolated {
             switch type {

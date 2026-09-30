@@ -26,9 +26,17 @@ final class IndicatorEngine: ObservableObject {
     @discardableResult
     func start() -> Bool {
         permissionDenied = false
-        let ok = monitor.start()
+        // CGEvent.tapCreate 无权限时也可能返回非 nil 但收不到事件，故先用 preflight 判定
+        if !PermissionCenter.inputMonitoringGranted() {
+            PermissionCenter.requestInputMonitoring()
+        }
+        let granted = PermissionCenter.inputMonitoringGranted()
+        let ok = granted && monitor.start()
         isMonitoring = ok
         permissionDenied = !ok
+        if !ok {
+            Log.indicator.error("点击监听不可用：缺少「输入监控」权限（kTCCServiceListenEvent）")
+        }
         return ok
     }
 

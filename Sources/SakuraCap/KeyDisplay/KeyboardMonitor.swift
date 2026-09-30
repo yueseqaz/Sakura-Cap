@@ -47,6 +47,10 @@ final class KeyboardMonitor {
 
     /// 事件回调挂在主 RunLoop 上，此处必然在主线程
     fileprivate func dispatch(type: CGEventType, event: CGEvent) {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: true) }
+            return
+        }
         let label = KeyLabel.describe(type: type, event: event)
         MainActor.assumeIsolated { onKey?(label) }
     }

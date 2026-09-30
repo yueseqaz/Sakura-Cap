@@ -57,6 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         let reRegisterHotKey = { HotKeyManager.shared.register(AppSettings.shared.hotKeyCombo) }
+
+        // 若开启了需要「输入监控」的功能，启动时即请求授权（首次会弹系统框）
+        if AppSettings.shared.clickIndicatorEnabled { IndicatorEngine.shared.start() }
+        if AppSettings.shared.keyDisplayEnabled { KeyDisplay.shared.start() }
         AppSettings.shared.$hotKeyCode
             .dropFirst().receive(on: DispatchQueue.main)
             .sink { _ in reRegisterHotKey() }.store(in: &cancellables)
