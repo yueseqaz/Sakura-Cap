@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 刻意不启用 App Sandbox：CGEventTap（输入监控）、任意目录写入、SCStream 均需要非沙盒环境。
+	     非沙盒应用没有任何必选 entitlement；本文件作为显式容器保留，便于将来沙盒化时追加键值。 -->
+</dict>
+</plist>

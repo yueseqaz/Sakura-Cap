@@ -1,0 +1,372 @@
+import AppKit
+import AVFoundation
+import ScreenCaptureKit
+
+/// 录制状态机：idle → preparing → countdown → recording → finalizing → idle。
+/// 对外唯一入口（toggle/start/stop），面板、快捷键、菜单都走它。
+@MainActor
+final class RecordingController: ObservableObject {
+    enum State: Equatable {
+        case idle, preparing, countdown, recording, finalizing
+    }
+
+    @Published private(set) var state: State = .idle
+    @Published private(set) var elapsed: TimeInterval = 0
+    @Published var banner: String?
+
+    private(set) var lastSavedFiles: [URL] = []
+
+    let settings = AppSettings.shared
+
+    private var sessions: [StreamSession] = []
+    private var mic: MicCapture?
+    private var timer: Timer?
+    private var recordStart: Date?
+    private var generation = 0
+    private let screenMonitor = ScreenChangeMonitor()
+
+    init() {
+        screenMonitor.onScreensChanged = { [weak self] in self?.handleScreensChanged() }
+    }
+
+    var isBusy: Bool { state != .idle }
+
+    func toggle() {
+        if state == .idle {
+            start()
+        } else {
+            stop()
+        }
+    }
+
+    func start() {
+        guard state == .idle else { return }
+        generation += 1
+        let gen = generation
+        Task { await startFlow(generation: gen) }
+    }
+
+    func stop() {
+        guard state != .idle, state != .finalizing else { return }
+        generation += 1
+        Task { await stopFlow() }
+    }
+
+    // MARK: - 启动流程
+
+    private func startFlow(generation gen: Int) async {
+        state = .preparing
+        banner = nil
+
+        /// 失败统一出口：写持久化错误日志 + 可选弹窗（默认弹，确保用户不可能忽略）
+        func abort(_ message: String, showAlert: Bool = true) {
+            Log.app.error("录制启动失败: \(message, privacy: .public)")
+            banner = message
+            if showAlert {
+                let alert = NSAlert()
+                alert.messageText = "无法开始录制"
+                alert.informativeText = message
+                alert.addButton(withTitle: "好")
+                alert.runModal()
+            }
+            state = .idle
+        }
+
+        // 1. 屏幕录制权限
+        guard PermissionCenter.screenCaptureGranted() else {
+            PermissionCenter.openScreenCaptureSettings()
+            abort("需要「屏幕录制」权限：已打开系统设置，请勾选 Sakura-Cap 后重试。提示：ad-hoc 签名每次重新编译后都需要重新授权。")
+            return
+        }
+        guard gen == generation else { return }
+
+        // 2. 输出目录（必须由用户选择）
+        guard let directory = OutputDirectoryPicker.ensureDirectory(current: settings.outputDirectory) else {
+            abort("未选择输出目录，已取消录制", showAlert: false)
+            return
+        }
+        settings.outputDirectory = directory
+
+        // 3. 刷新可采集内容（含窗口、显示器，天然覆盖热插拔）
+        let catalog = DisplayCatalog.shared
+        do {
+            let displays = try await catalog.refresh()
+            Log.app.notice("可采集内容: \(displays.count) 台显示器")
+            if displays.isEmpty {
+                PermissionCenter.openScreenCaptureSettings()
+                abort("未能列出任何显示器——屏幕录制授权可能因重新编译而失效（ad-hoc 签名特性）。请在系统设置中取消勾选再重新勾选 Sakura-Cap。")
+                return
+            }
+        } catch {
+            abort("获取可采集内容失败：\(error.localizedDescription)（多为屏幕录制权限问题）")
+            return
+        }
+        guard gen == generation else { return }
+
+        // 4. 生成录制计划
+        let specs: [StreamSpec]
+        do {
+            specs = try StreamPlanner.buildSpecs(settings: settings, catalog: catalog)
+            for spec in specs {
+                Log.app.notice("录制计划: \(spec.displayName, privacy: .public) \(spec.pixelWidth)×\(spec.pixelHeight) @\(spec.config.sourceRect.origin.x),\(spec.config.sourceRect.origin.y)+\(spec.config.sourceRect.width)x\(spec.config.sourceRect.height) 音频=\(spec.capturesSystemAudio)")
+            }
+        } catch {
+            abort("无法开始录制：\(error.localizedDescription)")
+            return
+        }
+
+        // 5. 点击指示（可选功能，失败不阻断录制）
+        if settings.clickIndicatorEnabled {
+            IndicatorEngine.shared.beginCapture()
+            if !IndicatorEngine.shared.isMonitoring {
+                banner = "点击指示需要「输入监控」权限，本次录制不含点击标记（录制本身不受影响）"
+            }
+        }
+
+        // 6. 麦克风：先启动并拿到实测格式（writer 建轨必须在 startWriting 之前，否则闪退）
+        var micFormat: (sampleRate: Double, channels: Int)?
+        if settings.recordMicrophone {
+            micFormat = await startMicrophoneAndGetFormat()
+        }
+        guard gen == generation, state == .preparing else {
+            mic?.stop(); mic = nil
+            state = .idle
+            return
+        }
+
+        // 7. 创建各路 writer + stream（writer 未 arm，先热身丢帧，保证倒计时不入视频）
+        sessions.removeAll()
+        do {
+            // 麦克风音轨只加进将要接收它的那一路 writer（并行模式 = 主屏路）
+            let micTargetIndex: Int? = micFormat == nil
+                ? nil
+                : (specs.firstIndex { $0.capturesSystemAudio } ?? specs.indices.first)
+            for (index, spec) in specs.enumerated() {
+                sessions.append(try StreamSession(
+                    spec: spec,
+                    codec: settings.codec.avCodecType,
+                    quality: settings.quality,
+                    frameRate: settings.fps.rawValue,
+                    customBitrateMbps: settings.customBitrateMbps,
+                    systemAudio: spec.capturesSystemAudio,
+                    micAudio: index == micTargetIndex ? micFormat : nil))
+            }
+            if let capture = mic, let micTargetIndex,
+               sessions.indices.contains(micTargetIndex) {
+                let micWriter = sessions[micTargetIndex].writer
+                capture.setOnBuffer { buffer in
+                    micWriter.appendAudio(buffer, track: .microphone)
+                }
+            }
+        } catch {
+            mic?.stop(); mic = nil
+            IndicatorEngine.shared.endCapture()
+            _ = await teardownSessions(saveFiles: false)
+            abort("启动采集失败：\(error.localizedDescription)（多为屏幕录制授权失效）")
+            return
+        }
+        guard gen == generation, state == .preparing else {
+            IndicatorEngine.shared.endCapture()
+            mic?.stop(); mic = nil
+            _ = await teardownSessions(saveFiles: false)
+            state = .idle
+            return
+        }
+
+        // 8. 启动采集
+        do {
+            for session in sessions {
+                try await session.start()
+            }
+        } catch {
+            IndicatorEngine.shared.endCapture()
+            mic?.stop(); mic = nil
+            _ = await teardownSessions(saveFiles: true)
+            abort("启动采集失败：\(error.localizedDescription)")
+            return
+        }
+        guard gen == generation, state == .preparing else {
+            IndicatorEngine.shared.endCapture()
+            mic?.stop(); mic = nil
+            _ = await teardownSessions(saveFiles: false)
+            state = .idle
+            return
+        }
+
+        // 9. 倒计时（不入视频）
+        if settings.countdownEnabled {
+            state = .countdown
+            await CountdownCoordinator.run(seconds: 3, on: countdownScreens()) {
+                self.generation == gen && self.state == .countdown
+            }
+            guard gen == generation, state == .countdown else {
+                IndicatorEngine.shared.endCapture()
+                mic?.stop(); mic = nil
+                _ = await teardownSessions(saveFiles: false)
+                state = .idle
+                return
+            }
+        }
+
+        // 10. 正式开录
+        for session in sessions { session.armWriter() }
+        recordStart = Date()
+        elapsed = 0
+        startTimer()
+        state = .recording
+        Log.app.info("开始录制：\(self.sessions.count) 路输出")
+    }
+
+    /// 先启动麦克风并等待实测格式。格式必须在创建 FileWriter 前已知——
+    /// AVAssetWriter 的所有轨道必须在 startWriting() 之前添加，懒建轨会抛异常闪退。
+    private func startMicrophoneAndGetFormat() async -> (sampleRate: Double, channels: Int)? {
+        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        var granted = status == .authorized
+        if status == .notDetermined {
+            granted = await AVCaptureDevice.requestAccess(for: .audio)
+        }
+        guard granted else {
+            banner = "麦克风权限不可用，本次录制将不含麦克风音轨"
+            return nil
+        }
+        let capture = MicCapture()
+        do {
+            try capture.start()
+        } catch {
+            banner = "麦克风启动失败（\(error.localizedDescription)），本次录制将不含麦克风音轨"
+            return nil
+        }
+        guard let format = await capture.waitForFormat(timeout: 1.5) else {
+            capture.stop()
+            banner = "麦克风未就绪，本次录制将不含麦克风音轨"
+            return nil
+        }
+        mic = capture
+        return format
+    }
+
+    // MARK: - 停止流程
+
+    private func stopFlow() async {
+        let wasRecording = state == .recording
+        state = .finalizing
+        stopTimer()
+        IndicatorEngine.shared.endCapture()
+        mic?.stop(); mic = nil
+
+        let duration = elapsed
+        let files = await teardownSessions(saveFiles: true)
+        lastSavedFiles = files
+        recordStart = nil
+        elapsed = 0
+        state = .idle
+
+        if wasRecording {
+            if files.isEmpty {
+                let message = "未捕获到有效画面（0 帧），文件未保存。常见原因：屏幕录制授权因重新编译失效，请重新授权后重试。"
+                Log.app.error("录制零帧: \(message, privacy: .public)")
+                banner = message
+                let alert = NSAlert()
+                alert.messageText = "未捕获到有效画面"
+                alert.informativeText = message
+                alert.addButton(withTitle: "好")
+                alert.runModal()
+            } else {
+                for url in files {
+                    CompletionNotifier.shared.postSaved(url: url, duration: duration)
+                }
+            }
+        }
+        Log.app.notice("停止录制，保存 \(files.count) 个文件，时长 \(duration)")
+    }
+
+    private func teardownSessions(saveFiles: Bool) async -> [URL] {
+        let pending = sessions
+        sessions.removeAll()
+        var files: [URL] = []
+        for session in pending {
+            if let url = await session.finish(discardFiles: !saveFiles) {
+                files.append(url)
+            }
+        }
+        return files
+    }
+
+    // MARK: - 计时
+
+    private func startTimer() {
+        timer?.invalidate()
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func tick() {
+        guard let start = recordStart else { return }
+        elapsed = Date().timeIntervalSince(start)
+    }
+
+    // MARK: - 显示器热插拔（录制中被拔屏 → 优雅停止并保存该路文件）
+
+    private func handleScreensChanged() {
+        guard state == .recording else { return }
+        var activeIDs = Set<CGDirectDisplayID>()
+        var ids = [CGDirectDisplayID](repeating: 0, count: 32)
+        var count: UInt32 = 0
+        if CGGetActiveDisplayList(32, &ids, &count) == .success {
+            activeIDs = Set(ids.prefix(Int(count)))
+        }
+        let detached = sessions.filter { session in
+            guard let id = session.spec.displayID else { return false } // 窗口模式由 SCK 跟随，不受影响
+            return !activeIDs.contains(id)
+        }
+        guard !detached.isEmpty else { return }
+        Task { [weak self] in
+            for session in detached {
+                if let url = await session.finish(discardFiles: false) {
+                    CompletionNotifier.shared.postSaved(url: url, duration: 0)
+                }
+                await MainActor.run { self?.sessions.removeAll { $0 === session } }
+            }
+            await MainActor.run {
+                if self?.sessions.isEmpty == true {
+                    self?.stop()
+                } else {
+                    self?.banner = "检测到显示器断开，对应录像已保存"
+                }
+            }
+        }
+    }
+
+    // MARK: - 倒计时覆盖的目标屏幕
+
+    private func countdownScreens() -> [NSScreen] {
+        var screens: [NSScreen] = []
+        for session in sessions {
+            guard let id = session.spec.displayID,
+                  let screen = NSScreen.screens.first(where: { $0.displayID == id }),
+                  !screens.contains(screen) else { continue }
+            screens.append(screen)
+        }
+        if screens.isEmpty, let main = NSScreen.main ?? NSScreen.screens.first {
+            screens = [main]
+        }
+        return screens
+    }
+
+    // MARK: - 退出兜底
+
+    func emergencyFinalize() {
+        guard isBusy else { return }
+        for session in sessions {
+            _ = session.finishSyncBestEffort()
+        }
+    }
+}
