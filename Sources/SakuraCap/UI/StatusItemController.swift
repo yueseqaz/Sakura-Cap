@@ -76,6 +76,7 @@ final class StatusItemController: NSObject {
         menu.addItem(.separator())
         menu.addItem(makeItem("打开文件夹", #selector(menuOpenFolder)))
         menu.addItem(makeItem("设置…", #selector(menuSettings)))
+        menu.addItem(makeItem("关于 Sakura-Cap", #selector(menuAbout)))
         menu.addItem(makeItem("退出 Sakura-Cap", #selector(menuQuit)))
         return menu
     }
@@ -111,6 +112,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func menuSettings() { showSettings() }
+    @objc private func menuAbout() { AboutWindowController.shared.show() }
     @objc private func menuOpenFolder() {
         guard let directory = AppSettings.shared.outputDirectory else {
             showSettings()
