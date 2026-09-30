@@ -29,6 +29,25 @@
 | 权限引导 | 屏幕录制 / 麦克风 / 输入监控缺失时给出卡片或弹窗提示并可跳转系统设置 |
 | 热插拔 | 录制中拔掉显示器：该路流优雅停止、已录内容照常保存并通知 |
 
+## 安装
+
+### Homebrew（推荐）
+
+```bash
+brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap
+brew install --cask sakura-cap
+```
+
+### 从源码构建
+
+```bash
+git clone https://github.com/yueseqaz/Sakura-Cap.git
+cd Sakura-Cap
+./run.sh
+```
+
+> ad-hoc 签名、未公证。首次被拦截时右键「打开」，或在「隐私与安全性」中允许。
+
 ## 构建与运行
 
 ```bash
