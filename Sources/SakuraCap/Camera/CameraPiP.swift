@@ -43,6 +43,12 @@ final class CameraPiP: ObservableObject {
         requestPermissionIfNeeded { [weak self] in self?.sync() }
     }
 
+    /// 画中画上的关闭按钮：关掉并同步关闭设置开关
+    func disable() {
+        AppSettings.shared.cameraPiPEnabled = false
+        stop()
+    }
+
     /// 运行中改动设置（设备 / 大小 / 位置 / 镜像）后调用
     func refreshConfiguration() {
         guard running else { return }
@@ -132,9 +138,12 @@ final class CameraPiP: ObservableObject {
     // MARK: - 窗口
 
     private func showWindow() {
-        let window = window ?? CameraPiPWindow(session: session)
-        self.window = window
-        window.orderFrontRegardless()
+        if window == nil {
+            let created = CameraPiPWindow(session: session)
+            created.onClose = { [weak self] in self?.disable() }
+            window = created
+        }
+        window?.orderFrontRegardless()
     }
 
     private func applyConfiguration() {
@@ -164,10 +173,75 @@ final class CameraPiP: ObservableObject {
     }
 }
 
+/// 画中画窗口内容：视频预览 + 悬停时显示的关闭按钮
+private final class CameraPiPContentView: NSView {
+    var onClose: (() -> Void)?
+    private let closeButton = NSButton()
+    private var trackingArea: NSTrackingArea?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.cgColor
+        layer?.cornerRadius = 14
+        layer?.masksToBounds = true
+
+        closeButton.isBordered = false
+        closeButton.bezelStyle = .regularSquare
+        closeButton.wantsLayer = true
+        closeButton.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        closeButton.layer?.cornerRadius = 12
+        let closeSymbol = NSImage(systemSymbolName: "xmark", accessibilityDescription: "关闭")
+        closeButton.image = closeSymbol?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .bold))
+        closeButton.contentTintColor = .white
+        closeButton.imagePosition = .imageOnly
+        closeButton.target = self
+        closeButton.action = #selector(handleClose)
+        closeButton.isHidden = true
+        closeButton.autoresizingMask = [.minXMargin, .minYMargin]
+        closeButton.frame = NSRect(x: bounds.width - 8 - 24, y: bounds.height - 8 - 24, width: 24, height: 24)
+        addSubview(closeButton)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func handleClose() { onClose?() }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let trackingArea { removeTrackingArea(trackingArea) }
+        let area = NSTrackingArea(rect: .zero,
+                                  options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { closeButton.isHidden = false }
+    override func mouseExited(with event: NSEvent) { closeButton.isHidden = true }
+}
+
+/// 把 AVCaptureVideoPreviewLayer 作为 backing layer 的视图（保证关闭按钮渲染在其之上）
+private final class CameraPreviewView: NSView {
+    override func makeBackingLayer() -> CALayer {
+        let layer = AVCaptureVideoPreviewLayer()
+        layer.videoGravity = .resizeAspectFill
+        return layer
+    }
+
+    var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+}
+
 /// 画中画窗口：无边框、置顶、可拖动，圆角裁剪，可被录制
 private final class CameraPiPWindow: NSWindow {
-    private let previewLayer = AVCaptureVideoPreviewLayer()
-    private let container = NSView()
+    private let content = CameraPiPContentView(frame: NSRect(x: 0, y: 0, width: 320, height: 180))
+    private let preview = CameraPreviewView(frame: NSRect(x: 0, y: 0, width: 320, height: 180))
+
+    var onClose: (() -> Void)? {
+        didSet { content.onClose = onClose }
+    }
 
     init(session: AVCaptureSession) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
@@ -181,22 +255,16 @@ private final class CameraPiPWindow: NSWindow {
         ignoresMouseEvents = false
         isMovableByWindowBackground = true
 
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.black.cgColor
-        container.layer?.cornerRadius = 14
-        container.layer?.masksToBounds = true
+        preview.wantsLayer = true
+        preview.previewLayer.session = session
+        preview.autoresizingMask = [.width, .height]
+        content.addSubview(preview, positioned: .below, relativeTo: nil)
 
-        previewLayer.session = session
-        previewLayer.videoGravity = .resizeAspectFill
-        previewLayer.frame = container.bounds
-        previewLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        container.layer?.addSublayer(previewLayer)
-
-        contentView = container
+        contentView = content
     }
 
     func setMirrored(_ mirrored: Bool) {
-        guard let connection = previewLayer.connection else { return }
+        guard let connection = preview.previewLayer.connection else { return }
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = mirrored

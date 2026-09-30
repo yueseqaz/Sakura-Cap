@@ -104,6 +104,7 @@ private struct RecordingHUDView: View {
                 Circle().fill(Color.red).frame(width: 8, height: 8)
                 Text("准备就绪").font(.system(size: 13, weight: .medium))
                 Spacer(minLength: 4)
+                inputToggles
                 resolutionPicker
                 Button("开始录制") { controller.start() }
                     .buttonStyle(.borderedProminent)
@@ -142,6 +143,44 @@ private struct RecordingHUDView: View {
             .fixedSize()
         }
         .help("输出分辨率")
+    }
+
+    /// 每次录屏需求不同：在 HUD 上直接开关麦克风 / 系统声音 / 摄像头
+    private var inputToggles: some View {
+        HStack(spacing: 2) {
+            inputToggle("mic.fill", on: settings.recordMicrophone, help: "麦克风") {
+                settings.recordMicrophone.toggle()
+                if settings.recordMicrophone { requestMicrophone() }
+            }
+            inputToggle("speaker.wave.2.fill", on: settings.recordSystemAudio, help: "系统声音") {
+                settings.recordSystemAudio.toggle()
+            }
+            inputToggle("video.fill", on: settings.cameraPiPEnabled, help: "摄像头画中画") {
+                settings.cameraPiPEnabled.toggle()
+                CameraPiP.shared.setEnabled(settings.cameraPiPEnabled)
+            }
+        }
+    }
+
+    private func inputToggle(_ symbol: String, on: Bool, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(on ? Color.accentColor : Color.secondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func requestMicrophone() {
+        guard PermissionCenter.microphoneUndetermined else { return }
+        PermissionCenter.requestMicrophone { granted in
+            Task { @MainActor in
+                if !granted { settings.recordMicrophone = false }
+            }
+        }
     }
 
     @ViewBuilder

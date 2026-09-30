@@ -78,6 +78,7 @@ struct PanelView: View {
         case .general:
             outputCard
             loginCard
+            dndCard
             hotKeyCard
             permissionCards
         }
@@ -307,6 +308,24 @@ struct PanelView: View {
             Toggle("开机时自动启动", isOn: $settings.launchAtLogin)
             Text("随系统登录自动在菜单栏启动（首次需在系统设置→通用→登录项中允许）。")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var dndCard: some View {
+        card("录屏勿扰") {
+            Toggle("录屏时开启勿扰模式", isOn: $settings.dndDuringRecording)
+            if settings.dndDuringRecording {
+                Text("通过「快捷指令」切换专注模式：请在「快捷指令」App 里新建两个快捷指令（用「设置专注模式」动作，分别设为开启与关闭），名称如下：")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Text("开启").font(.caption).frame(width: 32, alignment: .leading)
+                    TextField("", text: $settings.dndOnShortcut).textFieldStyle(.roundedBorder)
+                }
+                HStack {
+                    Text("关闭").font(.caption).frame(width: 32, alignment: .leading)
+                    TextField("", text: $settings.dndOffShortcut).textFieldStyle(.roundedBorder)
+                }
+            }
         }
     }
 

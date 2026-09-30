@@ -263,6 +263,7 @@ final class RecordingController: ObservableObject {
         startTimer()
         state = .recording
         SoundCue.playStart()
+        if settings.dndDuringRecording { FocusMode.run(shortcut: settings.dndOnShortcut) }
         Log.app.info("开始录制：\(self.sessions.count) 路输出")
     }
 
@@ -313,6 +314,7 @@ final class RecordingController: ObservableObject {
         recordStart = nil
         elapsed = 0
         state = .idle
+        if wasRecording, settings.dndDuringRecording { FocusMode.run(shortcut: settings.dndOffShortcut) }
 
         if wasRecording {
             if files.isEmpty {
@@ -327,6 +329,10 @@ final class RecordingController: ObservableObject {
             } else {
                 for url in files {
                     CompletionNotifier.shared.postSaved(url: url, duration: duration)
+                }
+                // 保存/通知等原有逻辑不变，额外自动打开裁剪页处理刚保存的视频
+                if let first = files.first {
+                    TrimWindowController.shared.show(url: first)
                 }
             }
         }

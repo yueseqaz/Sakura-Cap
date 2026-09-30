@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import UniformTypeIdentifiers
 
 /// 状态栏交互：点击弹出菜单（开始录制 / 设置 / 退出）；
 /// 「开始录制」进入可视化选择层（点屏/点窗口/框区域）；录制中图标切换并显示计时。
@@ -75,6 +76,7 @@ final class StatusItemController: NSObject {
         }
         menu.addItem(.separator())
         menu.addItem(makeItem("打开文件夹", #selector(menuOpenFolder)))
+        menu.addItem(makeItem("裁剪视频…", #selector(menuTrim)))
         menu.addItem(makeItem("设置…", #selector(menuSettings)))
         menu.addItem(makeItem("关于 Sakura-Cap", #selector(menuAbout)))
         menu.addItem(makeItem("退出 Sakura-Cap", #selector(menuQuit)))
@@ -113,6 +115,19 @@ final class StatusItemController: NSObject {
 
     @objc private func menuSettings() { showSettings() }
     @objc private func menuAbout() { AboutWindowController.shared.show() }
+    @objc private func menuTrim() {
+        if let url = controller.lastSavedFiles.first {
+            TrimWindowController.shared.show(url: url)
+        } else {
+            let panel = NSOpenPanel()
+            panel.allowedContentTypes = [.movie]
+            panel.allowsMultipleSelection = false
+            panel.message = "选择要裁剪的视频"
+            if panel.runModal() == .OK, let url = panel.url {
+                TrimWindowController.shared.show(url: url)
+            }
+        }
+    }
     @objc private func menuOpenFolder() {
         guard let directory = AppSettings.shared.outputDirectory else {
             showSettings()

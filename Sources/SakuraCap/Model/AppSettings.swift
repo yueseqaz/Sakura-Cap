@@ -29,6 +29,9 @@ final class AppSettings: ObservableObject {
         static let cameraMirror = "cameraPiPMirror"
         static let cameraCorner = "cameraPiPCorner"
         static let outputResolution = "outputResolution"
+        static let dnd = "dndDuringRecording"
+        static let dndOn = "dndOnShortcut"
+        static let dndOff = "dndOffShortcut"
         static let countdown = "countdownEnabled"
         static let codec = "videoCodec"
         static let quality = "videoQuality"
@@ -74,6 +77,11 @@ final class AppSettings: ObservableObject {
     // 输出分辨率（按需缩小；默认原始）
     @Published var outputResolution: OutputResolution = .native { didSet { d.set(outputResolution.rawValue, forKey: Keys.outputResolution) } }
 
+    // 录屏时开启勿扰（通过「快捷指令」切换专注模式）
+    @Published var dndDuringRecording = false { didSet { d.set(dndDuringRecording, forKey: Keys.dnd) } }
+    @Published var dndOnShortcut = "Sakura-Cap 开启勿扰" { didSet { d.set(dndOnShortcut, forKey: Keys.dndOn) } }
+    @Published var dndOffShortcut = "Sakura-Cap 关闭勿扰" { didSet { d.set(dndOffShortcut, forKey: Keys.dndOff) } }
+
     @Published var countdownEnabled = true { didSet { d.set(countdownEnabled, forKey: Keys.countdown) } }
     @Published var codec: VideoCodec = .h264 { didSet { d.set(codec.rawValue, forKey: Keys.codec) } }
     @Published var quality: VideoQuality = .high { didSet { d.set(quality.rawValue, forKey: Keys.quality) } }
@@ -112,6 +120,9 @@ final class AppSettings: ObservableObject {
         cameraPiPMirror = d.object(forKey: Keys.cameraMirror) == nil ? true : d.bool(forKey: Keys.cameraMirror)
         if let raw = d.string(forKey: Keys.cameraCorner), let corner = PiPCorner(rawValue: raw) { cameraPiPCorner = corner }
         if let raw = d.string(forKey: Keys.outputResolution), let r = OutputResolution(rawValue: raw) { outputResolution = r }
+        dndDuringRecording = d.bool(forKey: Keys.dnd)
+        if let s = d.string(forKey: Keys.dndOn) { dndOnShortcut = s }
+        if let s = d.string(forKey: Keys.dndOff) { dndOffShortcut = s }
         countdownEnabled = d.object(forKey: Keys.countdown) == nil ? true : d.bool(forKey: Keys.countdown)
         if let raw = d.string(forKey: Keys.codec), let c = VideoCodec(rawValue: raw) { codec = c }
         if let raw = d.string(forKey: Keys.quality), let q = VideoQuality(rawValue: raw) { quality = q }
