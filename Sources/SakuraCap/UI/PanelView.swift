@@ -19,7 +19,7 @@ struct PanelView: View {
         var label: String {
             switch self {
             case .audio: return "音频"
-            case .appearance: return "指示"
+            case .appearance: return "标记"
             case .video: return "画质"
             case .general: return "通用"
             }
@@ -161,7 +161,7 @@ struct PanelView: View {
                     }
                     .pickerStyle(.radioGroup)
                     .labelsHidden()
-                    Toggle("所有显示器分别保存（并行录制）", isOn: $settings.allDisplaysParallel)
+                    Toggle("所有显示器分别保存一个文件", isOn: $settings.allDisplaysParallel)
                 }
             case .region:
                 Text(viewModel.regionSummary).font(.callout)
@@ -185,7 +185,7 @@ struct PanelView: View {
                 .onChange(of: settings.recordMicrophone) { enabled in
                     if enabled { viewModel.ensureMicrophonePermission() }
                 }
-            Text("系统声音与麦克风将保存为两条独立音轨")
+            Text("系统声音与麦克风会分开录制，可在播放器中切换。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -193,8 +193,8 @@ struct PanelView: View {
     // MARK: - 点击指示
 
     private var indicatorCard: some View {
-        card("鼠标点击指示") {
-            Toggle("在视频中标记鼠标点击", isOn: $settings.clickIndicatorEnabled)
+        card("鼠标点击标记") {
+            Toggle("在画面中标记鼠标点击", isOn: $settings.clickIndicatorEnabled)
                 .onChange(of: settings.clickIndicatorEnabled) { enabled in
                     if enabled {
                         IndicatorEngine.shared.start()
@@ -220,7 +220,7 @@ struct PanelView: View {
                 Toggle("包含右键点击", isOn: $settings.indicatorIncludeRightClick)
                 if indicator.permissionDenied {
                     permissionCard(title: "缺少「输入监控」权限",
-                                   detail: "授权后点击标记才会显示（录制本身不受影响）。去系统设置勾选 Sakura-Cap 后，重新开始录制即可生效。",
+                                   detail: "授权后点击标记才会显示，不影响录制。请在系统设置中勾选 Sakura-Cap。",
                                    buttonTitle: "打开系统设置") {
                         PermissionCenter.openInputMonitoringSettings()
                     }
@@ -233,7 +233,7 @@ struct PanelView: View {
 
     private var keyDisplayCard: some View {
         card("键盘按键显示") {
-            Toggle("在录制区域左下角显示所按的按键", isOn: $settings.keyDisplayEnabled)
+            Toggle("在画面左下角显示所按的按键", isOn: $settings.keyDisplayEnabled)
                 .onChange(of: settings.keyDisplayEnabled) { enabled in
                     if enabled {
                         KeyDisplay.shared.start()
@@ -241,11 +241,11 @@ struct PanelView: View {
                         KeyDisplay.shared.stop()
                     }
                 }
-            Text("录制时浮出按键（如 ⌘⇧R、Space），约 1 秒后淡出；位置随录制区域左下角。需要「输入监控」权限。")
+            Text("录制时在画面左下角浮出所按的按键，约 1 秒后淡出。")
                 .font(.caption).foregroundStyle(.secondary)
             if settings.keyDisplayEnabled && keyDisplay.permissionDenied {
                 permissionCard(title: "缺少「输入监控」权限",
-                               detail: "授权后按键提示才会显示（录制本身不受影响）。去系统设置勾选 Sakura-Cap 后，重启应用即可生效。",
+                               detail: "授权后按键提示才会显示，不影响录制。请在系统设置中勾选 Sakura-Cap 并重启应用。",
                                buttonTitle: "打开系统设置") {
                     PermissionCenter.openInputMonitoringSettings()
                 }
@@ -257,7 +257,7 @@ struct PanelView: View {
 
     private var optionsCard: some View {
         card("选项") {
-            Toggle("开始前 3 秒倒计时（不录入视频）", isOn: $settings.countdownEnabled)
+            Toggle("开始前 3 秒倒计时", isOn: $settings.countdownEnabled)
             Toggle("显示鼠标指针", isOn: $settings.showCursor)
             Toggle("开始 / 结束提示音", isOn: $settings.soundEnabled)
             Picker("画质", selection: $settings.quality) {
@@ -296,7 +296,7 @@ struct PanelView: View {
                     Text(cs.label).tag(cs)
                 }
             }
-            Text("提示：HEVC 同画质下文件明显更小；「高」画质 4K30 约 27Mbps（H.264）。色彩标注为 BT.709，可用 ./verify.sh 校验")
+            Text("HEVC 同画质下文件更小、更省空间；H.264 兼容性更广。画质越高画面越清晰，文件也越大。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -337,7 +337,7 @@ struct PanelView: View {
     private var permissionCards: some View {
         if !PermissionCenter.screenCaptureGranted() {
             permissionCard(title: "缺少「屏幕录制」权限",
-                           detail: "授权后 Sakura-Cap 才能采集屏幕画面。勾选后如未生效请重启应用。",
+                           detail: "授权后 Sakura-Cap 才能录制屏幕画面。若已勾选但仍无效，请重启应用。",
                            buttonTitle: "打开系统设置") {
                 PermissionCenter.openScreenCaptureSettings()
             }

@@ -95,7 +95,7 @@ final class RecordingController: ObservableObject {
         // 1. 屏幕录制权限
         guard PermissionCenter.screenCaptureGranted() else {
             PermissionCenter.openScreenCaptureSettings()
-            abort("需要「屏幕录制」权限：已打开系统设置，请勾选 Sakura-Cap 后重试。提示：ad-hoc 签名每次重新编译后都需要重新授权。")
+            abort("需要「屏幕录制」权限。已为你打开系统设置，请在「隐私与安全性 → 屏幕录制」中允许 Sakura-Cap，然后重新开始录制。")
             return
         }
         guard gen == generation else { return }
@@ -114,11 +114,11 @@ final class RecordingController: ObservableObject {
             Log.app.notice("可采集内容: \(displays.count) 台显示器")
             if displays.isEmpty {
                 PermissionCenter.openScreenCaptureSettings()
-                abort("未能列出任何显示器——屏幕录制授权可能因重新编译而失效（ad-hoc 签名特性）。请在系统设置中取消勾选再重新勾选 Sakura-Cap。")
+                abort("没有检测到可录制的显示器。请确认已在「隐私与安全性 → 屏幕录制」中允许 Sakura-Cap 访问。")
                 return
             }
         } catch {
-            abort("获取可采集内容失败：\(error.localizedDescription)（多为屏幕录制权限问题）")
+            abort("无法获取可录制的内容。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问。")
             return
         }
         guard gen == generation else { return }
@@ -139,13 +139,13 @@ final class RecordingController: ObservableObject {
         if settings.clickIndicatorEnabled {
             IndicatorEngine.shared.beginCapture()
             if !IndicatorEngine.shared.isMonitoring {
-                banner = "点击指示需要「输入监控」权限，本次录制不含点击标记（录制本身不受影响）"
+                banner = "未获得「输入监控」权限，本次录制不含点击标记（不影响录制）。"
             }
         }
         if settings.keyDisplayEnabled {
             KeyDisplay.shared.beginCapture()
             if !KeyDisplay.shared.isMonitoring {
-                banner = "按键显示需要「输入监控」权限，本次录制不含按键提示（录制本身不受影响）"
+                banner = "未获得「输入监控」权限，本次录制不含按键提示（不影响录制）。"
             }
         }
 
@@ -189,7 +189,7 @@ final class RecordingController: ObservableObject {
             IndicatorEngine.shared.endCapture()
             KeyDisplay.shared.endCapture()
             _ = await teardownSessions(saveFiles: false)
-            abort("启动采集失败：\(error.localizedDescription)（多为屏幕录制授权失效）")
+            abort("无法启动屏幕采集。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问。")
             return
         }
         guard gen == generation, state == .preparing else {
@@ -211,7 +211,7 @@ final class RecordingController: ObservableObject {
             KeyDisplay.shared.endCapture()
             mic?.stop(); mic = nil
             _ = await teardownSessions(saveFiles: true)
-            abort("启动采集失败：\(error.localizedDescription)")
+            abort("无法启动录制，请重试。若反复失败，请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问。")
             return
         }
         guard gen == generation, state == .preparing else {
@@ -261,19 +261,19 @@ final class RecordingController: ObservableObject {
             granted = await AVCaptureDevice.requestAccess(for: .audio)
         }
         guard granted else {
-            banner = "麦克风权限不可用，本次录制将不含麦克风音轨"
+            banner = "未获得麦克风权限，本次录制不含麦克风声音。"
             return nil
         }
         let capture = MicCapture()
         do {
             try capture.start()
         } catch {
-            banner = "麦克风启动失败（\(error.localizedDescription)），本次录制将不含麦克风音轨"
+            banner = "麦克风不可用，本次录制不含麦克风声音。"
             return nil
         }
         guard let format = await capture.waitForFormat(timeout: 1.5) else {
             capture.stop()
-            banner = "麦克风未就绪，本次录制将不含麦克风音轨"
+            banner = "麦克风未就绪，本次录制不含麦克风声音。"
             return nil
         }
         mic = capture
@@ -302,7 +302,7 @@ final class RecordingController: ObservableObject {
 
         if wasRecording {
             if files.isEmpty {
-                let message = "未捕获到有效画面（0 帧），文件未保存。常见原因：屏幕录制授权因重新编译失效，请重新授权后重试。"
+                let message = "本次没有录到画面，文件未保存。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问，然后重试。"
                 Log.app.error("录制零帧: \(message, privacy: .public)")
                 banner = message
                 let alert = NSAlert()

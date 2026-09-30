@@ -97,7 +97,7 @@ final class StatusItemController: NSObject {
                 PermissionCenter.openScreenCaptureSettings()
                 let alert = NSAlert()
                 alert.messageText = "需要「屏幕录制」权限"
-                alert.informativeText = "请在 系统设置 → 隐私与安全性 → 屏幕录制 中勾选 Sakura-Cap，然后重新点击「开始录制」。"
+                alert.informativeText = "请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许 Sakura-Cap，然后重新开始录制。"
                 alert.addButton(withTitle: "好")
                 alert.runModal()
                 return
