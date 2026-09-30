@@ -68,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { controller?.emergencyFinalize() }
         }
 
-        // 首启打开设置窗口：引导选输出目录与权限
-        statusItem.showSettings()
+        // 启动时不主动弹出设置窗口：仅当用户从菜单栏点击「设置…」时才打开。
+        // 未选输出目录等前置条件由录制启动流程自行兜底（OutputDirectoryPicker）。
     }
 }
