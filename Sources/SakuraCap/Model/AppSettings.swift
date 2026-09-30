@@ -22,6 +22,8 @@ final class AppSettings: ObservableObject {
         static let indicatorSize = "indicatorSize"
         static let indicatorDuration = "indicatorDuration"
         static let indicatorRight = "indicatorIncludeRightClick"
+        static let keyDisplay = "keyDisplayEnabled"
+        static let sound = "soundEnabled"
         static let countdown = "countdownEnabled"
         static let codec = "videoCodec"
         static let quality = "videoQuality"
@@ -52,6 +54,11 @@ final class AppSettings: ObservableObject {
     @Published var indicatorSize: Double = 56 { didSet { d.set(indicatorSize, forKey: Keys.indicatorSize) } }
     @Published var indicatorDuration: Double = 0.8 { didSet { d.set(indicatorDuration, forKey: Keys.indicatorDuration) } }
     @Published var indicatorIncludeRightClick = false { didSet { d.set(indicatorIncludeRightClick, forKey: Keys.indicatorRight) } }
+
+    // 键盘按键显示（默认关闭）
+    @Published var keyDisplayEnabled = false { didSet { d.set(keyDisplayEnabled, forKey: Keys.keyDisplay) } }
+    // 录制开始/结束提示音（默认开启）
+    @Published var soundEnabled = true { didSet { d.set(soundEnabled, forKey: Keys.sound) } }
 
     @Published var countdownEnabled = true { didSet { d.set(countdownEnabled, forKey: Keys.countdown) } }
     @Published var codec: VideoCodec = .h264 { didSet { d.set(codec.rawValue, forKey: Keys.codec) } }
@@ -84,6 +91,8 @@ final class AppSettings: ObservableObject {
         if d.object(forKey: Keys.indicatorSize) != nil { indicatorSize = d.double(forKey: Keys.indicatorSize) }
         if d.object(forKey: Keys.indicatorDuration) != nil { indicatorDuration = d.double(forKey: Keys.indicatorDuration) }
         indicatorIncludeRightClick = d.bool(forKey: Keys.indicatorRight)
+        keyDisplayEnabled = d.bool(forKey: Keys.keyDisplay)
+        soundEnabled = d.object(forKey: Keys.sound) == nil ? true : d.bool(forKey: Keys.sound)
         countdownEnabled = d.object(forKey: Keys.countdown) == nil ? true : d.bool(forKey: Keys.countdown)
         if let raw = d.string(forKey: Keys.codec), let c = VideoCodec(rawValue: raw) { codec = c }
         if let raw = d.string(forKey: Keys.quality), let q = VideoQuality(rawValue: raw) { quality = q }

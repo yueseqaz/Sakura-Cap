@@ -117,6 +117,8 @@ enum StreamPlanner {
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, settings.fps.rawValue)))
         config.queueDepth = 6
         config.showsCursor = settings.showCursor
+        // 不把本进程（提示音等）的声音采集进去；其他 App 的系统声音不受影响
+        config.excludesCurrentProcessAudio = true
         if #available(macOS 14.0, *) {
             // BGRA 全范围 RGB 直采；实测不显式指定色彩空间会录出全黑
             config.pixelFormat = kCVPixelFormatType_32BGRA

@@ -27,6 +27,9 @@ final class PanelViewModel: ObservableObject {
         if AppSettings.shared.clickIndicatorEnabled {
             IndicatorEngine.shared.start()
         }
+        if AppSettings.shared.keyDisplayEnabled {
+            KeyDisplay.shared.start()
+        }
     }
 
     func refreshContent() {

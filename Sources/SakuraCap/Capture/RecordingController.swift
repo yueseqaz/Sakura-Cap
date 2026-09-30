@@ -135,11 +135,17 @@ final class RecordingController: ObservableObject {
             return
         }
 
-        // 5. 点击指示（可选功能，失败不阻断录制）
+        // 5. 点击指示 / 按键显示（可选功能，失败不阻断录制）
         if settings.clickIndicatorEnabled {
             IndicatorEngine.shared.beginCapture()
             if !IndicatorEngine.shared.isMonitoring {
                 banner = "点击指示需要「输入监控」权限，本次录制不含点击标记（录制本身不受影响）"
+            }
+        }
+        if settings.keyDisplayEnabled {
+            KeyDisplay.shared.beginCapture()
+            if !KeyDisplay.shared.isMonitoring {
+                banner = "按键显示需要「输入监控」权限，本次录制不含按键提示（录制本身不受影响）"
             }
         }
 
@@ -181,12 +187,14 @@ final class RecordingController: ObservableObject {
         } catch {
             mic?.stop(); mic = nil
             IndicatorEngine.shared.endCapture()
+            KeyDisplay.shared.endCapture()
             _ = await teardownSessions(saveFiles: false)
             abort("启动采集失败：\(error.localizedDescription)（多为屏幕录制授权失效）")
             return
         }
         guard gen == generation, state == .preparing else {
             IndicatorEngine.shared.endCapture()
+            KeyDisplay.shared.endCapture()
             mic?.stop(); mic = nil
             _ = await teardownSessions(saveFiles: false)
             state = .idle
@@ -200,6 +208,7 @@ final class RecordingController: ObservableObject {
             }
         } catch {
             IndicatorEngine.shared.endCapture()
+            KeyDisplay.shared.endCapture()
             mic?.stop(); mic = nil
             _ = await teardownSessions(saveFiles: true)
             abort("启动采集失败：\(error.localizedDescription)")
@@ -207,6 +216,7 @@ final class RecordingController: ObservableObject {
         }
         guard gen == generation, state == .preparing else {
             IndicatorEngine.shared.endCapture()
+            KeyDisplay.shared.endCapture()
             mic?.stop(); mic = nil
             _ = await teardownSessions(saveFiles: false)
             state = .idle
@@ -221,6 +231,7 @@ final class RecordingController: ObservableObject {
             }
             guard gen == generation, state == .countdown else {
                 IndicatorEngine.shared.endCapture()
+                KeyDisplay.shared.endCapture()
                 mic?.stop(); mic = nil
                 _ = await teardownSessions(saveFiles: false)
                 state = .idle
@@ -237,6 +248,7 @@ final class RecordingController: ObservableObject {
         elapsed = 0
         startTimer()
         state = .recording
+        SoundCue.playStart()
         Log.app.info("开始录制：\(self.sessions.count) 路输出")
     }
 
@@ -276,7 +288,9 @@ final class RecordingController: ObservableObject {
         stopTimer()
         isPaused = false
         pauseStartedAt = nil
+        if wasRecording { SoundCue.playStop() }
         IndicatorEngine.shared.endCapture()
+        KeyDisplay.shared.endCapture()
         mic?.stop(); mic = nil
 
         let duration = elapsed

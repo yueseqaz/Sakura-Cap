@@ -7,6 +7,7 @@ struct PanelView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var catalog = DisplayCatalog.shared
     @ObservedObject private var indicator = IndicatorEngine.shared
+    @ObservedObject private var keyDisplay = KeyDisplay.shared
 
     private enum SettingsSection: String, CaseIterable, Identifiable {
         case audio
@@ -64,8 +65,11 @@ struct PanelView: View {
             audioCard
                 .disabled(controller.isBusy)
         case .appearance:
-            indicatorCard
-                .disabled(controller.isBusy)
+            VStack(alignment: .leading, spacing: 12) {
+                indicatorCard
+                keyDisplayCard
+            }
+            .disabled(controller.isBusy)
         case .video:
             optionsCard
                 .disabled(controller.isBusy)
@@ -232,12 +236,37 @@ struct PanelView: View {
         }
     }
 
+    // MARK: - 键盘按键显示
+
+    private var keyDisplayCard: some View {
+        card("键盘按键显示") {
+            Toggle("在录制区域左下角显示所按的按键", isOn: $settings.keyDisplayEnabled)
+                .onChange(of: settings.keyDisplayEnabled) { enabled in
+                    if enabled {
+                        KeyDisplay.shared.start()
+                    } else {
+                        KeyDisplay.shared.stop()
+                    }
+                }
+            Text("录制时浮出按键（如 ⌘⇧R、Space），约 1 秒后淡出；位置随录制区域左下角。需要「输入监控」权限。")
+                .font(.caption).foregroundStyle(.secondary)
+            if settings.keyDisplayEnabled && keyDisplay.permissionDenied {
+                permissionCard(title: "缺少「输入监控」权限",
+                               detail: "授权后按键提示才会显示（录制本身不受影响）。去系统设置勾选 Sakura-Cap 后，重启应用即可生效。",
+                               buttonTitle: "打开系统设置") {
+                    PermissionCenter.openInputMonitoringSettings()
+                }
+            }
+        }
+    }
+
     // MARK: - 选项 / 输出 / 快捷键
 
     private var optionsCard: some View {
         card("选项") {
             Toggle("开始前 3 秒倒计时（不录入视频）", isOn: $settings.countdownEnabled)
             Toggle("显示鼠标指针", isOn: $settings.showCursor)
+            Toggle("开始 / 结束提示音", isOn: $settings.soundEnabled)
             Picker("画质", selection: $settings.quality) {
                 ForEach(VideoQuality.allCases) { q in
                     Text(q.label).tag(q)
