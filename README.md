@@ -35,6 +35,7 @@
 
 ```bash
 brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap
+brew trust yueseqaz/sakura-cap          # 新版 Homebrew 需先信任第三方 Tap
 brew install --cask sakura-cap
 ```
 
