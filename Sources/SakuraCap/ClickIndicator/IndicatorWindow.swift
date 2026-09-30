@@ -72,7 +72,6 @@ final class IndicatorContentView: NSView {
             return
         }
         let settings = AppSettings.shared
-        let color = NSColor(settings.indicatorColor).withAlphaComponent(0.95).cgColor
         let duration = max(0.2, settings.indicatorDuration)
 
         CATransaction.begin()
@@ -80,18 +79,35 @@ final class IndicatorContentView: NSView {
             self?.completion?()
         }
 
+        // 协调观感：圆角 + 白色描边 + 柔和阴影，各种背景上都清晰
+        let color = NSColor(settings.indicatorColor).withAlphaComponent(0.95).cgColor
         let arrow = CAShapeLayer()
         arrow.path = Self.arrowPath(bounds: bounds)
         arrow.fillColor = color
+        arrow.strokeColor = NSColor.white.withAlphaComponent(0.92).cgColor
+        arrow.lineWidth = max(1.5, bounds.width * 0.022)
+        arrow.lineJoin = .round
+        arrow.lineCap = .round
+        arrow.shadowColor = NSColor.black.cgColor
+        arrow.shadowOpacity = 0.25
+        arrow.shadowRadius = bounds.width * 0.06
+        arrow.shadowOffset = .zero
         layer.addSublayer(arrow)
+
+        // 轻微「弹出」后淡出
+        let pop = CAKeyframeAnimation(keyPath: "transform.scale")
+        pop.values = [0.82, 1.0, 1.06, 1.0]
+        pop.keyTimes = [0.0, 0.45, 0.72, 1.0]
+        pop.duration = min(0.3, duration)
+        pop.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        arrow.add(pop, forKey: "pop")
+
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = 1.0
         fade.toValue = 0.0
-        let group = CAAnimationGroup()
-        group.animations = [fade]
-        group.duration = duration
-        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        arrow.add(group, forKey: "fade")
+        fade.duration = duration
+        fade.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        arrow.add(fade, forKey: "fade")
         arrow.opacity = 0
 
         CATransaction.commit()
