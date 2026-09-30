@@ -92,17 +92,7 @@ final class KeyDisplay: ObservableObject {
 
     /// 目标区域：全屏模式取所录屏幕；区域模式取选区内。按键窗口落在其左下角。
     private static func targetRect() -> NSRect? {
-        let settings = AppSettings.shared
-        if settings.captureMode == .region, let region = settings.lastRegion,
-           let screen = NSScreen.screens.first(where: { $0.displayID == region.displayID }) {
-            let local = ScreenCoordinate.appKitLocalRect(fromSCKRect: region.sckRect, in: screen)
-            return NSRect(x: screen.frame.minX + local.minX,
-                          y: screen.frame.minY + local.minY,
-                          width: local.width, height: local.height)
-        }
-        let screen = NSScreen.screens.first { $0.displayID == settings.selectedDisplayID }
-            ?? NSScreen.main ?? NSScreen.screens.first
-        return screen?.frame
+        RecordingTarget.rect()
     }
 }
 

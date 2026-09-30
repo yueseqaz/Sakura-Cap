@@ -23,6 +23,11 @@ final class AppSettings: ObservableObject {
         static let indicatorRight = "indicatorIncludeRightClick"
         static let keyDisplay = "keyDisplayEnabled"
         static let sound = "soundEnabled"
+        static let cameraPiP = "cameraPiPEnabled"
+        static let cameraDevice = "cameraPiPDeviceID"
+        static let cameraSize = "cameraPiPSize"
+        static let cameraMirror = "cameraPiPMirror"
+        static let cameraCorner = "cameraPiPCorner"
         static let countdown = "countdownEnabled"
         static let codec = "videoCodec"
         static let quality = "videoQuality"
@@ -58,6 +63,13 @@ final class AppSettings: ObservableObject {
     // 录制开始/结束提示音（默认开启）
     @Published var soundEnabled = true { didSet { d.set(soundEnabled, forKey: Keys.sound) } }
 
+    // 摄像头画中画（默认关闭）
+    @Published var cameraPiPEnabled = false { didSet { d.set(cameraPiPEnabled, forKey: Keys.cameraPiP) } }
+    @Published var cameraPiPDeviceID = "" { didSet { d.set(cameraPiPDeviceID, forKey: Keys.cameraDevice) } }
+    @Published var cameraPiPSize: Double = 18 { didSet { d.set(cameraPiPSize, forKey: Keys.cameraSize) } }
+    @Published var cameraPiPMirror = true { didSet { d.set(cameraPiPMirror, forKey: Keys.cameraMirror) } }
+    @Published var cameraPiPCorner: PiPCorner = .bottomRight { didSet { d.set(cameraPiPCorner.rawValue, forKey: Keys.cameraCorner) } }
+
     @Published var countdownEnabled = true { didSet { d.set(countdownEnabled, forKey: Keys.countdown) } }
     @Published var codec: VideoCodec = .h264 { didSet { d.set(codec.rawValue, forKey: Keys.codec) } }
     @Published var quality: VideoQuality = .high { didSet { d.set(quality.rawValue, forKey: Keys.quality) } }
@@ -90,6 +102,11 @@ final class AppSettings: ObservableObject {
         indicatorIncludeRightClick = d.bool(forKey: Keys.indicatorRight)
         keyDisplayEnabled = d.bool(forKey: Keys.keyDisplay)
         soundEnabled = d.object(forKey: Keys.sound) == nil ? true : d.bool(forKey: Keys.sound)
+        cameraPiPEnabled = d.bool(forKey: Keys.cameraPiP)
+        cameraPiPDeviceID = d.string(forKey: Keys.cameraDevice) ?? ""
+        if d.object(forKey: Keys.cameraSize) != nil { cameraPiPSize = d.double(forKey: Keys.cameraSize) }
+        cameraPiPMirror = d.object(forKey: Keys.cameraMirror) == nil ? true : d.bool(forKey: Keys.cameraMirror)
+        if let raw = d.string(forKey: Keys.cameraCorner), let corner = PiPCorner(rawValue: raw) { cameraPiPCorner = corner }
         countdownEnabled = d.object(forKey: Keys.countdown) == nil ? true : d.bool(forKey: Keys.countdown)
         if let raw = d.string(forKey: Keys.codec), let c = VideoCodec(rawValue: raw) { codec = c }
         if let raw = d.string(forKey: Keys.quality), let q = VideoQuality(rawValue: raw) { quality = q }

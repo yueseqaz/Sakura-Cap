@@ -18,11 +18,12 @@ final class RecordingHUDController {
             .store(in: &cancellables)
     }
 
-    /// 仅在录制阶段显示（暂停时保持显示）
+    /// 待开始 / 准备 / 倒计时 / 录制期间都显示
     func sync() {
-        if controller.state == .recording {
+        switch controller.state {
+        case .ready, .preparing, .countdown, .recording:
             show()
-        } else {
+        default:
             hide()
         }
     }
@@ -39,8 +40,7 @@ final class RecordingHUDController {
 
     private func makeWindow() -> NSWindow {
         let hosting = NSHostingView(rootView: RecordingHUDView(controller: controller))
-        hosting.layoutSubtreeIfNeeded()
-        let size = hosting.fittingSize
+        let size = NSSize(width: 226, height: 44)
         let window = HUDPanel(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.borderless, .nonactivatingPanel],
                               backing: .buffered, defer: false)
@@ -81,46 +81,80 @@ private struct RecordingHUDView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 8, height: 8)
-                    .opacity(controller.isPaused ? 0.35 : 1)
-                Text(StatusItemController.mmss(controller.elapsed))
-                    .font(.system(size: 14, weight: .semibold))
-                    .monospacedDigit()
-                    .frame(width: 50, alignment: .leading)
+            switch controller.state {
+            case .ready:
+                Circle().fill(Color.red).frame(width: 8, height: 8)
+                Text("准备就绪").font(.system(size: 13, weight: .medium))
+                Spacer(minLength: 4)
+                Button("开始录制") { controller.start() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .controlSize(.small)
+                cancelButton({ controller.cancelArmed() }, help: "取消")
+            case .preparing, .countdown:
+                ProgressView().controlSize(.small)
+                Text(controller.state == .countdown ? "即将开始…" : "准备中…")
+                    .font(.system(size: 13, weight: .medium))
+                Spacer(minLength: 4)
+                cancelButton({ controller.stop() }, help: "取消")
+            default:
+                recordingContent
             }
-
-            Rectangle()
-                .fill(Color.primary.opacity(0.15))
-                .frame(width: 1, height: 18)
-
-            Button(action: { controller.togglePause() }) {
-                Image(systemName: controller.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(controller.isPaused ? "继续录制" : "暂停录制")
-
-            Button(action: { controller.stop() }) {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 26, height: 26)
-                    .background(Circle().fill(Color.red))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .help("停止录制")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .frame(width: 226, height: 44)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().stroke(Color.black.opacity(0.12), lineWidth: 0.5))
-        .fixedSize()
+    }
+
+    @ViewBuilder
+    private var recordingContent: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+                .opacity(controller.isPaused ? 0.35 : 1)
+            Text(StatusItemController.mmss(controller.elapsed))
+                .font(.system(size: 14, weight: .semibold))
+                .monospacedDigit()
+                .frame(width: 50, alignment: .leading)
+        }
+
+        Rectangle()
+            .fill(Color.primary.opacity(0.15))
+            .frame(width: 1, height: 18)
+
+        Button(action: { controller.togglePause() }) {
+            Image(systemName: controller.isPaused ? "play.fill" : "pause.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.primary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(controller.isPaused ? "继续录制" : "暂停录制")
+
+        Button(action: { controller.stop() }) {
+            Image(systemName: "stop.fill")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.red))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("停止录制")
+    }
+
+    private func cancelButton(_ action: @escaping () -> Void, help: String) -> some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }

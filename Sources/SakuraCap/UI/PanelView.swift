@@ -1,13 +1,14 @@
 import SwiftUI
+import AVFoundation
 
 /// 主面板：模式选择、显示器/窗口/区域、音频、点击指示、编码与帧率、输出目录、快捷键、权限引导。
 struct PanelView: View {
     @ObservedObject var viewModel: PanelViewModel
     @ObservedObject private var controller: RecordingController
     @ObservedObject private var settings = AppSettings.shared
-    @ObservedObject private var catalog = DisplayCatalog.shared
     @ObservedObject private var indicator = IndicatorEngine.shared
     @ObservedObject private var keyDisplay = KeyDisplay.shared
+    @ObservedObject private var camera = CameraPiP.shared
 
     private enum SettingsSection: String, CaseIterable, Identifiable {
         case audio
@@ -68,6 +69,7 @@ struct PanelView: View {
             VStack(alignment: .leading, spacing: 12) {
                 indicatorCard
                 keyDisplayCard
+                cameraCard
             }
             .disabled(controller.isBusy)
         case .video:
@@ -102,78 +104,12 @@ struct PanelView: View {
 
     private var statusText: String {
         switch controller.state {
+        case .ready: return "准备就绪"
         case .preparing: return "准备中…"
         case .countdown: return "即将开始…"
         case .finalizing: return "正在保存…"
         default: return ""
         }
-    }
-
-    private var recordButton: some View {
-        Button(action: { viewModel.toggleRecord() }) {
-            HStack(spacing: 8) {
-                Image(systemName: controller.state == .recording ? "stop.fill" : "record.circle")
-                Text(controller.state == .recording
-                     ? "停止录制（\(StatusItemController.mmss(controller.elapsed))）"
-                     : "开始录制（\(settings.hotKeyDisplay)）")
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
-        }
-        .buttonStyle(.borderedProminent)
-        .tint(controller.state == .recording ? .red : .pink)
-        .disabled(controller.state == .preparing || controller.state == .finalizing)
-    }
-
-    // MARK: - 录制内容
-
-    private var contentCard: some View {
-        card("录制内容") {
-            Picker("模式", selection: $settings.captureMode) {
-                ForEach(CaptureMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
-            switch settings.captureMode {
-            case .display:
-                if catalog.displays.isEmpty {
-                    Text(catalogHint)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Picker("", selection: $settings.selectedDisplayID) {
-                        ForEach(catalog.displays) { display in
-                            HStack {
-                                Text(display.name)
-                                if display.isMain {
-                                    Text("主屏").font(.caption2).foregroundStyle(.pink)
-                                }
-                                Text("\(display.resolutionText) · \(display.scaleText)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .tag(display.id)
-                        }
-                    }
-                    .pickerStyle(.radioGroup)
-                    .labelsHidden()
-                    Toggle("所有显示器分别保存一个文件", isOn: $settings.allDisplaysParallel)
-                }
-            case .region:
-                Text(viewModel.regionSummary).font(.callout)
-                Button("框选区域并开始录制…") { viewModel.pickRegion() }
-                Text("也可以点菜单栏图标 →「开始录制 → 框选区域」")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var catalogHint: String {
-        PermissionCenter.screenCaptureGranted() ? "正在加载显示器…" : "需要「屏幕录制」权限后才能列出显示器"
     }
 
     // MARK: - 音频
@@ -248,6 +184,50 @@ struct PanelView: View {
                                detail: "授权后按键提示才会显示，不影响录制。请在系统设置中勾选 Sakura-Cap 并重启应用。",
                                buttonTitle: "打开系统设置") {
                     PermissionCenter.openInputMonitoringSettings()
+                }
+            }
+        }
+    }
+
+    // MARK: - 摄像头画中画
+
+    private var cameraCard: some View {
+        card("摄像头画中画") {
+            Toggle("在画面中显示摄像头", isOn: $settings.cameraPiPEnabled)
+                .onChange(of: settings.cameraPiPEnabled) { enabled in
+                    CameraPiP.shared.setEnabled(enabled)
+                }
+            if settings.cameraPiPEnabled {
+                Picker("摄像头", selection: $settings.cameraPiPDeviceID) {
+                    Text("系统默认").tag("")
+                    ForEach(camera.devices, id: \.uniqueID) { device in
+                        Text(device.localizedName).tag(device.uniqueID)
+                    }
+                }
+                .onChange(of: settings.cameraPiPDeviceID) { _ in CameraPiP.shared.refreshConfiguration() }
+                HStack {
+                    Text("大小")
+                    Slider(value: $settings.cameraPiPSize, in: 10...40, step: 2)
+                        .onChange(of: settings.cameraPiPSize) { _ in CameraPiP.shared.refreshConfiguration() }
+                    Text("\(Int(settings.cameraPiPSize))%").monospacedDigit().frame(width: 36)
+                }
+                Picker("位置", selection: $settings.cameraPiPCorner) {
+                    ForEach(PiPCorner.allCases) { corner in
+                        Text(corner.label).tag(corner)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: settings.cameraPiPCorner) { _ in CameraPiP.shared.refreshConfiguration() }
+                Toggle("镜像画面", isOn: $settings.cameraPiPMirror)
+                    .onChange(of: settings.cameraPiPMirror) { _ in CameraPiP.shared.refreshConfiguration() }
+                Text("录制时摄像头以圆角小窗显示在所选角落，可拖动调整位置。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if camera.permissionDenied {
+                    permissionCard(title: "缺少「摄像头」权限",
+                                   detail: "授权后摄像头画面才会显示，不影响录制。请在系统设置中允许 Sakura-Cap 使用摄像头。",
+                                   buttonTitle: "打开系统设置") {
+                        PermissionCenter.openCameraSettings()
+                    }
                 }
             }
         }

@@ -7,7 +7,7 @@ import ScreenCaptureKit
 @MainActor
 final class RecordingController: ObservableObject {
     enum State: Equatable {
-        case idle, preparing, countdown, recording, finalizing
+        case idle, ready, preparing, countdown, recording, finalizing
     }
 
     @Published private(set) var state: State = .idle
@@ -35,11 +35,25 @@ final class RecordingController: ObservableObject {
     var isBusy: Bool { state != .idle }
 
     func toggle() {
-        if state == .idle {
+        switch state {
+        case .idle, .ready:
             start()
-        } else {
+        default:
             stop()
         }
+    }
+
+    /// 选择完成后进入「待开始」：不立即采集，等用户点「开始录制」
+    func arm() {
+        guard state == .idle else { return }
+        banner = nil
+        state = .ready
+    }
+
+    /// 取消「待开始」状态
+    func cancelArmed() {
+        guard state == .ready else { return }
+        state = .idle
     }
 
     /// 暂停/继续（仅录制中有意义）
@@ -60,7 +74,7 @@ final class RecordingController: ObservableObject {
     }
 
     func start() {
-        guard state == .idle else { return }
+        guard state == .idle || state == .ready else { return }
         generation += 1
         let gen = generation
         Task { await startFlow(generation: gen) }

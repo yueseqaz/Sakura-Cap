@@ -18,8 +18,6 @@ final class StatusItemController: NSObject {
 
         let viewModel = PanelViewModel(controller: controller)
         self.viewModel = viewModel
-        viewModel.requestClosePanel = { [weak self] in self?.closeSettings() }
-        viewModel.requestOpenPanel = { [weak self] in self?.showSettings() }
 
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "record.circle",
@@ -56,7 +54,10 @@ final class StatusItemController: NSObject {
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
-        if controller.state == .recording {
+        if controller.state == .ready {
+            menu.addItem(makeItem("开始录制", #selector(menuToggle)))
+            menu.addItem(makeItem("取消", #selector(menuCancelArmed)))
+        } else if controller.state == .recording {
             let pauseTitle = controller.isPaused
                 ? "继续录制（\(Self.mmss(controller.elapsed))）"
                 : "暂停录制（\(Self.mmss(controller.elapsed))）"
@@ -86,6 +87,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func menuToggle() { controller.toggle() }
+    @objc private func menuCancelArmed() { controller.cancelArmed() }
     @objc private func menuPause() { controller.togglePause() }
 
     @objc private func recordDisplay() { beginSelection(.displayOnly) }
@@ -126,10 +128,6 @@ final class StatusItemController: NSObject {
         window.makeKeyAndOrderFront(nil)
     }
 
-    func closeSettings() {
-        settingsWindow?.performClose(nil)
-    }
-
     private func ensureSettingsWindow() -> NSWindow {
         if let window = settingsWindow { return window }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
@@ -153,6 +151,11 @@ final class StatusItemController: NSObject {
         case .idle:
             RegionFrameOverlay.shared.hide()
             button.contentTintColor = nil
+            button.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
+            button.title = ""
+        case .ready:
+            // 已选定范围、待用户确认开始
+            button.contentTintColor = .systemOrange
             button.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
             button.title = ""
         case .preparing, .countdown:

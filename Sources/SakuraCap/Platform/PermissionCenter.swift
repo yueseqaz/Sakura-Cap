@@ -32,6 +32,7 @@ enum PermissionCenter {
 
     static func openScreenCaptureSettings() { openPrivacyPane("Privacy_ScreenCapture") }
     static func openMicrophoneSettings() { openPrivacyPane("Privacy_Microphone") }
+    static func openCameraSettings() { openPrivacyPane("Privacy_Camera") }
     static func openInputMonitoringSettings() { openPrivacyPane("Privacy_ListenEvent") }
 
     // MARK: - 输入监控（ListenEvent，全局键盘/鼠标监听）

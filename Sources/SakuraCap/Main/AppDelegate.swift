@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusItem = statusItem
         // 录制悬浮控制条（自己订阅 controller 状态，此处仅保留引用）
         self.hud = RecordingHUDController(controller: controller)
+        // 摄像头画中画：绑定录制状态
+        CameraPiP.shared.attach(controller: controller)
 
         HotKeyManager.shared.onToggle = { [weak controller] in
             Task { @MainActor in controller?.toggle() }
@@ -48,7 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 settings.updateRegion(region)
                 RegionFrameOverlay.shared.show(region: region)
             }
-            controller.start()
+            // 选择完成后不立即开录：进入待开始状态，由 HUD 上的「开始录制」确认
+            controller.arm()
         }
         // 仅区域框选被取消时回到设置窗口；可视化选择取消则不做任何事
         SelectionController.shared.onCancelled = { [weak self] intent in

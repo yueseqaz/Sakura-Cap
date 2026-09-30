@@ -98,6 +98,21 @@ enum VideoQuality: String, CaseIterable, Identifiable {
     }
 }
 
+/// 画中画位置（录制区域的四角）
+enum PiPCorner: String, CaseIterable, Identifiable {
+    case topLeft, topRight, bottomLeft, bottomRight
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .topLeft: return "左上"
+        case .topRight: return "右上"
+        case .bottomLeft: return "左下"
+        case .bottomRight: return "右下"
+        }
+    }
+}
+
 /// 自定义区域：SCK 坐标（该屏左上原点、单位 pt）+ 所在显示器
 struct RegionSelection: Codable, Equatable {
     let displayID: CGDirectDisplayID
