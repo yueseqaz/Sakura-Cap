@@ -98,19 +98,6 @@ enum VideoQuality: String, CaseIterable, Identifiable {
     }
 }
 
-enum IndicatorStyleKind: String, CaseIterable, Identifiable {
-    case ring
-    case arrow
-
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .ring: return "扩散圆环"
-        case .arrow: return "指向箭头"
-        }
-    }
-}
-
 /// 自定义区域：SCK 坐标（该屏左上原点、单位 pt）+ 所在显示器
 struct RegionSelection: Codable, Equatable {
     let displayID: CGDirectDisplayID

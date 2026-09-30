@@ -203,13 +203,6 @@ struct PanelView: View {
                     }
                 }
             if settings.clickIndicatorEnabled {
-                Picker("样式", selection: $settings.indicatorStyle) {
-                    ForEach(IndicatorStyleKind.allCases) { style in
-                        Text(style.label).tag(style)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 ColorPicker("颜色", selection: Binding(
                     get: { settings.indicatorColor },
                     set: { settings.indicatorColor = $0 }

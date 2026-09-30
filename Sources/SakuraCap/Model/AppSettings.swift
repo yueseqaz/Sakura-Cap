@@ -17,7 +17,6 @@ final class AppSettings: ObservableObject {
         static let systemAudio = "recordSystemAudio"
         static let microphone = "recordMicrophone"
         static let indicator = "clickIndicatorEnabled"
-        static let indicatorStyle = "indicatorStyle"
         static let indicatorColor = "indicatorColorRGBA"
         static let indicatorSize = "indicatorSize"
         static let indicatorDuration = "indicatorDuration"
@@ -49,7 +48,6 @@ final class AppSettings: ObservableObject {
 
     // 点击指示：默认关闭（产品确认）
     @Published var clickIndicatorEnabled = false { didSet { d.set(clickIndicatorEnabled, forKey: Keys.indicator) } }
-    @Published var indicatorStyle: IndicatorStyleKind = .ring { didSet { d.set(indicatorStyle.rawValue, forKey: Keys.indicatorStyle) } }
     @Published var indicatorColorRGBA: [Double] = [0.93, 0.25, 0.38, 0.95] { didSet { d.set(indicatorColorRGBA, forKey: Keys.indicatorColor) } }
     @Published var indicatorSize: Double = 56 { didSet { d.set(indicatorSize, forKey: Keys.indicatorSize) } }
     @Published var indicatorDuration: Double = 0.8 { didSet { d.set(indicatorDuration, forKey: Keys.indicatorDuration) } }
@@ -86,7 +84,6 @@ final class AppSettings: ObservableObject {
         recordSystemAudio = d.object(forKey: Keys.systemAudio) == nil ? true : d.bool(forKey: Keys.systemAudio)
         recordMicrophone = d.bool(forKey: Keys.microphone)
         clickIndicatorEnabled = d.bool(forKey: Keys.indicator)
-        if let raw = d.string(forKey: Keys.indicatorStyle), let style = IndicatorStyleKind(rawValue: raw) { indicatorStyle = style }
         if let rgba = d.array(forKey: Keys.indicatorColor) as? [Double], rgba.count == 4 { indicatorColorRGBA = rgba }
         if d.object(forKey: Keys.indicatorSize) != nil { indicatorSize = d.double(forKey: Keys.indicatorSize) }
         if d.object(forKey: Keys.indicatorDuration) != nil { indicatorDuration = d.double(forKey: Keys.indicatorDuration) }

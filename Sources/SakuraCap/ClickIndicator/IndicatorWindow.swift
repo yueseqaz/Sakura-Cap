@@ -49,7 +49,7 @@ final class IndicatorWindow: NSWindow {
     override var canBecomeMain: Bool { false }
 }
 
-/// 动画绘制：扩散圆环 / 指向点击点的箭头，时长与样式来自设置
+/// 动画绘制：指向点击点的箭头，时长来自设置
 final class IndicatorContentView: NSView {
     private var completion: (() -> Void)?
     private var started = false
@@ -80,43 +80,19 @@ final class IndicatorContentView: NSView {
             self?.completion?()
         }
 
-        switch settings.indicatorStyle {
-        case .ring:
-            let ring = CAShapeLayer()
-            let radius = bounds.width * 0.30
-            ring.path = CGPath(ellipseIn: CGRect(x: bounds.midX - radius, y: bounds.midY - radius,
-                                                 width: radius * 2, height: radius * 2), transform: nil)
-            ring.fillColor = NSColor.clear.cgColor
-            ring.strokeColor = color
-            ring.lineWidth = max(3, bounds.width * 0.05)
-            layer.addSublayer(ring)
-            let scale = CABasicAnimation(keyPath: "transform.scale")
-            scale.fromValue = 0.35
-            scale.toValue = 1.25
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 0.95
-            fade.toValue = 0.0
-            let group = CAAnimationGroup()
-            group.animations = [scale, fade]
-            group.duration = duration
-            group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            ring.add(group, forKey: "pulse")
-            ring.opacity = 0
-        case .arrow:
-            let arrow = CAShapeLayer()
-            arrow.path = Self.arrowPath(bounds: bounds)
-            arrow.fillColor = color
-            layer.addSublayer(arrow)
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = 1.0
-            fade.toValue = 0.0
-            let group = CAAnimationGroup()
-            group.animations = [fade]
-            group.duration = duration
-            group.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            arrow.add(group, forKey: "fade")
-            arrow.opacity = 0
-        }
+        let arrow = CAShapeLayer()
+        arrow.path = Self.arrowPath(bounds: bounds)
+        arrow.fillColor = color
+        layer.addSublayer(arrow)
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        let group = CAAnimationGroup()
+        group.animations = [fade]
+        group.duration = duration
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        arrow.add(group, forKey: "fade")
+        arrow.opacity = 0
 
         CATransaction.commit()
     }
