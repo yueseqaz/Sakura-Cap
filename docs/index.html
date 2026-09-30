@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sakura-Cap · 菜单栏极简 Mac 录屏 / 截图工具</title>
+<meta name="description" content="Sakura-Cap 是一款菜单栏常驻的极简 Mac 录屏 / 截图工具：全屏/区域/窗口录制、截图 OCR、滚动截屏、图片标注。" />
+<style>
+  :root {
+    --bg: #0f0d12;
+    --panel: #17141d;
+    --panel-2: #1e1a26;
+    --text: #f4f2f7;
+    --muted: #a49fb0;
+    --line: #2b2733;
+    --pink: #f0466b;
+    --pink-2: #ff7a95;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 50% -10%, #2a1520 0%, var(--bg) 55%) no-repeat, var(--bg);
+    color: var(--text);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--pink-2); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 22px; }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0; position: sticky; top: 0; z-index: 10;
+    backdrop-filter: saturate(160%) blur(12px);
+    background: rgba(15,13,18,0.72);
+    border-bottom: 1px solid transparent;
+  }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; }
+  nav .brand img { width: 26px; height: 26px; border-radius: 7px; }
+  nav .links a { color: var(--muted); margin-left: 18px; font-size: 14px; }
+  nav .links a:hover { color: var(--text); }
+
+  header.hero { text-align: center; padding: 72px 0 40px; }
+  header.hero img.icon { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 20px 60px rgba(240,70,107,.28); }
+  header.hero h1 { font-size: 44px; margin: 22px 0 8px; letter-spacing: -.5px; }
+  header.hero p.tagline { color: var(--muted); font-size: 18px; margin: 0 auto; max-width: 560px; }
+  .badges { display: flex; gap: 10px; justify-content: center; margin: 22px 0 26px; flex-wrap: wrap; }
+  .badge { background: var(--panel); border: 1px solid var(--line); color: var(--muted); font-size: 12.5px; padding: 5px 12px; border-radius: 999px; }
+
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 20px; border-radius: 12px; font-weight: 600; font-size: 14.5px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    transition: .18s transform, .18s background, .18s border-color;
+  }
+  .btn:hover { transform: translateY(-1px); text-decoration: none; }
+  .btn.primary { background: linear-gradient(135deg, var(--pink), var(--pink-2)); border-color: transparent; color: #fff; }
+  .btn.ghost { background: transparent; }
+
+  /* HUD mock */
+  .hud {
+    margin: 40px auto 0; width: fit-content; display: flex; align-items: center; gap: 12px;
+    background: rgba(30,26,38,.85); border: 1px solid var(--line); border-radius: 999px;
+    padding: 9px 14px; font-size: 14px; box-shadow: 0 16px 50px rgba(0,0,0,.45);
+  }
+  .hud .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pink); }
+  .hud .ic { color: #8f8a9c; font-size: 15px; }
+  .hud .ic.on { color: var(--pink-2); }
+  .hud .sep { width: 1px; height: 16px; background: var(--line); }
+  .hud .play { width: 26px; height: 26px; border-radius: 50%; background: var(--pink); display: grid; place-items: center; color: #fff; font-size: 12px; }
+
+  section { padding: 56px 0; }
+  section h2 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.3px; }
+  section p.sub { color: var(--muted); margin: 0 0 26px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .card .emoji { font-size: 20px; }
+
+  pre.code {
+    background: #0b0910; border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; overflow: auto; position: relative; font-size: 13.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #e7e3ee;
+  }
+  pre.code .copy {
+    position: absolute; top: 10px; right: 10px; font: inherit; font-size: 12px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+    border-radius: 8px; padding: 4px 10px; cursor: pointer;
+  }
+  pre.code .copy:hover { color: var(--text); }
+  code.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+
+  footer { border-top: 1px solid var(--line); padding: 30px 0 50px; color: var(--muted); font-size: 13.5px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <span class="brand"><img src="https://raw.githubusercontent.com/yueseqaz/Sakura-Cap/main/Resources/AppIcon.png" alt="Sakura-Cap" />Sakura-Cap</span>
+    <span class="links">
+      <a href="#features">功能</a>
+      <a href="#install">安装</a>
+      <a href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener">GitHub ↗</a>
+    </span>
+  </nav>
+
+  <header class="hero">
+    <img class="icon" src="https://raw.githubusercontent.com/yueseqaz/Sakura-Cap/main/Resources/AppIcon.png" alt="Sakura-Cap 图标" />
+    <h1>Sakura-Cap</h1>
+    <p class="tagline">菜单栏常驻的极简 Mac 录屏 / 截图工具。点一下就能开录，录完顺手裁一刀、标一标，截图取字一步到位。</p>
+    <div class="badges">
+      <span class="badge">macOS 13+</span>
+      <span class="badge">零第三方依赖</span>
+      <span class="badge">开源免费</span>
+      <span class="badge">中文 / English</span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener">下载最新版</a>
+      <a class="btn" href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener">GitHub 仓库</a>
+    </div>
+
+    <div class="hud">
+      <span class="ic">⠿</span>
+      <span class="dot"></span>
+      <span>准备就绪</span>
+      <span class="sep"></span>
+      <span class="ic on">🎤</span>
+      <span class="ic on">🔊</span>
+      <span class="ic">📷</span>
+      <span class="ic on">🖱</span>
+      <span class="ic on">⌨</span>
+      <span class="sep"></span>
+      <span class="ic">原始 ▾</span>
+      <span class="play">▶</span>
+      <span class="ic">✕</span>
+    </div>
+  </header>
+
+  <section id="features">
+    <h2>功能</h2>
+    <p class="sub">录音、截图、标注，一条龙。</p>
+    <div class="grid">
+      <div class="card"><div class="emoji">🎬</div><h3>录屏</h3><p>全屏（单屏 / 多屏并行）、框选区域、窗口录制；录制中可暂停 / 继续 / 停止。</p></div>
+      <div class="card"><div class="emoji">🎚️</div><h3>悬浮控制条</h3><p>就地选输出分辨率、麦克风与系统声音、摄像头、点击标记与按键显示，点 ▶ 才开始。</p></div>
+      <div class="card"><div class="emoji">✂️</div><h3>录制后裁剪</h3><p>录完自动进裁剪页：拖动区间、只循环预览选中片段，导出为新文件（可选删除原文件）。</p></div>
+      <div class="card"><div class="emoji">📸</div><h3>截图</h3><p>全屏 / 区域截图，完成后进入标注编辑器，保存或直接拷贝到剪贴板。</p></div>
+      <div class="card"><div class="emoji">🔍</div><h3>OCR 取字</h3><p>框选任意区域，系统 Vision 离线识别文字，一键复制到剪贴板。</p></div>
+      <div class="card"><div class="emoji">📜</div><h3>滚动截屏</h3><p>边滚动边按重叠自动拼接成一张长图，右侧实时预览。</p></div>
+      <div class="card"><div class="emoji">🖊️</div><h3>标注编辑器</h3><p>画笔、箭头、矩形、文字、序号、马赛克（像素块/模糊/六边形）、裁剪；可二次编辑、撤销重做、滚轮缩放。</p></div>
+      <div class="card"><div class="emoji">📌</div><h3>「定住」贴图</h3><p>把结果干净地贴在屏幕上当参考图：红虚线框、可拖动、滚轮等比缩放、右上角关闭。</p></div>
+      <div class="card"><div class="emoji">👆</div><h3>点击标记 &amp; 按键显示</h3><p>录制时标出鼠标点击（指向箭头）、在角落显示所按按键。</p></div>
+      <div class="card"><div class="emoji">🎥</div><h3>摄像头画中画</h3><p>录制时在角落叠一个可拖动的圆角摄像头小窗，可选具体设备。</p></div>
+      <div class="card"><div class="emoji">⌨️</div><h3>自定义快捷键</h3><p>每个动作都能绑快捷键：录制、截图、OCR、滚动截屏，默认留空由你设置。</p></div>
+      <div class="card"><div class="emoji">🌙</div><h3>录屏勿扰 &amp; 提示音</h3><p>可选录制时切换专注模式；开始 / 结束提示音，且不会被录进视频。</p></div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>安装</h2>
+    <p class="sub">推荐用 Homebrew。</p>
+    <pre class="code"><button class="copy" data-copy="brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap
+brew trust yueseqaz/sakura-cap
+brew install --cask sakura-cap">复制</button>brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap
+brew trust yueseqaz/sakura-cap
+brew install --cask sakura-cap</pre>
+    <p class="sub" style="margin-top:18px">或者从源码构建：</p>
+    <pre class="code"><button class="copy" data-copy="git clone https://github.com/yueseqaz/Sakura-Cap.git
+cd Sakura-Cap
+./run.sh">复制</button>git clone https://github.com/yueseqaz/Sakura-Cap.git
+cd Sakura-Cap
+./run.sh</pre>
+    <p class="sub" style="margin-top:16px">应用未公证，首次打开若被拦截，请右键「打开」，或在「系统设置 → 隐私与安全性」中允许；按需授予屏幕录制 / 麦克风 / 摄像头 / 输入监控权限。</p>
+  </section>
+
+  <footer>
+    <span>© 2026 Sakura · Sakura-Cap</span>
+    <span>
+      <a href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener">仓库</a> ·
+      <a href="https://github.com/yueseqaz/Sakura-Cap/releases" target="_blank" rel="noopener">发布</a> ·
+      <a href="https://github.com/yueseqaz/Sakura-Cap/blob/main/docs/DEVELOPMENT.md" target="_blank" rel="noopener">开发文档</a>
+    </span>
+  </footer>
+</div>
+
+<script>
+  document.querySelectorAll('pre.code .copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      navigator.clipboard.writeText(btn.dataset.copy || '').then(function () {
+        var old = btn.textContent; btn.textContent = '已复制';
+        setTimeout(function () { btn.textContent = old; }, 1200);
+      });
+    });
+  });
+</script>
+</body>
+</html>

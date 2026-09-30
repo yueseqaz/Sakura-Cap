@@ -5,10 +5,10 @@
 "选择" = "Choose";
 "更改…" = "Change…";
 "退出" = "Quit";
-"退出 Sakura-Cap" = "Quit Sakura-Cap";
+"退出 Sakura-Cap" = "Quit";
 "设置…" = "Settings…";
 "设置分区" = "Section";
-"关于 Sakura-Cap" = "About Sakura-Cap";
+"关于 Sakura-Cap" = "About";
 "访问 GitHub 仓库" = "Visit GitHub repository";
 "菜单栏极简录屏工具" = "A minimal menu-bar screen recorder";
 "版本 %@" = "Version %@";
@@ -155,7 +155,75 @@
 "录制完成" = "Recording Finished";
 "在 Finder 中显示" = "Reveal in Finder";
 
-/* 裁剪 */
+/* 截图 */
+"截图" = "Screenshot";
+"全屏截图" = "Full Screen";
+"区域截图" = "Select Region";
+"识别文字（OCR）" = "Recognize Text (OCR)";
+"滚动截屏…" = "Scrolling Capture…";
+"滚动到需要的位置，完成后点「完成」" = "Scroll to where you need, then click Finish";
+"已拼接 %d px" = "Stitched %d px";
+"完成" = "Finish";
+"适应" = "Fit";
+"定住" = "Pin";
+"快捷键" = "Shortcuts";
+"权限" = "Permissions";
+"已授权" = "Granted";
+"未授权" = "Not granted";
+"去授权" = "Grant…";
+"未设置" = "Not set";
+"关闭麦克风" = "Turn Microphone Off";
+"开启麦克风" = "Turn Microphone On";
+"关闭摄像头" = "Turn Camera Off";
+"开启摄像头" = "Turn Camera On";
+"系统默认设备" = "System Default";
+"麦克风设备" = "Microphone";
+"拖动移动" = "Drag to move";
+"窗口录制" = "Record Window";
+"区域录制" = "Record Region";
+"滚动截屏" = "Scrolling Capture";
+"屏幕录制" = "Screen Recording";
+"输入监控" = "Input Monitoring";
+"录制与截图需要。" = "Required for recording and screenshots.";
+"录制麦克风声音需要。" = "Required to record microphone audio.";
+"鼠标点击标记 / 键盘按键显示需要。" = "Required for click marks and key display.";
+"摄像头画中画需要。" = "Required for camera picture-in-picture.";
+"默认为空（未设置）。点一下输入框后按下组合键即可设置，按 Delete 清除。" = "Empty by default. Click a field and press a shortcut to set it; press Delete to clear.";
+"未识别到文字" = "No text recognized";
+"文字已复制" = "Text Copied";
+"识别成功，已复制到剪贴板" = "Recognized, copied to clipboard";
+"识别到 %d 个字符，已复制到剪贴板。" = "Recognized %d characters and copied them to the clipboard.";
+"截图完成" = "Screenshot Saved";
+"截图失败" = "Screenshot Failed";
+"截图需要 macOS 14 或更高版本" = "Screenshots require macOS 14 or later";
+"找不到该显示器" = "Display not found";
+"图片编码失败" = "Failed to encode the image";
+
+/* 标注 */
+"标注模式" = "Annotate";
+"退出标注" = "Exit Annotation";
+"清空" = "Clear";
+"标注截图" = "Annotate Screenshot";
+"标注图片" = "Annotate Image";
+"选择要标注的图片" = "Choose an image to annotate";
+"标注" = "annotated";
+"保存" = "Save";
+"拷贝" = "Copy";
+"马赛克" = "Mosaic";
+"粗细" = "Width";
+"像素块" = "Pixelate";
+"模糊" = "Blur";
+"六边形" = "Hexagon";
+"输入文字" = "Enter text";
+"确定" = "OK";
+
+/* 窗口录制 */
+"窗口录制…" = "Record Window…";
+"窗口录制需要 macOS 14 或更高版本" = "Window recording requires macOS 14 or later";
+"窗口" = "Window";
+
+/* 鼠标跟随放大 */
+
 "裁剪 — %@" = "Trim — %@";
 "截取 %@ – %@　共 %@" = "Trim %@ – %@ · %@";
 "导出" = "Export";
