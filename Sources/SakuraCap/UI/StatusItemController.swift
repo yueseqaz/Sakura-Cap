@@ -56,30 +56,31 @@ final class StatusItemController: NSObject {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
         if controller.state == .ready {
-            menu.addItem(makeItem("开始录制", #selector(menuToggle)))
-            menu.addItem(makeItem("取消", #selector(menuCancelArmed)))
+            menu.addItem(makeItem(L("开始录制"), #selector(menuToggle)))
+            menu.addItem(makeItem(L("取消"), #selector(menuCancelArmed)))
         } else if controller.state == .recording {
+            let mmss = Self.mmss(controller.elapsed)
             let pauseTitle = controller.isPaused
-                ? "继续录制（\(Self.mmss(controller.elapsed))）"
-                : "暂停录制（\(Self.mmss(controller.elapsed))）"
+                ? String(format: L("继续录制（%@）"), mmss)
+                : String(format: L("暂停录制（%@）"), mmss)
             menu.addItem(makeItem(pauseTitle, #selector(menuPause)))
-            menu.addItem(makeItem("停止录制（\(Self.mmss(controller.elapsed))）", #selector(menuToggle)))
+            menu.addItem(makeItem(String(format: L("停止录制（%@）"), mmss), #selector(menuToggle)))
         } else if controller.isBusy {
-            menu.addItem(makeItem("取消录制", #selector(menuToggle)))
+            menu.addItem(makeItem(L("取消录制"), #selector(menuToggle)))
         } else {
-            let record = NSMenuItem(title: "开始录制", action: nil, keyEquivalent: "")
+            let record = NSMenuItem(title: L("开始录制"), action: nil, keyEquivalent: "")
             let submenu = NSMenu()
-            submenu.addItem(makeItem("全屏录制", #selector(recordDisplay)))
-            submenu.addItem(makeItem("框选区域", #selector(recordRegion)))
+            submenu.addItem(makeItem(L("全屏录制"), #selector(recordDisplay)))
+            submenu.addItem(makeItem(L("框选区域"), #selector(recordRegion)))
             record.submenu = submenu
             menu.addItem(record)
         }
         menu.addItem(.separator())
-        menu.addItem(makeItem("打开文件夹", #selector(menuOpenFolder)))
-        menu.addItem(makeItem("裁剪视频…", #selector(menuTrim)))
-        menu.addItem(makeItem("设置…", #selector(menuSettings)))
-        menu.addItem(makeItem("关于 Sakura-Cap", #selector(menuAbout)))
-        menu.addItem(makeItem("退出 Sakura-Cap", #selector(menuQuit)))
+        menu.addItem(makeItem(L("打开文件夹"), #selector(menuOpenFolder)))
+        menu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
+        menu.addItem(makeItem(L("设置…"), #selector(menuSettings)))
+        menu.addItem(makeItem(L("关于 Sakura-Cap"), #selector(menuAbout)))
+        menu.addItem(makeItem(L("退出 Sakura-Cap"), #selector(menuQuit)))
         return menu
     }
 
@@ -101,9 +102,9 @@ final class StatusItemController: NSObject {
             guard PermissionCenter.screenCaptureGranted() else {
                 PermissionCenter.openScreenCaptureSettings()
                 let alert = NSAlert()
-                alert.messageText = "需要「屏幕录制」权限"
-                alert.informativeText = "请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许 Sakura-Cap，然后重新开始录制。"
-                alert.addButton(withTitle: "好")
+                alert.messageText = L("需要「屏幕录制」权限")
+                alert.informativeText = L("请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许 Sakura-Cap，然后重新开始录制。")
+                alert.addButton(withTitle: L("好"))
                 alert.runModal()
                 return
             }

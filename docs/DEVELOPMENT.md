@@ -91,6 +91,14 @@ atos -o build/Sakura-Cap.app/Contents/MacOS/SakuraCap -arch arm64 -l <loadAddres
 11. **长录制内存**：`queueDepth` + `isReadyForMoreMediaData` 背压（过载直接丢帧，绝不排队堆积）；`SCFrameStatus != .complete` 的 idle 帧跳过。
 12. **CLT 工具链限制**：见上文「构建与运行」的注意点。
 
+## 本地化
+
+- 支持语言：中文（源语言）+ English。
+- SwiftUI 的 `Text` / `Button` / `Toggle` / `Label` / `Picker` 以及 `card()` / `permissionCard()` 用字符串**字面量**时，会自动按 `LocalizedStringKey` 本地化，无需改动。
+- 其它作为 `String` 使用的文案（菜单项、弹窗、枚举 `label`、banner 等）用 `L("中文")`（见 `Support/Localization.swift`）。
+- 翻译文件在 `Resources/<lang>.lproj/Localizable.strings`，**key 就是中文原文**；`build.sh` 会把 `*.lproj` 拷进 `.app/Contents/Resources/`。
+- 新增语言：加 `Resources/xx.lproj/Localizable.strings`（拷贝一份 en 的改值），并把语言代码加进 `Config/Info.plist.template` 的 `CFBundleLocalizations`。
+
 ## 目录结构
 
 ```

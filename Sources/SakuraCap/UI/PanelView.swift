@@ -19,10 +19,10 @@ struct PanelView: View {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .audio: return "音频"
-            case .appearance: return "标记"
-            case .video: return "画质"
-            case .general: return "通用"
+            case .audio: return L("音频")
+            case .appearance: return L("标记")
+            case .video: return L("画质")
+            case .general: return L("通用")
             }
         }
     }
@@ -78,6 +78,7 @@ struct PanelView: View {
         case .general:
             outputCard
             loginCard
+            postRecordingCard
             dndCard
             hotKeyCard
             permissionCards
@@ -105,10 +106,10 @@ struct PanelView: View {
 
     private var statusText: String {
         switch controller.state {
-        case .ready: return "准备就绪"
-        case .preparing: return "准备中…"
-        case .countdown: return "即将开始…"
-        case .finalizing: return "正在保存…"
+        case .ready: return L("准备就绪")
+        case .preparing: return L("准备中…")
+        case .countdown: return L("即将开始…")
+        case .finalizing: return L("正在保存…")
         default: return ""
         }
     }
@@ -311,6 +312,12 @@ struct PanelView: View {
         }
     }
 
+    private var postRecordingCard: some View {
+        card("录制完成后") {
+            Toggle("自动打开裁剪页", isOn: $settings.autoTrimAfterRecording)
+        }
+    }
+
     private var dndCard: some View {
         card("录屏勿扰") {
             Toggle("录屏时开启勿扰模式", isOn: $settings.dndDuringRecording)
@@ -332,7 +339,7 @@ struct PanelView: View {
     private var hotKeyCard: some View {
         card("全局快捷键") {
             HotKeyRecorderView().frame(height: 30)
-            Text("开始 / 停止录制，当前：\(settings.hotKeyDisplay)")
+            Text(String(format: L("开始 / 停止录制，当前：%@"), settings.hotKeyDisplay))
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -357,7 +364,7 @@ struct PanelView: View {
         }
     }
 
-    private func permissionCard(title: String, detail: String, buttonTitle: String,
+    private func permissionCard(title: LocalizedStringKey, detail: LocalizedStringKey, buttonTitle: LocalizedStringKey,
                                 action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: "exclamationmark.shield.fill")
@@ -384,7 +391,7 @@ struct PanelView: View {
     }
 
     @ViewBuilder
-    private func card<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func card<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title)

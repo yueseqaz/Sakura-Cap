@@ -11,8 +11,8 @@ enum CaptureMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .display: return "屏幕"
-        case .region: return "区域"
+        case .display: return L("屏幕")
+        case .region: return L("区域")
         }
     }
 }
@@ -53,7 +53,7 @@ enum ColorSpaceOption: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .sRGB: return "sRGB"
-        case .displayP3: return "Display P3（广色域屏）"
+        case .displayP3: return L("Display P3（广色域屏）")
         }
     }
 }
@@ -69,10 +69,10 @@ enum VideoQuality: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .high: return "高（文字锐利，文件大）"
-        case .medium: return "中（平衡）"
-        case .low: return "低（文件小）"
-        case .custom: return "自定义码率"
+        case .high: return L("高（文字锐利，文件大）")
+        case .medium: return L("中（平衡）")
+        case .low: return L("低（文件小）")
+        case .custom: return L("自定义码率")
         }
     }
 
@@ -107,7 +107,7 @@ enum OutputResolution: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .native: return "原始"
+        case .native: return L("原始")
         case .p1080: return "1080p"
         case .p720: return "720p"
         }
@@ -129,10 +129,10 @@ enum PiPCorner: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .topLeft: return "左上"
-        case .topRight: return "右上"
-        case .bottomLeft: return "左下"
-        case .bottomRight: return "右下"
+        case .topLeft: return L("左上")
+        case .topRight: return L("右上")
+        case .bottomLeft: return L("左下")
+        case .bottomRight: return L("右下")
         }
     }
 }
@@ -158,13 +158,13 @@ enum RecordingError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noDisplays: return "没有可录制的显示器"
-        case .noRegion: return "请先框选录制区域"
-        case .displayMissing: return "录制区域所在的显示器已不存在，请重新框选"
-        case .noMicrophone: return "未找到可用的麦克风设备"
-        case .microphoneInit(let reason): return "麦克风初始化失败：\(reason)"
-        case .noOutputDirectory: return "未选择输出目录"
-        case .noSpecs: return "未能生成任何录制任务"
+        case .noDisplays: return L("没有可录制的显示器")
+        case .noRegion: return L("请先框选录制区域")
+        case .displayMissing: return L("录制区域所在的显示器已不存在，请重新框选")
+        case .noMicrophone: return L("未找到可用的麦克风设备")
+        case .microphoneInit(let reason): return L("麦克风初始化失败：") + reason
+        case .noOutputDirectory: return L("未选择输出目录")
+        case .noSpecs: return L("未能生成任何录制任务")
         }
     }
 }

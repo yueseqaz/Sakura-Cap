@@ -98,9 +98,9 @@ final class RecordingController: ObservableObject {
             banner = message
             if showAlert {
                 let alert = NSAlert()
-                alert.messageText = "无法开始录制"
+                alert.messageText = L("无法开始录制")
                 alert.informativeText = message
-                alert.addButton(withTitle: "好")
+                alert.addButton(withTitle: L("好"))
                 alert.runModal()
             }
             state = .idle
@@ -109,14 +109,14 @@ final class RecordingController: ObservableObject {
         // 1. 屏幕录制权限
         guard PermissionCenter.screenCaptureGranted() else {
             PermissionCenter.openScreenCaptureSettings()
-            abort("需要「屏幕录制」权限。已为你打开系统设置，请在「隐私与安全性 → 屏幕录制」中允许 Sakura-Cap，然后重新开始录制。")
+            abort(L("需要「屏幕录制」权限。已为你打开系统设置，请在「隐私与安全性 → 屏幕录制」中允许 Sakura-Cap，然后重新开始录制。"))
             return
         }
         guard gen == generation else { return }
 
         // 2. 输出目录（必须由用户选择）
         guard let directory = OutputDirectoryPicker.ensureDirectory(current: settings.outputDirectory) else {
-            abort("未选择输出目录，已取消录制", showAlert: false)
+            abort(L("未选择输出目录，已取消录制"), showAlert: false)
             return
         }
         settings.outputDirectory = directory
@@ -128,11 +128,11 @@ final class RecordingController: ObservableObject {
             Log.app.notice("可采集内容: \(displays.count) 台显示器")
             if displays.isEmpty {
                 PermissionCenter.openScreenCaptureSettings()
-                abort("没有检测到可录制的显示器。请确认已在「隐私与安全性 → 屏幕录制」中允许 Sakura-Cap 访问。")
+                abort(L("没有检测到可录制的显示器。请确认已在「隐私与安全性 → 屏幕录制」中允许 Sakura-Cap 访问。"))
                 return
             }
         } catch {
-            abort("无法获取可录制的内容。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问。")
+            abort(L("无法获取可录制的内容。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问。"))
             return
         }
         guard gen == generation else { return }
@@ -145,7 +145,7 @@ final class RecordingController: ObservableObject {
                 Log.app.notice("录制计划: \(spec.displayName, privacy: .public) \(spec.pixelWidth)×\(spec.pixelHeight) @\(spec.config.sourceRect.origin.x),\(spec.config.sourceRect.origin.y)+\(spec.config.sourceRect.width)x\(spec.config.sourceRect.height) 音频=\(spec.capturesSystemAudio)")
             }
         } catch {
-            abort("无法开始录制：\(error.localizedDescription)")
+            abort(String(format: L("无法开始录制：%@"), error.localizedDescription))
             return
         }
 
@@ -153,13 +153,13 @@ final class RecordingController: ObservableObject {
         if settings.clickIndicatorEnabled {
             IndicatorEngine.shared.beginCapture()
             if !IndicatorEngine.shared.isMonitoring {
-                banner = "未获得「输入监控」权限，本次录制不含点击标记（不影响录制）。"
+                banner = L("未获得「输入监控」权限，本次录制不含点击标记（不影响录制）。")
             }
         }
         if settings.keyDisplayEnabled {
             KeyDisplay.shared.beginCapture()
             if !KeyDisplay.shared.isMonitoring {
-                banner = "未获得「输入监控」权限，本次录制不含按键提示（不影响录制）。"
+                banner = L("未获得「输入监控」权限，本次录制不含按键提示（不影响录制）。")
             }
         }
 
@@ -203,7 +203,7 @@ final class RecordingController: ObservableObject {
             IndicatorEngine.shared.endCapture()
             KeyDisplay.shared.endCapture()
             _ = await teardownSessions(saveFiles: false)
-            abort("无法启动屏幕采集。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问。")
+            abort(L("无法启动屏幕采集。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问。"))
             return
         }
         guard gen == generation, state == .preparing else {
@@ -225,7 +225,7 @@ final class RecordingController: ObservableObject {
             KeyDisplay.shared.endCapture()
             mic?.stop(); mic = nil
             _ = await teardownSessions(saveFiles: true)
-            abort("无法启动录制，请重试。若反复失败，请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问。")
+            abort(L("无法启动录制，请重试。若反复失败，请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问。"))
             return
         }
         guard gen == generation, state == .preparing else {
@@ -276,19 +276,19 @@ final class RecordingController: ObservableObject {
             granted = await AVCaptureDevice.requestAccess(for: .audio)
         }
         guard granted else {
-            banner = "未获得麦克风权限，本次录制不含麦克风声音。"
+            banner = L("未获得麦克风权限，本次录制不含麦克风声音。")
             return nil
         }
         let capture = MicCapture()
         do {
             try capture.start()
         } catch {
-            banner = "麦克风不可用，本次录制不含麦克风声音。"
+            banner = L("麦克风不可用，本次录制不含麦克风声音。")
             return nil
         }
         guard let format = await capture.waitForFormat(timeout: 1.5) else {
             capture.stop()
-            banner = "麦克风未就绪，本次录制不含麦克风声音。"
+            banner = L("麦克风未就绪，本次录制不含麦克风声音。")
             return nil
         }
         mic = capture
@@ -318,20 +318,20 @@ final class RecordingController: ObservableObject {
 
         if wasRecording {
             if files.isEmpty {
-                let message = "本次没有录到画面，文件未保存。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问，然后重试。"
+                let message = L("本次没有录到画面，文件未保存。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问，然后重试。")
                 Log.app.error("录制零帧: \(message, privacy: .public)")
                 banner = message
                 let alert = NSAlert()
-                alert.messageText = "未捕获到有效画面"
+                alert.messageText = L("未捕获到有效画面")
                 alert.informativeText = message
-                alert.addButton(withTitle: "好")
+                alert.addButton(withTitle: L("好"))
                 alert.runModal()
             } else {
                 for url in files {
                     CompletionNotifier.shared.postSaved(url: url, duration: duration)
                 }
-                // 保存/通知等原有逻辑不变，额外自动打开裁剪页处理刚保存的视频
-                if let first = files.first {
+                // 保存/通知等原有逻辑不变，按设置可自动打开裁剪页处理刚保存的视频
+                if let first = files.first, settings.autoTrimAfterRecording {
                     TrimWindowController.shared.show(url: first)
                 }
             }
@@ -400,7 +400,7 @@ final class RecordingController: ObservableObject {
                 if self?.sessions.isEmpty == true {
                     self?.stop()
                 } else {
-                    self?.banner = "检测到显示器断开，对应录像已保存"
+                    self?.banner = L("检测到显示器断开，对应录像已保存")
                 }
             }
         }

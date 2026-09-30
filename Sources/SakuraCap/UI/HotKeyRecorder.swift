@@ -54,8 +54,8 @@ final class HotKeyCaptureView: NSView {
         border.stroke()
 
         let text = focused
-            ? "按下新的快捷键组合…"
-            : "\(AppSettings.shared.hotKeyDisplay)（点击修改）"
+            ? L("按下新的快捷键组合…")
+            : AppSettings.shared.hotKeyDisplay + L("（点击修改）")
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12),
             .foregroundColor: focused ? NSColor.labelColor : NSColor.secondaryLabelColor,

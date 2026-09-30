@@ -17,7 +17,7 @@ final class TrimWindowController {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 520),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
-        window.title = "裁剪 — \(url.lastPathComponent)"
+        window.title = String(format: L("裁剪 — %@"), url.lastPathComponent)
         window.isReleasedWhenClosed = false
         window.sharingType = .none // 永不进入录制
         window.contentView = NSHostingView(rootView: TrimView(model: model))
@@ -78,7 +78,7 @@ final class TrimViewModel: ObservableObject {
     func load() async {
         let asset = AVURLAsset(url: sourceURL)
         guard let d = try? await asset.load(.duration), d.isNumeric else {
-            status = "无法读取视频时长"
+            status = L("无法读取视频时长")
             return
         }
         duration = CMTimeGetSeconds(d)
@@ -122,24 +122,24 @@ final class TrimViewModel: ObservableObject {
 
     /// 点「导出」：先弹确认框（含「删除原文件」勾选），确认后再导出
     func exportTapped() {
-        guard trimmedDuration > 0.05 else { status = "裁剪区间太短"; return }
+        guard trimmedDuration > 0.05 else { status = L("裁剪区间太短"); return }
         let outURL = Self.outputURL(for: sourceURL)
         let alert = NSAlert()
-        alert.messageText = "导出裁剪后的视频"
-        alert.informativeText = "将导出为「\(outURL.lastPathComponent)」。"
-        let checkbox = NSButton(checkboxWithTitle: "导出后删除原文件", target: nil, action: nil)
+        alert.messageText = L("导出裁剪后的视频")
+        alert.informativeText = String(format: L("将导出为「%@」。"), outURL.lastPathComponent)
+        let checkbox = NSButton(checkboxWithTitle: L("导出后删除原文件"), target: nil, action: nil)
         checkbox.state = .off
         checkbox.sizeToFit()
         alert.accessoryView = checkbox
-        alert.addButton(withTitle: "导出")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L("导出"))
+        alert.addButton(withTitle: L("取消"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         let deleteOriginal = checkbox.state == .on
         Task { await self.export(deleteOriginal: deleteOriginal) }
     }
 
     func export(deleteOriginal: Bool) async {
-        guard trimmedDuration > 0.05 else { status = "裁剪区间太短"; return }
+        guard trimmedDuration > 0.05 else { status = L("裁剪区间太短"); return }
         isExporting = true
         status = nil
         player.pause()
@@ -148,7 +148,7 @@ final class TrimViewModel: ObservableObject {
 
         let asset = AVURLAsset(url: sourceURL)
         guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
-            status = "无法创建导出任务"
+            status = L("无法创建导出任务")
             return
         }
         let outURL = Self.outputURL(for: sourceURL)
@@ -171,19 +171,19 @@ final class TrimViewModel: ObservableObject {
             }
             if deleteOriginal {
                 try? FileManager.default.removeItem(at: sourceURL)
-                status = "已导出并删除原文件：\(outURL.lastPathComponent)"
+                status = String(format: L("已导出并删除原文件：%@"), outURL.lastPathComponent)
             } else {
-                status = "已导出 \(outURL.lastPathComponent)"
+                status = String(format: L("已导出 %@"), outURL.lastPathComponent)
             }
             NSWorkspace.shared.activateFileViewerSelecting([outURL])
             requestClose?() // 导出成功后才关闭裁剪窗口
         } catch {
-            status = "导出失败：\(error.localizedDescription)"
+            status = String(format: L("导出失败：%@"), error.localizedDescription)
             // 窗口可能已关闭，失败时用弹窗告知
             let alert = NSAlert()
-            alert.messageText = "导出失败"
+            alert.messageText = L("导出失败")
             alert.informativeText = error.localizedDescription
-            alert.addButton(withTitle: "好")
+            alert.addButton(withTitle: L("好"))
             alert.runModal()
         }
     }
@@ -191,7 +191,7 @@ final class TrimViewModel: ObservableObject {
     private static func outputURL(for url: URL) -> URL {
         let dir = url.deletingLastPathComponent()
         let base = url.deletingPathExtension().lastPathComponent
-        return dir.appendingPathComponent("\(base) - 裁剪.mp4")
+        return dir.appendingPathComponent("\(base) - \(L("裁剪")).mp4")
     }
 }
 
@@ -231,7 +231,7 @@ struct TrimView: View {
 
                 Spacer()
 
-                Text("截取 \(CompletionNotifier.format(model.start)) – \(CompletionNotifier.format(model.end))　共 \(CompletionNotifier.format(model.trimmedDuration))")
+                Text(String(format: L("截取 %@ – %@　共 %@"), CompletionNotifier.format(model.start), CompletionNotifier.format(model.end), CompletionNotifier.format(model.trimmedDuration)))
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
 

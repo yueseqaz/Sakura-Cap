@@ -75,7 +75,7 @@ enum StreamPlanner {
             specs.append(StreamSpec(displayID: region.displayID,
                                     filter: filter,
                                     config: baseConfig(settings: settings, width: fullWidth, height: fullHeight, source: .zero),
-                                    fileURL: fileURL(in: directory, stamp: stamp, suffix: " - 区域"),
+                                    fileURL: fileURL(in: directory, stamp: stamp, suffix: L(" - 区域")),
                                     pixelWidth: w,
                                     pixelHeight: h,
                                     cropRect: crop,

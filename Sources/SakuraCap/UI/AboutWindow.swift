@@ -14,7 +14,7 @@ final class AboutWindowController {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 320),
                                   styleMask: [.titled, .closable],
                                   backing: .buffered, defer: false)
-            window.title = "关于 Sakura-Cap"
+            window.title = L("关于 Sakura-Cap")
             window.isReleasedWhenClosed = false
             window.sharingType = .none // 永不进入录制
             window.contentView = NSHostingView(rootView: AboutView())
@@ -33,7 +33,7 @@ struct AboutView: View {
                 .frame(width: 96, height: 96)
             Text("Sakura-Cap")
                 .font(.title2).fontWeight(.semibold)
-            Text("版本 \(AppInfo.version)")
+            Text(String(format: L("版本 %@"), AppInfo.version))
                 .font(.caption).foregroundStyle(.secondary)
             Text("菜单栏极简录屏工具")
                 .font(.callout).foregroundStyle(.secondary)

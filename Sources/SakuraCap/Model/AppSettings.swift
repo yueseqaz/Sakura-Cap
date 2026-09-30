@@ -32,6 +32,7 @@ final class AppSettings: ObservableObject {
         static let dnd = "dndDuringRecording"
         static let dndOn = "dndOnShortcut"
         static let dndOff = "dndOffShortcut"
+        static let autoTrim = "autoTrimAfterRecording"
         static let countdown = "countdownEnabled"
         static let codec = "videoCodec"
         static let quality = "videoQuality"
@@ -82,6 +83,9 @@ final class AppSettings: ObservableObject {
     @Published var dndOnShortcut = "Sakura-Cap 开启勿扰" { didSet { d.set(dndOnShortcut, forKey: Keys.dndOn) } }
     @Published var dndOffShortcut = "Sakura-Cap 关闭勿扰" { didSet { d.set(dndOffShortcut, forKey: Keys.dndOff) } }
 
+    // 录制完成后自动打开裁剪页
+    @Published var autoTrimAfterRecording = true { didSet { d.set(autoTrimAfterRecording, forKey: Keys.autoTrim) } }
+
     @Published var countdownEnabled = true { didSet { d.set(countdownEnabled, forKey: Keys.countdown) } }
     @Published var codec: VideoCodec = .h264 { didSet { d.set(codec.rawValue, forKey: Keys.codec) } }
     @Published var quality: VideoQuality = .high { didSet { d.set(quality.rawValue, forKey: Keys.quality) } }
@@ -123,6 +127,7 @@ final class AppSettings: ObservableObject {
         dndDuringRecording = d.bool(forKey: Keys.dnd)
         if let s = d.string(forKey: Keys.dndOn) { dndOnShortcut = s }
         if let s = d.string(forKey: Keys.dndOff) { dndOffShortcut = s }
+        autoTrimAfterRecording = d.object(forKey: Keys.autoTrim) == nil ? true : d.bool(forKey: Keys.autoTrim)
         countdownEnabled = d.object(forKey: Keys.countdown) == nil ? true : d.bool(forKey: Keys.countdown)
         if let raw = d.string(forKey: Keys.codec), let c = VideoCodec(rawValue: raw) { codec = c }
         if let raw = d.string(forKey: Keys.quality), let q = VideoQuality(rawValue: raw) { quality = q }

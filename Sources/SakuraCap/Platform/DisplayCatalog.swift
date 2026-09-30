@@ -26,7 +26,7 @@ final class DisplayCatalog: ObservableObject {
             let screen = NSScreen.screens.first { $0.displayID == display.displayID }
             let scale = screen?.backingScaleFactor ?? 2
             let info = DisplayInfo(id: display.displayID,
-                                   name: screen?.localizedName ?? "显示器 \(display.displayID)",
+                                   name: screen?.localizedName ?? (L("显示器") + " \(display.displayID)"),
                                    widthPx: display.width,
                                    heightPx: display.height,
                                    widthPt: CGFloat(display.width) / scale,

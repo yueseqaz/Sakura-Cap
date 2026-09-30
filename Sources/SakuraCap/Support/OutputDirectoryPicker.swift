@@ -20,8 +20,8 @@ enum OutputDirectoryPicker {
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "选择"
-        panel.message = "选择 Sakura-Cap 录制文件的保存目录"
+        panel.prompt = L("选择")
+        panel.message = L("选择 Sakura-Cap 录制文件的保存目录")
         guard panel.runModal() == .OK else { return nil }
         return panel.url
     }

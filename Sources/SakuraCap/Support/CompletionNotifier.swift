@@ -10,7 +10,7 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     func setup() {
         center.delegate = self
-        let reveal = UNNotificationAction(identifier: "REVEAL", title: "在 Finder 中显示", options: [.foreground])
+        let reveal = UNNotificationAction(identifier: "REVEAL", title: L("在 Finder 中显示"), options: [.foreground])
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.categoryID, actions: [reveal], intentIdentifiers: []),
         ])
@@ -21,7 +21,7 @@ final class CompletionNotifier: NSObject, UNUserNotificationCenterDelegate {
 
     func postSaved(url: URL, duration: TimeInterval) {
         let content = UNMutableNotificationContent()
-        content.title = "录制完成"
+        content.title = L("录制完成")
         content.body = duration > 0.5
             ? "\(url.lastPathComponent)（\(Self.format(duration))）"
             : url.lastPathComponent

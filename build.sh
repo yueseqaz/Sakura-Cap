@@ -58,6 +58,9 @@ for s in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/AppIcon.icns"
 
+# ---- 本地化资源（*.lproj/Localizable.strings）----
+find Resources -maxdepth 1 -name '*.lproj' -exec cp -R {} "$CONTENTS/Resources/" \;
+
 # ---- 签名 ----
 SIGN_IDENTITY="${SIGN_IDENTITY:-auto}"
 if [ "$SIGN_IDENTITY" = "auto" ]; then
