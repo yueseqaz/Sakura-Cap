@@ -43,8 +43,10 @@ final class RecordingHUDController {
         let size = hosting.fittingSize
         guard size.width > 1, size.height > 1 else { return }
         guard abs(window.frame.width - size.width) > 0.5 || abs(window.frame.height - size.height) > 0.5 else { return }
-        let topRight = NSPoint(x: window.frame.maxX, y: window.frame.maxY)
-        window.setFrame(NSRect(x: topRight.x - size.width, y: topRight.y - size.height,
+        // 保持底部居中不动
+        let centerX = window.frame.midX
+        let bottomY = window.frame.minY
+        window.setFrame(NSRect(x: centerX - size.width / 2, y: bottomY,
                                width: size.width, height: size.height), display: true)
     }
 
@@ -71,18 +73,18 @@ final class RecordingHUDController {
         window.isMovableByWindowBackground = true
         window.contentView = hosting
         window.setContentSize(size)
-        // 位置持久化；无历史记录时落在主屏右上角
-        if !window.setFrameAutosaveName("RecordingHUD") || window.frame.origin == .zero {
-            positionTopRight(window, size: size)
+        // 位置持久化；无历史记录时落在主屏底部居中
+        if !window.setFrameAutosaveName("RecordingHUDBottom") || window.frame.origin == .zero {
+            positionBottomCenter(window, size: size)
         }
         return window
     }
 
-    private func positionTopRight(_ window: NSWindow, size: NSSize) {
+    private func positionBottomCenter(_ window: NSWindow, size: NSSize) {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let visible = screen.visibleFrame
-        window.setFrameOrigin(NSPoint(x: visible.maxX - size.width - 16,
-                                      y: visible.maxY - size.height - 16))
+        window.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2,
+                                      y: visible.minY + 24))
     }
 }
 
