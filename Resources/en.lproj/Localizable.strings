@@ -228,6 +228,13 @@
 "裁剪 — %@" = "Trim — %@";
 "截取 %@ – %@　共 %@" = "Trim %@ – %@ · %@";
 "导出" = "Export";
+"删除" = "Delete";
+"删除录屏原文件" = "Delete the original recording";
+"确定放弃裁剪吗？" = "Discard this trim?";
+"删除录像文件" = "Delete recording";
+"确定要删除「%@」吗？此操作不可撤销。" = "Delete “%@”? This cannot be undone.";
+"删除失败" = "Delete Failed";
+"删除失败：%@" = "Delete failed: %@";
 "导出裁剪后的视频" = "Export trimmed video";
 "将导出为「%@」。" = "Will export as “%@”.";
 "导出后删除原文件" = "Delete the original after exporting";

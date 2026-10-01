@@ -13,6 +13,17 @@ final class StatusItemController: NSObject {
     private var settingsWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
 
+    /// 状态栏图标：与设置面板标题前的图标保持一致（camera.aperture），并指定颜色
+    private static let baseSymbol = "camera.aperture"
+    private func baseIcon(tint: NSColor) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [tint]))
+        let image = NSImage(systemSymbolName: Self.baseSymbol, accessibilityDescription: "Sakura-Cap")?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = false
+        return image
+    }
+
     init(controller: RecordingController) {
         self.controller = controller
         super.init()
@@ -21,9 +32,7 @@ final class StatusItemController: NSObject {
         self.viewModel = viewModel
 
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "record.circle",
-                                   accessibilityDescription: "Sakura-Cap")?
-                .withSymbolConfiguration(.init(pointSize: 15, weight: .regular))
+            button.image = baseIcon(tint: .systemPink)
             button.target = self
             button.action = #selector(statusClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -170,15 +179,15 @@ final class StatusItemController: NSObject {
         AnnotationEditorController.shared.open(image: cg, suggestedName: "\(base) - \(L("标注")).png")
     }
     @objc private func menuTrim() {
-        if let url = controller.lastSavedFiles.first {
-            TrimWindowController.shared.show(url: url)
+        if let url = controller.lastSavedFiles.first, FileManager.default.fileExists(atPath: url.path) {
+            TrimWindowController.shared.show(url: url, origin: .manual)
         } else {
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.movie]
             panel.allowsMultipleSelection = false
             panel.message = "选择要裁剪的视频"
             if panel.runModal() == .OK, let url = panel.url {
-                TrimWindowController.shared.show(url: url)
+                TrimWindowController.shared.show(url: url, origin: .manual)
             }
         }
     }
@@ -222,27 +231,22 @@ final class StatusItemController: NSObject {
         case .idle:
             RegionFrameOverlay.shared.hide()
             button.contentTintColor = nil
-            button.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
+            button.image = baseIcon(tint: .systemPink)
             button.title = ""
         case .ready:
             // 已选定范围、待用户确认开始
-            button.contentTintColor = .systemOrange
-            button.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
+            button.contentTintColor = nil
+            button.image = baseIcon(tint: .systemOrange)
             button.title = ""
         case .preparing, .countdown:
-            button.contentTintColor = .systemOrange
-            button.image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: nil)
+            button.contentTintColor = nil
+            button.image = baseIcon(tint: .systemOrange)
         case .finalizing:
-            button.contentTintColor = .systemOrange
-            button.image = NSImage(systemSymbolName: "circle.dotted", accessibilityDescription: nil)
+            button.contentTintColor = nil
+            button.image = baseIcon(tint: .systemOrange)
         case .recording:
-            if controller.isPaused {
-                button.contentTintColor = .systemOrange
-                button.image = NSImage(systemSymbolName: "pause.circle.fill", accessibilityDescription: nil)
-            } else {
-                button.contentTintColor = .systemRed
-                button.image = NSImage(systemSymbolName: "stop.circle.fill", accessibilityDescription: nil)
-            }
+            button.contentTintColor = nil
+            button.image = baseIcon(tint: controller.isPaused ? .systemOrange : .systemRed)
         }
         refreshTimerTitle()
     }

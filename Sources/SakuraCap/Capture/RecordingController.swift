@@ -332,7 +332,7 @@ final class RecordingController: ObservableObject {
                 }
                 // 保存/通知等原有逻辑不变，按设置可自动打开裁剪页处理刚保存的视频
                 if let first = files.first, settings.autoTrimAfterRecording {
-                    TrimWindowController.shared.show(url: first)
+                    TrimWindowController.shared.show(url: first, origin: .recording)
                 }
             }
         }

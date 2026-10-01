@@ -3,17 +3,21 @@ import AVFoundation
 import AVKit
 import SwiftUI
 
+/// 裁剪面板的来源：录屏结束后自动打开，还是用户主动打开/选文件
+enum TrimOrigin { case recording, manual }
+
 /// 简单裁剪：上方完整预览，下方一条可拖动的区间时间轴（起点/终点两个把手 + 播放头）。
 /// 播放时只在选中区间内循环预览；导出为同目录下的「原名 - 裁剪.mp4」。
 @MainActor
-final class TrimWindowController {
+final class TrimWindowController: NSObject, NSWindowDelegate {
     static let shared = TrimWindowController()
 
     private var entries: [(window: NSWindow, model: TrimViewModel)] = []
 
-    func show(url: URL) {
+    func show(url: URL, origin: TrimOrigin) {
         NSApp.activate(ignoringOtherApps: true)
         let model = TrimViewModel(url: url)
+        model.origin = origin
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 520),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
@@ -21,6 +25,7 @@ final class TrimWindowController {
         window.isReleasedWhenClosed = false
         window.sharingType = .none // 永不进入录制
         window.contentView = NSHostingView(rootView: TrimView(model: model))
+        window.delegate = self
         model.requestClose = { [weak window] in window?.close() }
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -33,12 +38,25 @@ final class TrimWindowController {
             }
         }
     }
+
+    /// 用户点左上角关闭 / ⌘W 时先确认（程序内 close() 靠 isProgrammaticClose 跳过）
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard let entry = entries.first(where: { $0.window === sender }) else { return true }
+        if entry.model.isProgrammaticClose { return true }
+        return entry.model.confirmDiscard()
+    }
 }
 
 @MainActor
 final class TrimViewModel: ObservableObject {
     let sourceURL: URL
     let player: AVPlayer
+
+    /// 面板来源：录屏结束后自动打开 = .recording，可勾选删除原文件
+    var origin: TrimOrigin = .manual
+
+    /// 由程序主动关闭（导出成功 / 删除）时为 true，跳过关窗确认
+    var isProgrammaticClose = false
 
     @Published var duration: Double = 0
     @Published var start: Double = 0
@@ -138,6 +156,59 @@ final class TrimViewModel: ObservableObject {
         Task { await self.export(deleteOriginal: deleteOriginal) }
     }
 
+    /// 关闭窗口前的确认（点左上角关闭 / ⌘W 时由 TrimWindow 调用）；返回 true 表示允许关闭
+    func confirmDiscard() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = L("确定放弃裁剪吗？")
+        var deleteCheckbox: NSButton?
+        if origin == .recording {
+            let box = NSButton(checkboxWithTitle: L("删除录屏原文件"), target: nil, action: nil)
+            box.state = .off
+            box.sizeToFit()
+            alert.accessoryView = box
+            deleteCheckbox = box
+        }
+        alert.addButton(withTitle: L("确定"))
+        alert.addButton(withTitle: L("取消"))
+        guard runModalAlert(alert) == .alertFirstButtonReturn else { return false }
+
+        if deleteCheckbox?.state == .on {
+            player.pause()
+            isPlaying = false
+            player.replaceCurrentItem(with: nil) // 释放文件占用，确保能删除
+            try? FileManager.default.removeItem(at: sourceURL)
+        }
+        return true
+    }
+
+    /// 点「删除」：二次确认后删除原始录像文件，并关闭裁剪窗口
+    func deleteTapped() {
+        let alert = NSAlert()
+        alert.messageText = L("删除录像文件")
+        alert.informativeText = String(format: L("确定要删除「%@」吗？此操作不可撤销。"), sourceURL.lastPathComponent)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("取消"))
+        alert.addButton(withTitle: L("删除"))
+        guard runModalAlert(alert) == .alertSecondButtonReturn else { return }
+
+        // 先停止播放并释放文件占用，确保能删除
+        player.pause()
+        isPlaying = false
+        player.replaceCurrentItem(with: nil)
+        do {
+            try FileManager.default.removeItem(at: sourceURL)
+            isProgrammaticClose = true
+            requestClose?()
+        } catch {
+            status = String(format: L("删除失败：%@"), error.localizedDescription)
+            let fail = NSAlert()
+            fail.messageText = L("删除失败")
+            fail.informativeText = error.localizedDescription
+            fail.addButton(withTitle: L("好"))
+            runModalAlert(fail)
+        }
+    }
+
     func export(deleteOriginal: Bool) async {
         guard trimmedDuration > 0.05 else { status = L("裁剪区间太短"); return }
         isExporting = true
@@ -176,6 +247,7 @@ final class TrimViewModel: ObservableObject {
                 status = String(format: L("已导出 %@"), outURL.lastPathComponent)
             }
             NSWorkspace.shared.activateFileViewerSelecting([outURL])
+            isProgrammaticClose = true
             requestClose?() // 导出成功后才关闭裁剪窗口
         } catch {
             status = String(format: L("导出失败：%@"), error.localizedDescription)
@@ -241,6 +313,9 @@ struct TrimView: View {
                 }
                 Spacer()
                 if model.isExporting { ProgressView().controlSize(.small) }
+                Button("删除", role: .destructive) { model.deleteTapped() }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isExporting)
                 Button("导出") { model.exportTapped() }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.isExporting || model.duration <= 0)
