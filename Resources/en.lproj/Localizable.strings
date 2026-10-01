@@ -10,7 +10,7 @@
 "设置分区" = "Section";
 "关于 Sakura-Cap" = "About";
 "访问 GitHub 仓库" = "Visit GitHub repository";
-"菜单栏极简录屏工具" = "A minimal menu-bar screen recorder";
+"菜单栏常驻的录屏 / 截图 / 标注工具" = "A menu-bar screen recorder, snipper & annotator";
 "版本 %@" = "Version %@";
 
 /* 菜单栏 */
@@ -211,6 +211,7 @@
 "拷贝" = "Copy";
 "马赛克" = "Mosaic";
 "粗细" = "Width";
+"程度" = "Strength";
 "像素块" = "Pixelate";
 "模糊" = "Blur";
 "六边形" = "Hexagon";

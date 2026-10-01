@@ -35,7 +35,7 @@ struct AboutView: View {
                 .font(.title2).fontWeight(.semibold)
             Text(String(format: L("版本 %@"), AppInfo.version))
                 .font(.caption).foregroundStyle(.secondary)
-            Text("菜单栏极简录屏工具")
+            Text("菜单栏常驻的录屏 / 截图 / 标注工具")
                 .font(.callout).foregroundStyle(.secondary)
 
             Divider().padding(.vertical, 4)

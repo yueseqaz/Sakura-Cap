@@ -1,7 +1,7 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// Sakura-Cap：菜单栏极简录屏。零第三方依赖，仅系统框架。
+// Sakura-Cap：菜单栏极简录屏 / 截图 / 标注。零第三方依赖，仅系统框架。
 let package = Package(
     name: "SakuraCap",
     platforms: [

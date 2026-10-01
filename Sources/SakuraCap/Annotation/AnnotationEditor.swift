@@ -25,6 +25,9 @@ final class AnnotationEditorWindow: NSWindow {
     private let toolSegment = NSSegmentedControl()
     private let mosaicSegment = NSSegmentedControl()
     private let mosaicLabel = NSTextField(labelWithString: L("马赛克"))
+    private let mosaicStrengthLabel = NSTextField(labelWithString: L("程度"))
+    private let mosaicStrengthSlider = NSSlider()
+    private let mosaicStrengthValue = NSTextField(labelWithString: "4")
     private let colorWell = NSColorWell()
     private let undoButton = NSButton()
     private let redoButton = NSButton()
@@ -80,6 +83,13 @@ final class AnnotationEditorWindow: NSWindow {
         // 保证宽度至少能放下工具栏（按“马赛克”控件显示时的最宽状态量），避免按钮重叠
         mosaicLabel.isHidden = false
         mosaicSegment.isHidden = false
+        mosaicStrengthLabel.isHidden = false
+        mosaicStrengthSlider.isHidden = false
+        mosaicStrengthValue.isHidden = false
+        // 马赛克模式不会同时显示“粗细”，量宽度时按最宽的马赛克状态算
+        widthLabel.isHidden = true
+        widthSlider.isHidden = true
+        widthValue.isHidden = true
         bar.layoutSubtreeIfNeeded()
         let neededWidth = bar.fittingSize.width
         if neededWidth > frame.width {
@@ -114,6 +124,14 @@ final class AnnotationEditorWindow: NSWindow {
         mosaicSegment.selectedSegment = 0
         mosaicSegment.target = self
         mosaicSegment.action = #selector(mosaicChanged)
+
+        mosaicStrengthSlider.minValue = 1
+        mosaicStrengthSlider.maxValue = 10
+        mosaicStrengthSlider.doubleValue = 4
+        mosaicStrengthSlider.target = self
+        mosaicStrengthSlider.action = #selector(mosaicStrengthChanged)
+        mosaicStrengthSlider.widthAnchor.constraint(equalToConstant: 90).isActive = true
+        mosaicStrengthValue.widthAnchor.constraint(equalToConstant: 22).isActive = true
 
         colorWell.color = .systemRed
         colorWell.target = self
@@ -152,7 +170,9 @@ final class AnnotationEditorWindow: NSWindow {
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let stack = NSStackView(views: [toolSegment, mosaicLabel, mosaicSegment, colorWell,
+        let stack = NSStackView(views: [toolSegment, mosaicLabel, mosaicSegment,
+                                        mosaicStrengthLabel, mosaicStrengthSlider, mosaicStrengthValue,
+                                        colorWell,
                                         widthLabel, widthSlider, widthValue, undoButton, redoButton,
                                         deleteButton, clearButton, spacer,
                                         zoomOutButton, zoomLabel, zoomInButton, fitButton, pinButton,
@@ -181,6 +201,16 @@ final class AnnotationEditorWindow: NSWindow {
         let showMosaic = canvas.tool == .mosaic
         mosaicLabel.isHidden = !showMosaic
         mosaicSegment.isHidden = !showMosaic
+        mosaicStrengthLabel.isHidden = !showMosaic
+        mosaicStrengthSlider.isHidden = !showMosaic
+        mosaicStrengthValue.isHidden = !showMosaic
+        // 马赛克不需要线宽，用同一条位置换成“程度”滑块
+        widthLabel.isHidden = showMosaic
+        widthSlider.isHidden = showMosaic
+        widthValue.isHidden = showMosaic
+        let strength = canvas.currentMosaicStrength
+        mosaicStrengthSlider.doubleValue = Double(strength)
+        mosaicStrengthValue.stringValue = "\(Int(strength.rounded()))"
         undoButton.isEnabled = canvas.canUndo
         redoButton.isEnabled = canvas.canRedo
         zoomLabel.stringValue = "\(Int((canvas.zoom * 100).rounded()))%"
@@ -194,6 +224,11 @@ final class AnnotationEditorWindow: NSWindow {
     @objc private func mosaicChanged() {
         guard let style = MosaicStyle(rawValue: mosaicSegment.selectedSegment) else { return }
         canvas.applyMosaicStyle(style)
+    }
+    @objc private func mosaicStrengthChanged() {
+        let value = CGFloat(mosaicStrengthSlider.doubleValue)
+        mosaicStrengthValue.stringValue = "\(Int(value.rounded()))"
+        canvas.applyMosaicStrength(value)
     }
     @objc private func colorChanged() { canvas.applyColor(colorWell.color) }
     @objc private func widthChanged() {

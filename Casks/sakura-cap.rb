@@ -4,7 +4,7 @@ cask "sakura-cap" do
 
   url "https://github.com/yueseqaz/Sakura-Cap/releases/download/v#{version}/Sakura-Cap-#{version}.zip"
   name "Sakura-Cap"
-  desc "菜单栏极简录屏工具（全屏 / 区域）"
+  desc "菜单栏极简录屏 / 截图 / 标注工具"
   homepage "https://github.com/yueseqaz/Sakura-Cap"
 
   app "Sakura-Cap.app"

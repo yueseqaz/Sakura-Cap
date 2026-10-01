@@ -44,6 +44,7 @@ struct Annotation {
     var text: String = ""
     var color: NSColor
     var mosaicStyle: MosaicStyle = .pixelate
+    var mosaicStrength: CGFloat = 4
     var lineWidth: CGFloat = 4
 }
 
@@ -52,9 +53,16 @@ struct Annotation {
 /// 通用标注画布：可带底图（图片编辑）或不带（直播覆盖层）。
 /// 支持 画笔/箭头/矩形/文字/序号/马赛克/裁剪，以及撤销、重做。
 final class AnnotationCanvas: NSView, NSTextFieldDelegate {
-    var tool: AnnotationTool = .select
+    var tool: AnnotationTool = .select {
+        didSet {
+            // 切换到绘制工具时清掉选中，避免下一个图形先被当成“编辑旧标注”
+            if tool != .select { selectedIndex = nil }
+            needsDisplay = true
+        }
+    }
     var color: NSColor = .systemRed
     var mosaicStyle: MosaicStyle = .pixelate
+    var mosaicStrength: CGFloat = 4
     var lineWidth: CGFloat = 4
     var allowCrop = true
 
@@ -88,12 +96,20 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var selectedIndex: Int?
     private var dragState: DragState = .none
     private var dragLast: CGPoint = .zero
-    private enum DragState { case none, move, handle(Int) }
+    private enum DragState: Equatable { case none, move, handle(Int) }
 
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
 
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
+
+    /// 当前应显示的马赛克程度：选中的马赛克优先，否则用工具默认值
+    var currentMosaicStrength: CGFloat {
+        if let index = selectedIndex, annotations.indices.contains(index), annotations[index].tool == .mosaic {
+            return annotations[index].mosaicStrength
+        }
+        return mosaicStrength
+    }
 
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -193,7 +209,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         var all = annotations
         if let current { all.append(current) }
         for annotation in all { draw(annotation) }
-        if tool == .select, let index = selectedIndex, annotations.indices.contains(index) {
+        if let index = selectedIndex, annotations.indices.contains(index) {
             drawSelection(annotations[index])
         }
         if let cropRect, tool == .crop { drawCropOverlay(cropRect) }
@@ -282,7 +298,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         let region = imageRect(annotation.points[0], annotation.points[1])
         let viewRect = NSRect(origin: viewPoint(region.origin),
                               size: CGSize(width: region.width * displayScale, height: region.height * displayScale))
-        if let image = mosaicImage(region: region, style: annotation.mosaicStyle) {
+        if let image = mosaicImage(region: region, style: annotation.mosaicStyle, strength: annotation.mosaicStrength) {
             image.draw(in: viewRect)
         } else {
             // 取不到取样时画一层半透明遮盖，至少挡住内容
@@ -341,6 +357,57 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             guard a.points.count >= 2 else { return .zero }
             return imageRect(a.points[0], a.points[1]).insetBy(dx: -8, dy: -8)
         }
+    }
+
+    private enum EditHit { case handle(Int), body, miss }
+
+    /// 命中当前选中标注的可编辑区域：先看控制点，再看图形本体。
+    private func editHit(on annotation: Annotation, at point: CGPoint) -> EditHit {
+        let radius = 12 / max(displayScale, 0.01)
+        for (h, hp) in handlePoints(annotation).enumerated()
+        where hypot(hp.x - point.x, hp.y - point.y) <= radius {
+            return .handle(h)
+        }
+        let slack = max(8 / max(displayScale, 0.01), annotation.lineWidth)
+        return bodyContains(annotation, point: point, slack: slack) ? .body : .miss
+    }
+
+    /// 图形本体的命中判断（贴着线条/边框才命中，图形内部留空方便继续画新标注）
+    private func bodyContains(_ a: Annotation, point: CGPoint, slack: CGFloat) -> Bool {
+        switch a.tool {
+        case .pen:
+            guard a.points.count >= 2 else { return false }
+            for i in 0..<(a.points.count - 1)
+            where distanceToSegment(point, a.points[i], a.points[i + 1]) <= slack {
+                return true
+            }
+            return false
+        case .arrow:
+            guard a.points.count >= 2 else { return false }
+            return distanceToSegment(point, a.points[0], a.points[1]) <= slack
+        case .rectangle:
+            guard a.points.count >= 2 else { return false }
+            let rect = imageRect(a.points[0], a.points[1])
+            let outer = rect.insetBy(dx: -slack, dy: -slack)
+            let inner = rect.insetBy(dx: slack, dy: slack)
+            if !outer.contains(point) { return false }
+            return !(inner.width > 0 && inner.height > 0 && inner.contains(point))
+        case .mosaic:
+            guard a.points.count >= 2 else { return false }
+            return imageRect(a.points[0], a.points[1]).contains(point)
+        case .text, .number:
+            return boundingBox(a).contains(point)
+        case .crop, .select:
+            return false
+        }
+    }
+
+    private func distanceToSegment(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let lengthSquared = dx * dx + dy * dy
+        if lengthSquared == 0 { return hypot(p.x - a.x, p.y - a.y) }
+        let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared))
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
     }
 
     private func annotationHit(at point: CGPoint) -> (index: Int, handle: Int)? {
@@ -405,6 +472,16 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         }
     }
 
+    func applyMosaicStrength(_ s: CGFloat) {
+        let clamped = min(10, max(1, s))
+        mosaicStrength = clamped
+        if let index = selectedIndex, annotations.indices.contains(index), annotations[index].tool == .mosaic {
+            annotations[index].mosaicStrength = clamped
+            needsDisplay = true
+            onChange?()
+        }
+    }
+
     func deleteSelected() {
         guard let index = selectedIndex, annotations.indices.contains(index) else { return }
         pushUndo()
@@ -416,27 +493,28 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     // MARK: 马赛克
 
-    private func mosaicImage(region: CGRect, style: MosaicStyle) -> NSImage? {
+    private func mosaicImage(region: CGRect, style: MosaicStyle, strength: CGFloat) -> NSImage? {
         guard region.width >= 4, region.height >= 4, let source = sourceImage(for: region) else { return nil }
         let ci = CIImage(cgImage: source)
         let extent = ci.extent
+        let factor = min(10, max(1, strength))
         var output: CIImage?
         switch style {
         case .pixelate:
             let filter = CIFilter.pixellate()
             filter.inputImage = ci
-            filter.scale = Float(max(8, extent.width / 24))
+            filter.scale = Float(max(4, extent.width * factor / 96))
             filter.center = CGPoint(x: extent.midX, y: extent.midY)
             output = filter.outputImage
         case .blur:
             let filter = CIFilter.gaussianBlur()
             filter.inputImage = ci.clampedToExtent()
-            filter.radius = Float(max(6, extent.width / 30))
+            filter.radius = Float(max(2, extent.width * factor / 120))
             output = filter.outputImage?.cropped(to: extent)
         case .hexagon:
             let filter = CIFilter.hexagonalPixellate()
             filter.inputImage = ci
-            filter.scale = Float(max(8, extent.width / 24))
+            filter.scale = Float(max(4, extent.width * factor / 96))
             filter.center = CGPoint(x: extent.midX, y: extent.midY)
             output = filter.outputImage
         }
@@ -459,6 +537,26 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     override func mouseDown(with event: NSEvent) {
         if activeField != nil { commitActiveField() }
         let point = imagePoint(convert(event.locationInWindow, from: nil))
+        // 刚画完的标注仍处于选中态：无需切回选择工具，直接拖拽它就能调整
+        if tool != .select, tool != .crop,
+           let index = selectedIndex, annotations.indices.contains(index) {
+            switch editHit(on: annotations[index], at: point) {
+            case .handle(let h):
+                pushUndo()
+                dragState = .handle(h)
+                dragLast = point
+                onChange?()
+                return
+            case .body:
+                pushUndo()
+                dragState = .move
+                dragLast = point
+                onChange?()
+                return
+            case .miss:
+                selectedIndex = nil
+            }
+        }
         switch tool {
         case .select:
             if let hit = annotationHit(at: point) {
@@ -475,7 +573,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             current = Annotation(tool: .pen, points: [point], color: color, lineWidth: lineWidth)
         case .arrow, .rectangle, .mosaic:
             current = Annotation(tool: tool, points: [point, point], color: color,
-                                 mosaicStyle: mosaicStyle, lineWidth: lineWidth)
+                                 mosaicStyle: mosaicStyle, mosaicStrength: mosaicStrength,
+                                 lineWidth: lineWidth)
         case .text:
             beginTextInput(at: point)
         case .number:
@@ -491,7 +590,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         let point = imagePoint(convert(event.locationInWindow, from: nil))
         if tool == .crop {
             if let anchor = cropAnchor { cropRect = imageRect(anchor, point) }
-        } else if tool == .select, let index = selectedIndex, annotations.indices.contains(index) {
+        } else if dragState != .none, let index = selectedIndex, annotations.indices.contains(index) {
             switch dragState {
             case .move:
                 let dx = point.x - dragLast.x
@@ -522,8 +621,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             needsDisplay = true
             return
         }
-        if tool == .select {
+        if dragState != .none {
             dragState = .none
+            onChange?()
+            needsDisplay = true
+            return
+        }
+        if tool == .select {
             onChange?()
             needsDisplay = true
             return
@@ -538,6 +642,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private func commit(_ annotation: Annotation) {
         pushUndo()
         annotations.append(annotation)
+        // 自动选中新标注，画完即可直接调整（拖控制点/本体），无需切回选择工具
+        selectedIndex = annotations.count - 1
         onChange?()
     }
 
