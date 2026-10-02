@@ -31,6 +31,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         applyHotKeys()
 
+        // 首次启动：弹出欢迎 / 引导页；之后启动静默检查更新
+        if AppSettings.shared.hasCompletedOnboarding {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { UpdateChecker.check(manual: false) }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { OnboardingWindowController.shared.show() }
+        }
+
         // 可视化选择（菜单「开始录制」/ 设置面板「框选区域」）的统一出口：
         // 把选择结果写进设置并立即开始录制
         SelectionController.shared.onPicked = { [weak self] result in

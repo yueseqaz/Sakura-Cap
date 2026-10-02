@@ -42,6 +42,7 @@ final class AppSettings: ObservableObject {
         static let showCursor = "showCursor"
         static let fps = "frameRate"
         static let hotKeys = "hotKeys"
+        static let onboarding = "hasCompletedOnboarding"
     }
 
     private let d = UserDefaults.standard
@@ -94,6 +95,9 @@ final class AppSettings: ObservableObject {
     @Published var showCursor = true { didSet { d.set(showCursor, forKey: Keys.showCursor) } }
     @Published var fps: FPSOption = .fps30 { didSet { d.set(fps.rawValue, forKey: Keys.fps) } }
 
+    // 是否已看过首次引导（含欢迎页）
+    @Published var hasCompletedOnboarding = false { didSet { d.set(hasCompletedOnboarding, forKey: Keys.onboarding) } }
+
     /// 开机自启（登录项）。真实状态以系统 SMAppService 为准。
     @Published var launchAtLogin: Bool = false { didSet { applyLaunchAtLogin() } }
     private var applyingLaunchAtLogin = false
@@ -139,6 +143,7 @@ final class AppSettings: ObservableObject {
         if let raw = d.string(forKey: Keys.colorSpace), let cs = ColorSpaceOption(rawValue: raw) { colorSpace = cs }
         if d.object(forKey: Keys.showCursor) != nil { showCursor = d.bool(forKey: Keys.showCursor) }
         if let f = FPSOption(rawValue: d.integer(forKey: Keys.fps)) { fps = f }
+        hasCompletedOnboarding = d.bool(forKey: Keys.onboarding)
         launchAtLogin = SMAppService.mainApp.status == .enabled
         if let data = d.data(forKey: Keys.hotKeys),
            let raw = try? JSONDecoder().decode([String: HotKeyCombo].self, from: data) {
