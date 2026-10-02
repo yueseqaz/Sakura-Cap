@@ -251,7 +251,7 @@
 
 /* 检查更新 */
 
-"检查更新…" = "Check for Updates…";
+"检查更新" = "Check for Updates";
 "发现新版本 v%@" = "New version v%@ available";
 "当前版本 v%@，已发布新版本。" = "You’re on v%@ and a newer version is available.";
 "前往下载" = "Download";
@@ -278,6 +278,6 @@
 "标注与裁剪" = "Annotate & Trim";
 "截图后进标注编辑器，录屏后进裁剪页，都能直接保存、拷贝或定住。" = "Screenshots open the annotator, recordings open the trimmer; both can be saved, copied, or pinned.";
 "全局快捷键默认为空，去「设置 → 快捷键」绑定你习惯的组合键。" = "Global shortcuts are empty by default — bind your own under Settings → Shortcuts.";
-"随时可点菜单栏图标开始；也可以从菜单「欢迎使用…」重新打开本引导。" = "Click the menu-bar icon anytime, or reopen this guide from the menu via “Welcome…”.";
+"随时可点菜单栏图标开始；也可以从「设置」窗口底部重新打开本引导或检查更新。" = "Click the menu-bar icon anytime, or reopen this guide / check for updates from the bottom of the Settings window.";
 "上一步" = "Back";
 "下一步" = "Next";

@@ -99,8 +99,6 @@ final class StatusItemController: NSObject {
         menu.addItem(makeItem(L("标注图片…"), #selector(annotateImage)))
         menu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
         menu.addItem(makeItem(L("设置…"), #selector(menuSettings)))
-        menu.addItem(makeItem(L("检查更新…"), #selector(menuCheckUpdates)))
-        menu.addItem(makeItem(L("欢迎使用…"), #selector(menuWelcome)))
         menu.addItem(makeItem(L("关于"), #selector(menuAbout)))
         menu.addItem(makeItem(L("退出"), #selector(menuQuit)))
         return menu
@@ -168,8 +166,6 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func menuSettings() { showSettings() }
-    @objc private func menuCheckUpdates() { UpdateChecker.check(manual: true) }
-    @objc private func menuWelcome() { OnboardingWindowController.shared.show() }
     @objc private func menuAbout() { AboutWindowController.shared.show() }
     @objc private func annotateImage() {
         let panel = NSOpenPanel()

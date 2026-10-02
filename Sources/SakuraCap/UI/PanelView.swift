@@ -386,10 +386,14 @@ struct PanelView: View {
     // MARK: - 通用
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 8) {
+            Text("v\(AppInfo.version)")
+                .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
             Spacer()
-            Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1")")
-                .font(.caption2).foregroundStyle(.tertiary)
+            Button("欢迎使用…") { OnboardingWindowController.shared.show() }
+                .controlSize(.small)
+            Button("检查更新") { UpdateChecker.check(manual: true) }
+                .controlSize(.small)
             Button("退出") { NSApp.terminate(nil) }
                 .controlSize(.small)
         }

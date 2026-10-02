@@ -200,7 +200,7 @@ struct OnboardingView: View {
             tipRow("camera.viewfinder", L("截图"), L("全屏 / 区域截图、OCR 取字、滚动截屏都在「截图」子菜单。"))
             tipRow("pencil.tip", L("标注与裁剪"), L("截图后进标注编辑器，录屏后进裁剪页，都能直接保存、拷贝或定住。"))
             tipRow("keyboard", L("快捷键"), L("全局快捷键默认为空，去「设置 → 快捷键」绑定你习惯的组合键。"))
-            Text(L("随时可点菜单栏图标开始；也可以从菜单「欢迎使用…」重新打开本引导。"))
+            Text(L("随时可点菜单栏图标开始；也可以从「设置」窗口底部重新打开本引导或检查更新。"))
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
