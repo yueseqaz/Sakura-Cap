@@ -36,6 +36,8 @@ final class AnnotationEditorWindow: NSWindow {
     private let widthValue = NSTextField(labelWithString: "4")
     private let zoomLabel = NSTextField(labelWithString: "100%")
     private let deleteButton = NSButton()
+    private let ocrButton = NSButton()
+    private var isOCRBusy = false
 
     private let allTools = AnnotationTool.allCases
 
@@ -62,6 +64,7 @@ final class AnnotationEditorWindow: NSWindow {
         sharingType = .none
         canvas.baseImage = image
         canvas.onChange = { [weak self] in self?.refresh() }
+        canvas.onOCRSelection = { [weak self] rect in self?.recognizeOCR(in: rect) }
 
         let container = NSView(frame: NSRect(origin: .zero, size: contentSize))
         let bar = buildToolbar()
@@ -162,6 +165,11 @@ final class AnnotationEditorWindow: NSWindow {
         fitButton.bezelStyle = .rounded
         let pinButton = NSButton(title: L("定住"), target: self, action: #selector(pinTapped))
         pinButton.bezelStyle = .rounded
+        ocrButton.title = L("取字")
+        ocrButton.bezelStyle = .rounded
+        ocrButton.target = self
+        ocrButton.action = #selector(ocrTapped)
+        ocrButton.toolTip = L("拖拽框选图片中的文字并复制到剪贴板")
         zoomLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         zoomLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
         let saveButton = NSButton(title: L("保存"), target: self, action: #selector(saveTapped))
@@ -176,7 +184,7 @@ final class AnnotationEditorWindow: NSWindow {
                                         widthLabel, widthSlider, widthValue, undoButton, redoButton,
                                         deleteButton, clearButton, spacer,
                                         zoomOutButton, zoomLabel, zoomInButton, fitButton, pinButton,
-                                        copyButton, saveButton])
+                                        ocrButton, copyButton, saveButton])
         stack.orientation = .horizontal
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -246,6 +254,44 @@ final class AnnotationEditorWindow: NSWindow {
         PinnedImageController.shared.pin(cg)
         close()
     }
+
+    /// OCR：「取字」进入一次性框选，选完对选区识别
+    @objc private func ocrTapped() {
+        if canvas.isSelectingOCR { canvas.endOCRSelection(); return }
+        canvas.beginOCRSelection()
+        Toast.show(title: L("拖拽框选要识别的文字"), detail: L("按 Esc 可取消"))
+    }
+
+    /// 对框选区域识别文字并复制到剪贴板
+    private func recognizeOCR(in rect: CGRect) {
+        guard !isOCRBusy, let base = canvas.baseImage else { return }
+        let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
+        let clipped = rect.integral.intersection(bounds)
+        guard clipped.width >= 2, clipped.height >= 2, let cropped = base.cropping(to: clipped) else { return }
+
+        isOCRBusy = true
+        ocrButton.isEnabled = false
+        ocrButton.title = L("识别中…")
+        Task { @MainActor in
+            defer {
+                isOCRBusy = false
+                ocrButton.isEnabled = true
+                ocrButton.title = L("取字")
+            }
+            guard let text = await OCR.recognize(cropped) else {
+                let alert = NSAlert()
+                alert.messageText = L("未识别到文字")
+                alert.addButton(withTitle: L("好"))
+                runModalAlert(alert)
+                return
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            let preview = text.count > 15 ? String(text.prefix(15)) + "…" : text
+            Toast.show(title: L("识别成功，已复制到剪贴板"), detail: preview)
+        }
+    }
+
     @objc private func undoTapped() { canvas.undo(); refresh() }
     @objc private func redoTapped() { canvas.redo(); refresh() }
 

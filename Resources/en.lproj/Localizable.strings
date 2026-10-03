@@ -209,6 +209,12 @@
 "标注" = "annotated";
 "保存" = "Save";
 "拷贝" = "Copy";
+"取字" = "Copy Text";
+"识别中…" = "Recognizing…";
+"拖拽框选图片中的文字并复制到剪贴板" = "Drag to select text in the image, then copy it to the clipboard";
+"拖拽框选要识别的文字" = "Drag to select the text to recognize";
+"拖拽框选要识别的文字（Esc 取消）" = "Drag to select the text to recognize (Esc to cancel)";
+"按 Esc 可取消" = "Press Esc to cancel";
 "马赛克" = "Mosaic";
 "粗细" = "Width";
 "程度" = "Strength";

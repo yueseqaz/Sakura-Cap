@@ -57,6 +57,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         didSet {
             // 切换到绘制工具时清掉选中，避免下一个图形先被当成“编辑旧标注”
             if tool != .select { selectedIndex = nil }
+            endOCRSelection()
             needsDisplay = true
         }
     }
@@ -92,6 +93,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private(set) var cropRect: CGRect? // 图片坐标
     private var cropAnchor: CGPoint?
 
+    // OCR 取字：一次性框选（图片坐标）
+    var onOCRSelection: ((CGRect) -> Void)?
+    private(set) var isSelectingOCR = false
+    private var ocrRect: CGRect?
+    private var ocrAnchor: CGPoint?
+
     // 选中/编辑
     private var selectedIndex: Int?
     private var dragState: DragState = .none
@@ -113,6 +120,41 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if isSelectingOCR { addCursorRect(bounds, cursor: .crosshair) }
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if isSelectingOCR { endOCRSelection() }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // 53 = Esc
+        if isSelectingOCR, event.keyCode == 53 { endOCRSelection(); return }
+        super.keyDown(with: event)
+    }
+
+    // MARK: OCR 取字框选
+
+    func beginOCRSelection() {
+        endOCRSelection()
+        isSelectingOCR = true
+        window?.invalidateCursorRects(for: self)
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+    }
+
+    func endOCRSelection() {
+        guard isSelectingOCR || ocrRect != nil else { return }
+        isSelectingOCR = false
+        ocrRect = nil
+        ocrAnchor = nil
+        window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+    }
 
     // MARK: 坐标换算（图片像素 ↔ 视图）
 
@@ -213,6 +255,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             drawSelection(annotations[index])
         }
         if let cropRect, tool == .crop { drawCropOverlay(cropRect) }
+        if isSelectingOCR { drawOCRSelection() }
     }
 
     private func draw(_ annotation: Annotation) {
@@ -319,6 +362,34 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         let border = NSBezierPath(rect: viewRect)
         border.lineWidth = 1.5
         border.stroke()
+    }
+
+    private func drawOCRSelection() {
+        // 顶部提示
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let string = NSAttributedString(string: L("拖拽框选要识别的文字（Esc 取消）"), attributes: attrs)
+        let textSize = string.size()
+        let pad: CGFloat = 8
+        let box = NSRect(x: bounds.midX - textSize.width / 2 - pad, y: 10,
+                         width: textSize.width + pad * 2, height: textSize.height + pad * 1.5)
+        NSColor.black.withAlphaComponent(0.72).setFill()
+        NSBezierPath(roundedRect: box, xRadius: 8, yRadius: 8).fill()
+        string.draw(at: NSPoint(x: box.minX + pad, y: box.minY + pad * 0.75))
+
+        // 选区边框
+        if let ocrRect {
+            let viewRect = NSRect(origin: viewPoint(ocrRect.origin),
+                                  size: CGSize(width: ocrRect.width * displayScale, height: ocrRect.height * displayScale))
+            let border = NSBezierPath(rect: viewRect)
+            border.lineWidth = 1.5
+            let pattern: [CGFloat] = [5, 3]
+            border.setLineDash(pattern, count: 2, phase: 0)
+            NSColor.controlAccentColor.setStroke()
+            border.stroke()
+        }
     }
 
     private func imageRect(_ a: CGPoint, _ b: CGPoint) -> CGRect {
@@ -537,6 +608,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     override func mouseDown(with event: NSEvent) {
         if activeField != nil { commitActiveField() }
         let point = imagePoint(convert(event.locationInWindow, from: nil))
+        // OCR 取字框选（一次性）
+        if isSelectingOCR {
+            ocrAnchor = point
+            ocrRect = CGRect(origin: point, size: .zero)
+            needsDisplay = true
+            return
+        }
         // 刚画完的标注仍处于选中态：无需切回选择工具，直接拖拽它就能调整
         if tool != .select, tool != .crop,
            let index = selectedIndex, annotations.indices.contains(index) {
@@ -588,6 +666,11 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     override func mouseDragged(with event: NSEvent) {
         let point = imagePoint(convert(event.locationInWindow, from: nil))
+        if isSelectingOCR {
+            if let anchor = ocrAnchor { ocrRect = imageRect(anchor, point) }
+            needsDisplay = true
+            return
+        }
         if tool == .crop {
             if let anchor = cropAnchor { cropRect = imageRect(anchor, point) }
         } else if dragState != .none, let index = selectedIndex, annotations.indices.contains(index) {
@@ -614,6 +697,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isSelectingOCR {
+            let rect = ocrRect
+            endOCRSelection()
+            if let rect, rect.width >= 4, rect.height >= 4 { onOCRSelection?(rect) }
+            return
+        }
         if tool == .crop {
             cropAnchor = nil
             if let rect = cropRect, rect.width >= 8, rect.height >= 8 { applyCrop(rect) }
