@@ -1,6 +1,6 @@
 cask "sakura-cap" do
-  version "1.2.1"
-  sha256 "1d8534dbba997f61f8fe2794b3d7bea965a6a7a51f523813c582175bb68f400f"
+  version "1.2.2"
+  sha256 "ae8e81d3adca1b53f3e3e7a92ad803dfe67b385f50b172d0600d5c839202a189"
 
   url "https://github.com/yueseqaz/Sakura-Cap/releases/download/v#{version}/Sakura-Cap-#{version}.zip"
   name "Sakura-Cap"
