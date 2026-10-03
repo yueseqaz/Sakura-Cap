@@ -287,3 +287,40 @@
 "随时可点菜单栏图标开始；也可以从「设置」窗口底部重新打开本引导或检查更新。" = "Click the menu-bar icon anytime, or reopen this guide / check for updates from the bottom of the Settings window.";
 "上一步" = "Back";
 "下一步" = "Next";
+
+/* 二维码识别 */
+"识别二维码" = "Scan QR Code";
+"未识别到二维码 / 条形码" = "No QR code / barcode found";
+"打开" = "Open";
+
+/* 文件命名 */
+"文件命名" = "File Naming";
+"示例：" = "Example: ";
+"恢复默认" = "Reset";
+"占位符：{date} 日期、{time} 时间、{datetime} 日期时间、{rand} 5 位随机数。" = "Placeholders: {date} date, {time} time, {datetime} date+time, {rand} 5-digit random.";
+
+/* 标注：吸管 / 测量 */
+"吸管：点击图片取色并复制 HEX" = "Eyedropper: click the image to pick a color and copy its HEX";
+"测量：点击两个点量距离（像素）" = "Measure: click two points to measure the distance (pixels)";
+"已吸取颜色" = "Color picked";
+"点击图片取色" = "Click the image to pick a color";
+"点击两个点测量距离（像素）" = "Click two points to measure the distance (pixels)";
+
+/* 视频截帧 */
+"截帧" = "Capture Frame";
+"已截帧 %@" = "Captured frame %@";
+"截帧失败：%@" = "Frame capture failed: %@";
+
+/* 截图对比 */
+"截图对比" = "Compare Screenshots";
+"对比" = "Compare";
+"截图对比：再截一张并排对比" = "Compare screenshots: capture another and compare side by side";
+"框选截图" = "Capture Region";
+"选择图片…" = "Choose Image…";
+"左右" = "Left/Right";
+"上下" = "Top/Bottom";
+"框选截图或选择图片后，拖动分割线对比" = "Capture a region or choose an image, then drag the divider to compare";
+"拖动分割线对比，可切换左右 / 上下" = "Drag the divider to compare; switch Left/Right or Top/Bottom";
+"已保存对比图" = "Comparison saved";
+"保存失败" = "Save failed";
+"选择要对比的图片" = "Choose an image to compare";

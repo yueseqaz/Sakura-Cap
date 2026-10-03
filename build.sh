@@ -12,7 +12,7 @@ set -euo pipefail
 APP_NAME="${APP_NAME:-Sakura-Cap}"
 BUNDLE_ID="${BUNDLE_ID:-com.sakura.sakuracap}"
 EXECUTABLE="SakuraCap"
-VERSION="${VERSION:-1.2.2}"
+VERSION="${VERSION:-1.3.0}"
 BUILD_NUMBER="1"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

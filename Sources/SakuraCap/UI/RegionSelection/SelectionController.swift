@@ -9,12 +9,14 @@ enum SelectionIntent {
     case regionOnly
 }
 
-/// 选区用途：录制 / 截图 / OCR
+/// 选区用途：录制 / 截图 / OCR / 滚动截屏 / 二维码
 enum SelectionPurpose {
     case record
     case screenshot
     case ocr
     case scrolling
+    case qr
+    case compare
 }
 
 enum SelectionResult {

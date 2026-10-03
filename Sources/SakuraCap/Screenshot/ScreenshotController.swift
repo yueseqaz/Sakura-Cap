@@ -35,11 +35,24 @@ final class ScreenshotController {
         Task { await recognize(displayID: region.displayID, region: region) }
     }
 
+    func qrRegion(_ region: RegionSelection) {
+        Task { await recognizeCode(displayID: region.displayID, region: region) }
+    }
+
+    func compareRegion(_ region: RegionSelection) {
+        Task {
+            guard #available(macOS 14.0, *) else { return }
+            if let image = try? await captureImage(displayID: region.displayID, region: region) {
+                CompareController.shared.deliver(image)
+            }
+        }
+    }
+
     private func openEditor(displayID: CGDirectDisplayID, region: RegionSelection?) async {
         guard #available(macOS 14.0, *) else { showError(ScreenshotError.unsupported); return }
         do {
             let image = try await captureImage(displayID: displayID, region: region)
-            let name = "SakuraCap \(StreamPlanner.timestamp()).png"
+            let name = FileName.make(ext: "png")
             AnnotationEditorController.shared.open(image: image, suggestedName: name)
         } catch {
             showError(error)
@@ -62,6 +75,50 @@ final class ScreenshotController {
         } catch {
             showError(error)
         }
+    }
+
+    private func recognizeCode(displayID: CGDirectDisplayID, region: RegionSelection?) async {
+        guard #available(macOS 14.0, *) else { showError(ScreenshotError.unsupported); return }
+        do {
+            let image = try await captureImage(displayID: displayID, region: region)
+            let codes = await Barcode.detect(image)
+            guard !codes.isEmpty else {
+                showMessage(L("未识别到二维码 / 条形码"))
+                return
+            }
+            let text = codes.joined(separator: "\n")
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            CompletionNotifier.shared.postCopiedText(count: text.count)
+
+            // 单个 http(s) 链接时，toast 末尾给一个「打开」按钮
+            let link = codes.compactMap { Self.webURL(from: $0) }.first
+            Log.app.notice("二维码识别: count=\(codes.count, privacy: .public) link=\(link?.absoluteString ?? "nil", privacy: .public)")
+            if let link {
+                Toast.show(title: L("识别成功，已复制到剪贴板"), detail: codes[0], actionTitle: L("打开")) {
+                    NSWorkspace.shared.open(link)
+                }
+            } else {
+                Toast.show(title: L("识别成功，已复制到剪贴板"), detail: codes[0])
+            }
+        } catch {
+            showError(error)
+        }
+    }
+
+    /// 从二维码内容里解析出可打开的 http(s) 链接（容忍首尾空白 / 缺 scheme）
+    private static func webURL(from raw: String) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains(" ") else { return nil }
+        if let url = URL(string: trimmed),
+           let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            return url
+        }
+        let host = trimmed.split(separator: "/").first.map(String.init) ?? trimmed
+        if host.contains("."), let url = URL(string: "https://" + trimmed), url.host != nil {
+            return url
+        }
+        return nil
     }
 
     @available(macOS 14.0, *)

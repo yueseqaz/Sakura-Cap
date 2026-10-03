@@ -127,7 +127,7 @@ final class ScrollingCapture {
         preview?.orderOut(nil)
         preview = nil
         guard let composed = compose() else { cancel(); return }
-        let name = "SakuraCap \(StreamPlanner.timestamp()).png"
+        let name = FileName.make(ext: "png")
         AnnotationEditorController.shared.open(image: composed, suggestedName: name)
         region = nil
     }

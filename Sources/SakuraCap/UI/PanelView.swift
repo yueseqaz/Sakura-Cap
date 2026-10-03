@@ -49,7 +49,11 @@ struct PanelView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            settingsContent
+            ScrollView(.vertical, showsIndicators: true) {
+                settingsContent
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: .infinity)
             if let banner = controller.banner {
                 Label(banner, systemImage: "info.circle.fill")
                     .font(.caption)
@@ -87,6 +91,7 @@ struct PanelView: View {
             outputCard
             loginCard
             postRecordingCard
+            namingCard
             dndCard
         }
     }
@@ -308,6 +313,25 @@ struct PanelView: View {
     private var postRecordingCard: some View {
         card("录制完成后") {
             Toggle("自动打开裁剪页", isOn: $settings.autoTrimAfterRecording)
+        }
+    }
+
+    private var namingCard: some View {
+        card("文件命名") {
+            TextField("{date}-{time}-{rand}", text: $settings.fileNamePattern)
+                .textFieldStyle(.roundedBorder)
+            HStack(spacing: 6) {
+                Text("示例：").font(.caption).foregroundStyle(.secondary)
+                Text(FileName.make(ext: "png"))
+                    .font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button("恢复默认") { settings.fileNamePattern = FileName.defaultPattern }
+                    .controlSize(.small)
+            }
+            Text("占位符：{date} 日期、{time} 时间、{datetime} 日期时间、{rand} 5 位随机数。")
+                .font(.caption2).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -65,6 +65,15 @@ final class AnnotationEditorWindow: NSWindow {
         canvas.baseImage = image
         canvas.onChange = { [weak self] in self?.refresh() }
         canvas.onOCRSelection = { [weak self] rect in self?.recognizeOCR(in: rect) }
+        canvas.onColorPicked = { [weak self] color in
+            guard let self else { return }
+            self.colorWell.color = color
+            self.canvas.applyColor(color)
+            let hex = color.hexString
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(hex, forType: .string)
+            Toast.show(title: L("已吸取颜色"), detail: hex)
+        }
 
         let container = NSView(frame: NSRect(origin: .zero, size: contentSize))
         let bar = buildToolbar()
@@ -165,6 +174,15 @@ final class AnnotationEditorWindow: NSWindow {
         fitButton.bezelStyle = .rounded
         let pinButton = NSButton(title: L("定住"), target: self, action: #selector(pinTapped))
         pinButton.bezelStyle = .rounded
+        let compareButton = NSButton()
+        configure(compareButton, symbol: "rectangle.split.2x1", action: #selector(compareTapped))
+        compareButton.toolTip = L("截图对比：再截一张并排对比")
+        let eyedropperButton = NSButton()
+        configure(eyedropperButton, symbol: "eyedropper", action: #selector(eyedropperTapped))
+        eyedropperButton.toolTip = L("吸管：点击图片取色并复制 HEX")
+        let measureButton = NSButton()
+        configure(measureButton, symbol: "ruler", action: #selector(measureTapped))
+        measureButton.toolTip = L("测量：点击两个点量距离（像素）")
         ocrButton.title = L("取字")
         ocrButton.bezelStyle = .rounded
         ocrButton.target = self
@@ -184,9 +202,9 @@ final class AnnotationEditorWindow: NSWindow {
                                         widthLabel, widthSlider, widthValue, undoButton, redoButton,
                                         deleteButton, clearButton, spacer,
                                         zoomOutButton, zoomLabel, zoomInButton, fitButton, pinButton,
-                                        ocrButton, copyButton, saveButton])
+                                        compareButton, eyedropperButton, measureButton, ocrButton, copyButton, saveButton])
         stack.orientation = .horizontal
-        stack.spacing = 8
+        stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -255,6 +273,24 @@ final class AnnotationEditorWindow: NSWindow {
         close()
     }
 
+    /// 吸管：一次性点击取色
+    @objc private func eyedropperTapped() {
+        canvas.beginColorPick()
+        Toast.show(title: L("点击图片取色"), detail: L("按 Esc 可取消"))
+    }
+
+    /// 测量：点击两个点量距离
+    @objc private func measureTapped() {
+        canvas.beginMeasure()
+        Toast.show(title: L("点击两个点测量距离（像素）"), detail: L("按 Esc 可取消"))
+    }
+
+    /// 截图对比：用当前底图打开对比窗口
+    @objc private func compareTapped() {
+        guard let image = canvas.baseImage else { return }
+        CompareController.shared.open(original: image)
+    }
+
     /// OCR：「取字」进入一次性框选，选完对选区识别
     @objc private func ocrTapped() {
         if canvas.isSelectingOCR { canvas.endOCRSelection(); return }
@@ -317,5 +353,16 @@ final class AnnotationEditorWindow: NSWindow {
     override func close() {
         super.close()
         onClose?(self)
+    }
+}
+
+private extension NSColor {
+    /// sRGB 十六进制，如 #FF2D55
+    var hexString: String {
+        guard let c = usingColorSpace(.sRGB) else { return "" }
+        let r = Int((c.redComponent * 255).rounded())
+        let g = Int((c.greenComponent * 255).rounded())
+        let b = Int((c.blueComponent * 255).rounded())
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
 }

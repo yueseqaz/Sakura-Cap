@@ -58,6 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return
             }
+            // 二维码：框选后识别内容并复制
+            if SelectionController.shared.currentPurpose == .qr {
+                if case .region(let region) = result { ScreenshotController.shared.qrRegion(region) }
+                return
+            }
+            // 截图对比：框选第二张图
+            if SelectionController.shared.currentPurpose == .compare {
+                if case .region(let region) = result { ScreenshotController.shared.compareRegion(region) }
+                return
+            }
             // 滚动截屏：框选后进入长截图
             if SelectionController.shared.currentPurpose == .scrolling {
                 if case .region(let region) = result { ScrollingCapture.shared.start(region: region) }
@@ -77,10 +87,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 选择完成后不立即开录：进入待开始状态，由 HUD 上的「开始录制」确认
             controller.arm()
         }
-        // 仅区域框选被取消时回到设置窗口；可视化选择取消则不做任何事
-        SelectionController.shared.onCancelled = { [weak self] intent in
-            if intent == .regionOnly {
+        // 仅「录制」的框选被取消时回到设置窗口；截图 / OCR / 二维码 / 对比取消则什么都不做
+        SelectionController.shared.onCancelled = { [weak self] _ in
+            let purpose = SelectionController.shared.currentPurpose
+            if purpose == .record {
                 self?.statusItem?.showSettings()
+            } else if purpose == .compare {
+                CompareController.shared.cancelPendingCapture()
             }
         }
         // 若开启了需要「输入监控」的功能，启动时即请求授权（首次会弹系统框）

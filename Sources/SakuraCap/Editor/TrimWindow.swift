@@ -181,6 +181,31 @@ final class TrimViewModel: ObservableObject {
         return true
     }
 
+    /// 截帧：把播放头所在帧存为 PNG，并打开标注编辑器
+    func captureFrameTapped() {
+        guard !isExporting, let dir = OutputDirectoryPicker.ensureDirectory(current: AppSettings.shared.outputDirectory) else { return }
+        player.pause()
+        isPlaying = false
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: sourceURL))
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        let time = CMTime(seconds: currentTime, preferredTimescale: 600)
+        Task { @MainActor in
+            do {
+                let cg = try await generator.image(at: time).image
+                let url = dir.appendingPathComponent(FileName.make(ext: "png"))
+                guard let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return }
+                try data.write(to: url)
+                status = String(format: L("已截帧 %@"), url.lastPathComponent)
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+                AnnotationEditorController.shared.open(image: cg, suggestedName: url.lastPathComponent)
+            } catch {
+                status = String(format: L("截帧失败：%@"), error.localizedDescription)
+            }
+        }
+    }
+
     /// 点「删除」：二次确认后删除原始录像文件，并关闭裁剪窗口
     func deleteTapped() {
         let alert = NSAlert()
@@ -313,6 +338,9 @@ struct TrimView: View {
                 }
                 Spacer()
                 if model.isExporting { ProgressView().controlSize(.small) }
+                Button { model.captureFrameTapped() } label: { Text(L("截帧")) }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isExporting)
                 Button("删除", role: .destructive) { model.deleteTapped() }
                     .buttonStyle(.bordered)
                     .disabled(model.isExporting)

@@ -57,7 +57,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         didSet {
             // 切换到绘制工具时清掉选中，避免下一个图形先被当成“编辑旧标注”
             if tool != .select { selectedIndex = nil }
-            endOCRSelection()
+            cancelTransient()
             needsDisplay = true
         }
     }
@@ -99,6 +99,17 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var ocrRect: CGRect?
     private var ocrAnchor: CGPoint?
 
+    // 吸管 / 测量（一次性）
+    var onColorPicked: ((NSColor) -> Void)?
+    private(set) var isPickingColor = false
+    private(set) var isMeasuring = false
+    private var measureStart: CGPoint?
+    private var measureEnd: CGPoint?
+    private enum MeasureDrag { case start, end }
+    private var measureDrag: MeasureDrag?
+    private var hoverColor: NSColor?
+    private var hoverPoint: CGPoint?
+
     // 选中/编辑
     private var selectedIndex: Int?
     private var dragState: DragState = .none
@@ -124,17 +135,24 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        if isSelectingOCR { addCursorRect(bounds, cursor: .crosshair) }
+        if isSelectingOCR || isPickingColor || isMeasuring || measureStart != nil { addCursorRect(bounds, cursor: .crosshair) }
     }
 
-    override func cancelOperation(_ sender: Any?) {
-        if isSelectingOCR { endOCRSelection() }
-    }
+    override func cancelOperation(_ sender: Any?) { cancelTransient() }
 
     override func keyDown(with event: NSEvent) {
         // 53 = Esc
-        if isSelectingOCR, event.keyCode == 53 { endOCRSelection(); return }
+        if event.keyCode == 53, isSelectingOCR || isPickingColor || isMeasuring || measureStart != nil {
+            cancelTransient()
+            return
+        }
         super.keyDown(with: event)
+    }
+
+    private func cancelTransient() {
+        endOCRSelection()
+        endColorPick()
+        endMeasure()
     }
 
     // MARK: OCR 取字框选
@@ -154,6 +172,58 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         ocrAnchor = nil
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
+    }
+
+    // MARK: 吸管 / 测量
+
+    func beginColorPick() {
+        cancelTransient()
+        isPickingColor = true
+        window?.acceptsMouseMovedEvents = true
+        window?.invalidateCursorRects(for: self)
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+    }
+
+    func endColorPick() {
+        guard isPickingColor || hoverPoint != nil else { return }
+        isPickingColor = false
+        hoverColor = nil
+        hoverPoint = nil
+        window?.acceptsMouseMovedEvents = false
+        window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+    }
+
+    func beginMeasure() {
+        cancelTransient()
+        isMeasuring = true
+        measureStart = nil
+        measureEnd = nil
+        window?.acceptsMouseMovedEvents = true
+        window?.invalidateCursorRects(for: self)
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+    }
+
+    func endMeasure() {
+        guard isMeasuring || measureStart != nil else { return }
+        isMeasuring = false
+        measureStart = nil
+        measureEnd = nil
+        measureDrag = nil
+        window?.acceptsMouseMovedEvents = false
+        window?.invalidateCursorRects(for: self)
+        needsDisplay = true
+    }
+
+    /// 读取底图某点的像素颜色（图片坐标）
+    private func colorAt(imagePoint point: CGPoint) -> NSColor? {
+        guard let baseImage else { return nil }
+        let x = Int(point.x.rounded(.down)), y = Int(point.y.rounded(.down))
+        guard x >= 0, y >= 0, x < baseImage.width, y < baseImage.height else { return nil }
+        let rep = NSBitmapImageRep(cgImage: baseImage)
+        return rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
     }
 
     // MARK: 坐标换算（图片像素 ↔ 视图）
@@ -256,6 +326,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         }
         if let cropRect, tool == .crop { drawCropOverlay(cropRect) }
         if isSelectingOCR { drawOCRSelection() }
+        if let a = measureStart, let b = measureEnd { drawMeasure(from: a, to: b) }
+        if isPickingColor { drawColorPickOverlay() }
     }
 
     private func draw(_ annotation: Annotation) {
@@ -362,6 +434,93 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         let border = NSBezierPath(rect: viewRect)
         border.lineWidth = 1.5
         border.stroke()
+    }
+
+    private func drawColorPickOverlay() {
+        guard let hover = hoverPoint else { return }
+        let vp = viewPoint(hover)
+        let hex = hoverColor.map { hexString($0) } ?? "--"
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let text = NSAttributedString(string: hex, attributes: attrs)
+        let textSize = text.size()
+        let pad: CGFloat = 8
+        let swatch: CGFloat = 18
+        let boxW = swatch + textSize.width + pad * 2 + 6
+        let boxH = max(swatch, textSize.height) + pad
+        var box = NSRect(x: vp.x + 14, y: vp.y - boxH / 2, width: boxW, height: boxH)
+        if box.maxX > bounds.maxX - 4 { box.origin.x = vp.x - 14 - boxW }
+        if box.minY < 4 { box.origin.y = 4 }
+        if box.maxY > bounds.maxY - 4 { box.origin.y = bounds.maxY - 4 - boxH }
+        NSColor.black.withAlphaComponent(0.82).setFill()
+        NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6).fill()
+        if let color = hoverColor {
+            let swatchRect = NSRect(x: box.minX + pad, y: box.minY + (box.height - swatch) / 2, width: swatch, height: swatch)
+            color.setFill()
+            NSBezierPath(roundedRect: swatchRect, xRadius: 4, yRadius: 4).fill()
+            NSColor.white.withAlphaComponent(0.45).setStroke()
+            let border = NSBezierPath(roundedRect: swatchRect, xRadius: 4, yRadius: 4)
+            border.lineWidth = 0.5
+            border.stroke()
+        }
+        text.draw(at: NSPoint(x: box.minX + pad + swatch + 6, y: box.minY + (box.height - textSize.height) / 2))
+    }
+
+    private func hexString(_ color: NSColor) -> String {
+        guard let c = color.usingColorSpace(.sRGB) else { return "" }
+        return String(format: "#%02X%02X%02X",
+                      Int((c.redComponent * 255).rounded()),
+                      Int((c.greenComponent * 255).rounded()),
+                      Int((c.blueComponent * 255).rounded()))
+    }
+
+    private func drawMeasure(from a: CGPoint, to b: CGPoint) {
+        let pa = viewPoint(a), pb = viewPoint(b)
+        let line = NSBezierPath()
+        line.move(to: pa)
+        line.line(to: pb)
+        line.lineWidth = 2
+        line.lineCapStyle = .round
+        NSColor.controlAccentColor.setStroke()
+        line.stroke()
+
+        for p in [pa, pb] {
+            let dot = NSBezierPath(ovalIn: NSRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10))
+            NSColor.white.setFill()
+            dot.fill()
+            NSColor.controlAccentColor.setStroke()
+            dot.lineWidth = 2
+            dot.stroke()
+        }
+
+        let dx = Int(abs(b.x - a.x).rounded())
+        let dy = Int(abs(b.y - a.y).rounded())
+        let distance = Int(hypot(b.x - a.x, b.y - a.y).rounded())
+        let mainAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
+            .foregroundColor: NSColor.white,
+        ]
+        let subAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.8),
+        ]
+        let main = NSAttributedString(string: "\(distance) px", attributes: mainAttrs)
+        let sub = NSAttributedString(string: "Δx \(dx)  Δy \(dy)", attributes: subAttrs)
+        let mainSize = main.size(), subSize = sub.size()
+        let pad: CGFloat = 7
+        let boxW = max(mainSize.width, subSize.width) + pad * 2
+        let boxH = mainSize.height + subSize.height + pad * 1.4
+        let mid = NSPoint(x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2)
+        var box = NSRect(x: mid.x + 12, y: mid.y - boxH / 2, width: boxW, height: boxH)
+        if box.maxX > bounds.maxX - 4 { box.origin.x = mid.x - 12 - boxW }
+        if box.minY < 4 { box.origin.y = 4 }
+        if box.maxY > bounds.maxY - 4 { box.origin.y = bounds.maxY - 4 - boxH }
+        NSColor.black.withAlphaComponent(0.78).setFill()
+        NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6).fill()
+        main.draw(at: NSPoint(x: box.minX + pad, y: box.minY + pad * 0.7))
+        sub.draw(at: NSPoint(x: box.minX + pad, y: box.minY + pad * 0.7 + mainSize.height))
     }
 
     private func drawOCRSelection() {
@@ -615,6 +774,39 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             needsDisplay = true
             return
         }
+        // 吸管：取像素色后回调（一次性）
+        if isPickingColor {
+            let picked = colorAt(imagePoint: point)
+            endColorPick()
+            if let picked { onColorPicked?(picked) }
+            return
+        }
+        // 测量：点第一个点，再点第二个点
+        if isMeasuring {
+            if measureStart == nil {
+                measureStart = point
+                measureEnd = point
+            } else {
+                measureEnd = point
+                isMeasuring = false
+                window?.acceptsMouseMovedEvents = false
+                window?.invalidateCursorRects(for: self)
+            }
+            needsDisplay = true
+            return
+        }
+        // 测量完成后：拖动两个端点调整
+        if !isMeasuring, let s = measureStart, let e = measureEnd {
+            let radius = 14 / max(displayScale, 0.01)
+            if hypot(point.x - s.x, point.y - s.y) <= radius {
+                measureDrag = .start
+                return
+            }
+            if hypot(point.x - e.x, point.y - e.y) <= radius {
+                measureDrag = .end
+                return
+            }
+        }
         // 刚画完的标注仍处于选中态：无需切回选择工具，直接拖拽它就能调整
         if tool != .select, tool != .crop,
            let index = selectedIndex, annotations.indices.contains(index) {
@@ -666,6 +858,14 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     override func mouseDragged(with event: NSEvent) {
         let point = imagePoint(convert(event.locationInWindow, from: nil))
+        if let drag = measureDrag {
+            switch drag {
+            case .start: measureStart = point
+            case .end: measureEnd = point
+            }
+            needsDisplay = true
+            return
+        }
         if isSelectingOCR {
             if let anchor = ocrAnchor { ocrRect = imageRect(anchor, point) }
             needsDisplay = true
@@ -696,7 +896,23 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
+    override func mouseMoved(with event: NSEvent) {
+        let point = imagePoint(convert(event.locationInWindow, from: nil))
+        if isPickingColor {
+            hoverPoint = point
+            hoverColor = colorAt(imagePoint: point)
+            needsDisplay = true
+            return
+        }
+        // 测量第一个点已确定时，线随光标预览
+        if isMeasuring, measureStart != nil {
+            measureEnd = point
+            needsDisplay = true
+        }
+    }
+
     override func mouseUp(with event: NSEvent) {
+        measureDrag = nil
         if isSelectingOCR {
             let rect = ocrRect
             endOCRSelection()

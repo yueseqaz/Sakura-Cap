@@ -15,7 +15,7 @@ import CoreVideo
 enum StreamPlanner {
     static func buildSpecs(settings: AppSettings, catalog: DisplayCatalog) throws -> [StreamSpec] {
         guard let directory = settings.outputDirectory else { throw RecordingError.noOutputDirectory }
-        let stamp = timestamp()
+        let stamp = FileName.base()
         var specs: [StreamSpec] = []
 
         // 窗口录制：若由系统共享选择器选定了窗口，优先按窗口出片
@@ -59,7 +59,7 @@ enum StreamPlanner {
                 let source = CGRect.zero
                 // 并行模式下系统音频只写进主屏文件，避免 N 份重复音轨
                 let capturesAudio = settings.recordSystemAudio && (chosen.count == 1 || info.isMain)
-                let suffix = chosen.count > 1 ? " - \(sanitized(info.name))" : ""
+                let suffix = chosen.count > 1 ? " - \(FileName.sanitize(info.name))" : ""
                 specs.append(StreamSpec(displayID: info.id,
                                         filter: filter,
                                         config: baseConfig(settings: settings, width: w, height: h, source: source),
@@ -162,16 +162,6 @@ enum StreamPlanner {
     }
 
     private static func fileURL(in directory: URL, stamp: String, suffix: String) -> URL {
-        directory.appendingPathComponent("SakuraCap \(stamp)\(suffix).mp4")
-    }
-
-    private static func sanitized(_ name: String) -> String {
-        name.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: ":", with: "_")
-    }
-
-    static func timestamp() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
-        return formatter.string(from: Date())
+        directory.appendingPathComponent("\(stamp)\(FileName.sanitize(suffix)).mp4")
     }
 }
