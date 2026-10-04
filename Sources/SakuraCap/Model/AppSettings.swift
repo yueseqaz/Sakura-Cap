@@ -44,6 +44,17 @@ final class AppSettings: ObservableObject {
         static let hotKeys = "hotKeys"
         static let onboarding = "hasCompletedOnboarding"
         static let fileNamePattern = "fileNamePattern"
+        static let translateProvider = "translateProvider"
+        static let translateBaseURL = "translateBaseURL"
+        static let translateModel = "translateModel"
+        static let translateModels = "translateModels"
+        static let translateCustomModel = "translateCustomModel"
+        static let translateCustomModels = "translateCustomModels"
+        static let translateStyle = "translateStyle"
+        static let translateAPIKey = "translateAPIKey"
+        static let translateCustomAPIKey = "translateCustomAPIKey"
+        static let translateSourceLang = "translateSourceLang"
+        static let translateTargetLang = "translateTargetLang"
     }
 
     private let d = UserDefaults.standard
@@ -102,6 +113,19 @@ final class AppSettings: ObservableObject {
     // 自动命名模板（截图 / 录屏 / 截帧）
     @Published var fileNamePattern = FileName.defaultPattern { didSet { d.set(fileNamePattern, forKey: Keys.fileNamePattern) } }
 
+    // 翻译
+    @Published var translateProvider: TranslateProvider = .deepSeek { didSet { d.set(translateProvider.rawValue, forKey: Keys.translateProvider) } }
+    @Published var translateBaseURL = "" { didSet { d.set(translateBaseURL, forKey: Keys.translateBaseURL) } }
+    @Published var translateModel = "deepseek-chat" { didSet { d.set(translateModel, forKey: Keys.translateModel) } }
+    @Published var translateModels: [String] = [] { didSet { d.set(translateModels, forKey: Keys.translateModels) } }
+    @Published var translateCustomModel = "" { didSet { d.set(translateCustomModel, forKey: Keys.translateCustomModel) } }
+    @Published var translateCustomModels: [String] = [] { didSet { d.set(translateCustomModels, forKey: Keys.translateCustomModels) } }
+    @Published var translateStyle = TranslateStyle.natural.rawValue { didSet { d.set(translateStyle, forKey: Keys.translateStyle) } }
+    @Published var translateAPIKey = "" { didSet { d.set(translateAPIKey, forKey: Keys.translateAPIKey) } }
+    @Published var translateCustomAPIKey = "" { didSet { d.set(translateCustomAPIKey, forKey: Keys.translateCustomAPIKey) } }
+    @Published var translateSourceLang = TranslateLanguage.auto.rawValue { didSet { d.set(translateSourceLang, forKey: Keys.translateSourceLang) } }
+    @Published var translateTargetLang = TranslateLanguage.zhHans.rawValue { didSet { d.set(translateTargetLang, forKey: Keys.translateTargetLang) } }
+
     /// 开机自启（登录项）。真实状态以系统 SMAppService 为准。
     @Published var launchAtLogin: Bool = false { didSet { applyLaunchAtLogin() } }
     private var applyingLaunchAtLogin = false
@@ -149,6 +173,17 @@ final class AppSettings: ObservableObject {
         if let f = FPSOption(rawValue: d.integer(forKey: Keys.fps)) { fps = f }
         hasCompletedOnboarding = d.bool(forKey: Keys.onboarding)
         if let s = d.string(forKey: Keys.fileNamePattern) { fileNamePattern = s }
+        if let raw = d.string(forKey: Keys.translateProvider), let p = TranslateProvider(rawValue: raw) { translateProvider = p }
+        translateBaseURL = d.string(forKey: Keys.translateBaseURL) ?? ""
+        translateModel = d.string(forKey: Keys.translateModel) ?? "deepseek-chat"
+        translateModels = d.stringArray(forKey: Keys.translateModels) ?? []
+        translateCustomModel = d.string(forKey: Keys.translateCustomModel) ?? ""
+        translateCustomModels = d.stringArray(forKey: Keys.translateCustomModels) ?? []
+        if let s = d.string(forKey: Keys.translateStyle) { translateStyle = s }
+        translateAPIKey = d.string(forKey: Keys.translateAPIKey) ?? ""
+        translateCustomAPIKey = d.string(forKey: Keys.translateCustomAPIKey) ?? ""
+        if let s = d.string(forKey: Keys.translateSourceLang) { translateSourceLang = s }
+        if let s = d.string(forKey: Keys.translateTargetLang) { translateTargetLang = s }
         launchAtLogin = SMAppService.mainApp.status == .enabled
         if let data = d.data(forKey: Keys.hotKeys),
            let raw = try? JSONDecoder().decode([String: HotKeyCombo].self, from: data) {
@@ -176,6 +211,36 @@ final class AppSettings: ObservableObject {
             launchAtLogin = SMAppService.mainApp.status == .enabled
             applyingLaunchAtLogin = false
         }
+    }
+
+    // MARK: - 翻译
+
+    var translationConfig: TranslationConfig {
+        TranslationConfig(
+            baseURL: translateProvider == .deepSeek ? translateProvider.defaultBaseURL : translateBaseURL,
+            apiKey: activeTranslateAPIKey,
+            model: activeTranslateModel,
+            source: TranslateLanguage(rawValue: translateSourceLang) ?? .auto,
+            target: TranslateLanguage(rawValue: translateTargetLang) ?? .zhHans,
+            style: TranslateStyle(rawValue: translateStyle) ?? .natural
+        )
+    }
+
+    /// 当前服务商对应的 API Key（DeepSeek 与自定义各自独立）
+    var activeTranslateAPIKey: String {
+        translateProvider == .deepSeek ? translateAPIKey : translateCustomAPIKey
+    }
+
+    /// 当前服务商对应的模型名
+    var activeTranslateModel: String {
+        let model = translateProvider == .deepSeek ? translateModel : translateCustomModel
+        let trimmed = model.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? translateProvider.defaultModel : trimmed
+    }
+
+    /// 当前服务商拉取到的模型列表
+    var activeTranslateModels: [String] {
+        translateProvider == .deepSeek ? translateModels : translateCustomModels
     }
 
     // MARK: - 区域

@@ -285,10 +285,69 @@ final class TrimViewModel: ObservableObject {
         }
     }
 
+    /// 点「导出 GIF」：先弹确认框（含尺寸选择）
+    func exportGIFTapped() {
+        guard trimmedDuration > 0.05 else { status = L("裁剪区间太短"); return }
+        let outURL = Self.gifOutputURL(for: sourceURL)
+        let alert = NSAlert()
+        alert.messageText = L("导出 GIF")
+        alert.informativeText = String(format: L("将导出为「%@」。"), outURL.lastPathComponent)
+            + "\n" + L("GIF 适合短片段，较长视频会较慢、文件较大。")
+        let label = NSTextField(labelWithString: L("尺寸"))
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.addItems(withTitles: GIFSize.allCases.map { $0.label })
+        popup.selectItem(at: 0)
+        let accessory = NSStackView(views: [label, popup])
+        accessory.orientation = .horizontal
+        accessory.spacing = 8
+        accessory.frame = NSRect(x: 0, y: 0, width: 220, height: 28)
+        alert.accessoryView = accessory
+        alert.addButton(withTitle: L("导出"))
+        alert.addButton(withTitle: L("取消"))
+        guard runModalAlert(alert) == .alertFirstButtonReturn else { return }
+        let index = max(0, min(popup.indexOfSelectedItem, GIFSize.allCases.count - 1))
+        let size = GIFSize.allCases[index]
+        Task { await self.exportGIF(size: size) }
+    }
+
+    func exportGIF(size: GIFSize) async {
+        guard trimmedDuration > 0.05 else { status = L("裁剪区间太短"); return }
+        isExporting = true
+        status = nil
+        player.pause()
+        isPlaying = false
+        defer { isExporting = false }
+
+        let outURL = Self.gifOutputURL(for: sourceURL)
+        try? FileManager.default.removeItem(at: outURL)
+        let range = CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 600),
+                                end: CMTime(seconds: end, preferredTimescale: 600))
+        do {
+            try await GIFExporter.export(source: sourceURL, timeRange: range, size: size, to: outURL)
+            status = String(format: L("已导出 %@"), outURL.lastPathComponent)
+            NSWorkspace.shared.activateFileViewerSelecting([outURL])
+            Toast.show(title: L("GIF 导出完成"), detail: outURL.lastPathComponent)
+        } catch {
+            Log.app.error("GIF 导出失败: \(error.localizedDescription, privacy: .public)")
+            status = String(format: L("导出失败：%@"), error.localizedDescription)
+            let alert = NSAlert()
+            alert.messageText = L("导出失败")
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: L("好"))
+            runModalAlert(alert)
+        }
+    }
+
     private static func outputURL(for url: URL) -> URL {
         let dir = url.deletingLastPathComponent()
         let base = url.deletingPathExtension().lastPathComponent
         return dir.appendingPathComponent("\(base) - \(L("裁剪")).mp4")
+    }
+
+    private static func gifOutputURL(for url: URL) -> URL {
+        let dir = url.deletingLastPathComponent()
+        let base = url.deletingPathExtension().lastPathComponent
+        return dir.appendingPathComponent("\(base) - \(L("裁剪")).gif")
     }
 }
 
@@ -341,6 +400,9 @@ struct TrimView: View {
                 Button { model.captureFrameTapped() } label: { Text(L("截帧")) }
                     .buttonStyle(.bordered)
                     .disabled(model.isExporting)
+                Button { model.exportGIFTapped() } label: { Text(L("导出 GIF")) }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isExporting || model.duration <= 0)
                 Button("删除", role: .destructive) { model.deleteTapped() }
                     .buttonStyle(.bordered)
                     .disabled(model.isExporting)

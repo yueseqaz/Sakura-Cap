@@ -91,6 +91,7 @@ final class StatusItemController: NSObject {
             shotMenu.addItem(makeItem(L("区域截图"), #selector(screenshotRegion)))
             shotMenu.addItem(makeItem(L("识别文字（OCR）"), #selector(ocrRegion)))
             shotMenu.addItem(makeItem(L("识别二维码"), #selector(qrRegion)))
+            shotMenu.addItem(makeItem(L("翻译"), #selector(translateRegion)))
             shotMenu.addItem(makeItem(L("滚动截屏…"), #selector(scrollingCapture)))
             shot.submenu = shotMenu
             menu.addItem(shot)
@@ -100,7 +101,6 @@ final class StatusItemController: NSObject {
         menu.addItem(makeItem(L("标注图片…"), #selector(annotateImage)))
         menu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
         menu.addItem(makeItem(L("设置…"), #selector(menuSettings)))
-        menu.addItem(makeItem(L("关于"), #selector(menuAbout)))
         menu.addItem(makeItem(L("退出"), #selector(menuQuit)))
         return menu
     }
@@ -129,6 +129,7 @@ final class StatusItemController: NSObject {
     @objc private func screenshotRegion() { screenshotRegionSelection() }
     @objc private func ocrRegion() { recognizeText() }
     @objc private func qrRegion() { beginSelection(.regionOnly, purpose: .qr) }
+    @objc private func translateRegion() { beginSelection(.regionOnly, purpose: .translate) }
     @objc private func scrollingCapture() { scrollingScreenshot() }
     @objc private func recordWindow() { startWindowRecording() }
 
@@ -168,7 +169,6 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func menuSettings() { showSettings() }
-    @objc private func menuAbout() { AboutWindowController.shared.show() }
     @objc private func annotateImage() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
@@ -212,7 +212,7 @@ final class StatusItemController: NSObject {
 
     private func ensureSettingsWindow() -> NSWindow {
         if let window = settingsWindow { return window }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 600),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 700),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "Sakura-Cap"

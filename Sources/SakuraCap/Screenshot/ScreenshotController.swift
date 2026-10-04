@@ -48,6 +48,32 @@ final class ScreenshotController {
         }
     }
 
+    func translateRegion(_ region: RegionSelection) {
+        Task { await translate(displayID: region.displayID, region: region) }
+    }
+
+    private func translate(displayID: CGDirectDisplayID, region: RegionSelection?) async {
+        guard #available(macOS 14.0, *) else { showError(ScreenshotError.unsupported); return }
+        do {
+            let image = try await captureImage(displayID: displayID, region: region)
+            guard let original = await OCR.recognize(image) else {
+                showMessage(L("未识别到文字"))
+                return
+            }
+            let model = TranslationPresenter.shared.present(original: original)
+            model.isLoading = true
+            do {
+                model.translation = try await TranslationService.translate(original, config: AppSettings.shared.translationConfig)
+                model.isLoading = false
+            } catch {
+                model.error = error.localizedDescription
+                model.isLoading = false
+            }
+        } catch {
+            showError(error)
+        }
+    }
+
     private func openEditor(displayID: CGDirectDisplayID, region: RegionSelection?) async {
         guard #available(macOS 14.0, *) else { showError(ScreenshotError.unsupported); return }
         do {

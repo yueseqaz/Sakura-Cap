@@ -68,6 +68,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if case .region(let region) = result { ScreenshotController.shared.compareRegion(region) }
                 return
             }
+            // 翻译：框选区域后 OCR + AI 翻译
+            if SelectionController.shared.currentPurpose == .translate {
+                if case .region(let region) = result { ScreenshotController.shared.translateRegion(region) }
+                return
+            }
             // 滚动截屏：框选后进入长截图
             if SelectionController.shared.currentPurpose == .scrolling {
                 if case .region(let region) = result { ScrollingCapture.shared.start(region: region) }

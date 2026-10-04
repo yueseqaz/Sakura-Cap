@@ -17,6 +17,7 @@ enum SelectionPurpose {
     case scrolling
     case qr
     case compare
+    case translate
 }
 
 enum SelectionResult {

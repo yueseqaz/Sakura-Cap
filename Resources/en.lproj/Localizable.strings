@@ -324,3 +324,77 @@
 "已保存对比图" = "Comparison saved";
 "保存失败" = "Save failed";
 "选择要对比的图片" = "Choose an image to compare";
+
+/* GIF 导出 */
+"导出 GIF" = "Export GIF";
+"尺寸" = "Size";
+"原始尺寸" = "Original size";
+"宽 1280" = "1280 wide";
+"宽 960" = "960 wide";
+"宽 640" = "640 wide";
+"GIF 适合短片段，较长视频会较慢、文件较大。" = "GIF is best for short clips; longer videos are slower and larger.";
+"GIF 导出完成" = "GIF exported";
+"无法创建 GIF 文件" = "Could not create the GIF file";
+"GIF 写入失败" = "Failed to write the GIF";
+"无法解码视频帧" = "Could not decode video frames";
+
+/* 翻译 */
+"翻译" = "Translate";
+"自定义" = "Custom";
+"自动检测" = "Auto-detect";
+"简体中文" = "Simplified Chinese";
+"繁體中文" = "Traditional Chinese";
+"翻译服务" = "Translation Service";
+"翻译方向" = "Translation Direction";
+"服务商" = "Provider";
+"API 地址（Base URL）" = "API URL (Base URL)";
+"模型" = "Model";
+"API Key" = "API Key";
+"DeepSeek：模型默认 deepseek-chat，只需填 API Key。" = "DeepSeek: model defaults to deepseek-chat; just fill in the API key.";
+"密钥仅保存在本机，除翻译服务外不会发送到任何地方。" = "The key is stored only on this Mac and is sent only to the translation service.";
+"原文语言" = "Source language";
+"译文语言" = "Target language";
+"截图子菜单「翻译」：框选后识别文字，按这里预设的语言方向翻译。" = "Screenshot → Translate: select a region; the text is recognized and translated using the direction set here.";
+"原文" = "Original";
+"译文" = "Translation";
+"翻译中…" = "Translating…";
+"复制译文" = "Copy translation";
+"关闭窗口" = "Close";
+"已复制译文" = "Translation copied";
+"请先在「设置 → 翻译」里填写 API Key" = "Set your API Key in Settings → Translate first";
+"翻译 API 地址无效" = "Invalid translation API URL";
+"翻译请求失败（%d）：%@" = "Translation request failed (%d): %@";
+"翻译返回为空" = "Empty translation response";
+"获取模型" = "Fetch Models";
+"已获取模型" = "Models fetched";
+"获取模型失败" = "Failed to fetch models";
+"返回为空" = "Empty response";
+"清除" = "Clear";
+"Key 仅保存在本机，除所填翻译服务外不会发送到任何地方。" = "The key is stored only on this Mac and sent only to the translation service you configure.";
+"翻译风格" = "Translation style";
+"自然" = "Natural";
+"直译" = "Literal";
+"正式" = "Formal";
+"口语" = "Casual";
+"简洁" = "Concise";
+"辅助" = "Assist";
+"关于" = "About";
+"其它" = "Other";
+"启动与行为" = "Launch & Behavior";
+"录屏结束后自动打开裁剪页" = "Open the trimmer after recording";
+
+/* 设置-关于 */
+"版本" = "Version";
+"功能" = "Features";
+"链接" = "Links";
+"GitHub 仓库" = "GitHub repository";
+"发布版本" = "Releases";
+"开发文档" = "Development docs";
+"标注与编辑" = "Annotate & Edit";
+"视频处理" = "Video";
+"菜单栏常驻的极简 Mac 录屏 / 截图 / 标注工具。" = "A minimal menu-bar screen recorder, snipper & annotator for Mac.";
+"全屏 / 区域 / 窗口，暂停续录、摄像头画中画、点击标记、按键显示。" = "Full screen / region / window; pause & resume, camera PiP, click highlights, keystroke display.";
+"全屏 / 区域截图、OCR 取字、二维码识别、滚动截屏、AI 翻译。" = "Full screen / region capture, OCR, QR scanning, scrolling capture, AI translation.";
+"画笔 / 箭头 / 矩形 / 文字 / 序号 / 马赛克 / 裁剪；吸管取色、两点测量、截图对比。" = "Pen / arrow / rectangle / text / number / mosaic / crop; eyedropper, two-point measure, screenshot compare.";
+"录后裁剪与删除原文件、视频截帧、GIF 导出（可选尺寸）。" = "Trim after recording, delete the original, video frame capture, GIF export (selectable size).";
+"© 2026 Sakura · 零第三方依赖，仅系统框架" = "© 2026 Sakura · No third-party dependencies, system frameworks only";
