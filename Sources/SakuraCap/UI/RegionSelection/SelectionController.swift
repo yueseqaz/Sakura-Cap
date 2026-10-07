@@ -307,14 +307,11 @@ final class SelectionOverlayView: NSView {
     }
 
     private func drawBorder(_ rect: CGRect, color: NSColor, lineWidth: CGFloat) {
+        // 单一描边，避免出现“蓝框 + 白框”的双层线
         color.setStroke()
-        let outer = NSBezierPath(rect: rect)
-        outer.lineWidth = lineWidth
-        outer.stroke()
-        NSColor.white.withAlphaComponent(0.85).setStroke()
-        let inner = NSBezierPath(rect: rect.insetBy(dx: lineWidth + 1, dy: lineWidth + 1))
-        inner.lineWidth = 1
-        inner.stroke()
+        let path = NSBezierPath(rect: rect)
+        path.lineWidth = lineWidth
+        path.stroke()
     }
 
     private func drawPill(_ string: String, center: NSPoint) {
