@@ -37,7 +37,11 @@ final class AnnotationEditorWindow: NSWindow {
     private let zoomLabel = NSTextField(labelWithString: "100%")
     private let deleteButton = NSButton()
     private let ocrButton = NSButton()
+    private let barcodeButton = NSButton()
+    private let translateButton = NSButton()
     private var isOCRBusy = false
+    private var isBarcodeBusy = false
+    private var isTranslationBusy = false
 
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -48,6 +52,11 @@ final class AnnotationEditorWindow: NSWindow {
         }
         if modifiers.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "y" {
             canvas.redo()
+            refresh()
+            return
+        }
+        if event.keyCode == 51 || event.keyCode == 117 {
+            canvas.deleteSelected()
             refresh()
             return
         }
@@ -79,7 +88,9 @@ final class AnnotationEditorWindow: NSWindow {
         sharingType = .none
         canvas.baseImage = image
         canvas.onChange = { [weak self] in self?.refresh() }
-        canvas.onOCRSelection = { [weak self] rect in self?.recognizeOCR(in: rect) }
+        canvas.onRecognitionSelection = { [weak self] action, rect in
+            self?.recognize(action, in: rect)
+        }
         canvas.onColorPicked = { [weak self] color in
             guard let self else { return }
             self.colorWell.color = color
@@ -92,9 +103,12 @@ final class AnnotationEditorWindow: NSWindow {
 
         let container = NSView(frame: NSRect(origin: .zero, size: contentSize))
         let bar = buildToolbar()
+        let actions = buildQuickActions()
         canvas.translatesAutoresizingMaskIntoConstraints = false
         bar.translatesAutoresizingMaskIntoConstraints = false
+        actions.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(canvas)
+        container.addSubview(actions)
         container.addSubview(bar)
         NSLayoutConstraint.activate([
             bar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
@@ -103,8 +117,12 @@ final class AnnotationEditorWindow: NSWindow {
             bar.heightAnchor.constraint(equalToConstant: 52),
             canvas.topAnchor.constraint(equalTo: container.topAnchor),
             canvas.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            canvas.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            canvas.trailingAnchor.constraint(equalTo: actions.leadingAnchor),
             canvas.bottomAnchor.constraint(equalTo: bar.topAnchor),
+            actions.topAnchor.constraint(equalTo: container.topAnchor),
+            actions.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            actions.bottomAnchor.constraint(equalTo: bar.topAnchor),
+            actions.widthAnchor.constraint(equalToConstant: 56),
         ])
         contentView = container
         // 保证宽度至少能放下工具栏（按“马赛克”控件显示时的最宽状态量），避免按钮重叠
@@ -198,11 +216,6 @@ final class AnnotationEditorWindow: NSWindow {
         let measureButton = NSButton()
         configure(measureButton, symbol: "ruler", action: #selector(measureTapped))
         measureButton.toolTip = L("测量：点击两个点量距离（像素）")
-        ocrButton.title = L("取字")
-        ocrButton.bezelStyle = .rounded
-        ocrButton.target = self
-        ocrButton.action = #selector(ocrTapped)
-        ocrButton.toolTip = L("拖拽框选图片中的文字并复制到剪贴板")
         zoomLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         zoomLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
         let saveButton = NSButton(title: L("保存"), target: self, action: #selector(saveTapped))
@@ -217,7 +230,7 @@ final class AnnotationEditorWindow: NSWindow {
                                         widthLabel, widthSlider, widthValue, undoButton, redoButton,
                                         deleteButton, clearButton, spacer,
                                         zoomOutButton, zoomLabel, zoomInButton, fitButton, pinButton,
-                                        compareButton, eyedropperButton, measureButton, ocrButton, copyButton, saveButton])
+                                        compareButton, eyedropperButton, measureButton, copyButton, saveButton])
         stack.orientation = .horizontal
         stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -228,6 +241,44 @@ final class AnnotationEditorWindow: NSWindow {
             stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
         ])
         return bar
+    }
+
+    private func buildQuickActions() -> NSView {
+        let panel = NSView()
+        panel.wantsLayer = true
+        panel.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+
+        for (button, symbol, label, action) in [
+            (ocrButton, "text.viewfinder", L("取字"), #selector(ocrTapped)),
+            (barcodeButton, "qrcode.viewfinder", L("二维码"), #selector(barcodeTapped)),
+            (translateButton, "character.bubble", L("翻译"), #selector(translateTapped)),
+        ] {
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular))
+            button.imagePosition = .imageOnly
+            button.bezelStyle = .rounded
+            button.toolTip = label
+            button.setAccessibilityLabel(label)
+            button.target = self
+            button.action = action
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.widthAnchor.constraint(equalToConstant: 36).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        }
+        ocrButton.toolTip = L("拖拽框选图片中的文字并复制到剪贴板")
+        barcodeButton.toolTip = L("拖拽框选要识别的二维码")
+        translateButton.toolTip = L("拖拽框选要翻译的文字")
+        let stack = NSStackView(views: [ocrButton, barcodeButton, translateButton])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        panel.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: panel.topAnchor, constant: 12),
+            stack.centerXAnchor.constraint(equalTo: panel.centerXAnchor),
+        ])
+        return panel
     }
 
     private func configure(_ button: NSButton, symbol: String, action: Selector) {
@@ -306,30 +357,40 @@ final class AnnotationEditorWindow: NSWindow {
         CompareController.shared.open(original: image)
     }
 
-    /// OCR：「取字」进入一次性框选，选完对选区识别
-    @objc private func ocrTapped() {
-        if canvas.isSelectingOCR { canvas.endOCRSelection(); return }
-        canvas.beginOCRSelection()
-        Toast.show(title: L("拖拽框选要识别的文字"), detail: L("按 Esc 可取消"))
+    @objc private func ocrTapped() { beginRecognition(.ocr, prompt: L("拖拽框选要识别的文字")) }
+    @objc private func barcodeTapped() { beginRecognition(.barcode, prompt: L("拖拽框选要识别的二维码")) }
+    @objc private func translateTapped() { beginRecognition(.translate, prompt: L("拖拽框选要翻译的文字")) }
+
+    private func beginRecognition(_ action: AnnotationCanvas.RecognitionAction, prompt: String) {
+        if canvas.recognitionAction == action { canvas.endRecognitionSelection(); return }
+        canvas.beginRecognitionSelection(action)
+        Toast.show(title: prompt, detail: L("按 Esc 可取消"))
+    }
+
+    private func recognize(_ action: AnnotationCanvas.RecognitionAction, in rect: CGRect) {
+        guard let base = canvas.baseImage else { return }
+        let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
+        let clipped = rect.integral.intersection(bounds)
+        guard clipped.width >= 2, clipped.height >= 2,
+              let image = base.cropping(to: clipped) else { return }
+        switch action {
+        case .ocr: recognizeOCR(image)
+        case .barcode: recognizeBarcode(image)
+        case .translate: translate(image)
+        }
     }
 
     /// 对框选区域识别文字并复制到剪贴板
-    private func recognizeOCR(in rect: CGRect) {
-        guard !isOCRBusy, let base = canvas.baseImage else { return }
-        let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
-        let clipped = rect.integral.intersection(bounds)
-        guard clipped.width >= 2, clipped.height >= 2, let cropped = base.cropping(to: clipped) else { return }
-
+    private func recognizeOCR(_ image: CGImage) {
+        guard !isOCRBusy else { return }
         isOCRBusy = true
         ocrButton.isEnabled = false
-        ocrButton.title = L("识别中…")
         Task { @MainActor in
             defer {
                 isOCRBusy = false
                 ocrButton.isEnabled = true
-                ocrButton.title = L("取字")
             }
-            guard let text = await OCR.recognize(cropped) else {
+            guard let text = await OCR.recognize(image) else {
                 let alert = NSAlert()
                 alert.messageText = L("未识别到文字")
                 alert.addButton(withTitle: L("好"))
@@ -340,6 +401,56 @@ final class AnnotationEditorWindow: NSWindow {
             NSPasteboard.general.setString(text, forType: .string)
             let preview = text.count > 15 ? String(text.prefix(15)) + "…" : text
             Toast.show(title: L("识别成功，已复制到剪贴板"), detail: preview)
+        }
+    }
+
+    private func recognizeBarcode(_ image: CGImage) {
+        guard !isBarcodeBusy else { return }
+        isBarcodeBusy = true
+        barcodeButton.isEnabled = false
+        Task { @MainActor in
+            defer {
+                isBarcodeBusy = false
+                barcodeButton.isEnabled = true
+            }
+            let codes = await Barcode.detect(image)
+            guard !codes.isEmpty else {
+                let alert = NSAlert()
+                alert.messageText = L("未识别到二维码 / 条形码")
+                alert.addButton(withTitle: L("好"))
+                runModalAlert(alert)
+                return
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(codes.joined(separator: "\n"), forType: .string)
+            Toast.show(title: L("识别成功，已复制到剪贴板"), detail: codes[0])
+        }
+    }
+
+    private func translate(_ image: CGImage) {
+        guard !isTranslationBusy else { return }
+        isTranslationBusy = true
+        translateButton.isEnabled = false
+        Task { @MainActor in
+            defer {
+                isTranslationBusy = false
+                translateButton.isEnabled = true
+            }
+            guard let original = await OCR.recognize(image) else {
+                let alert = NSAlert()
+                alert.messageText = L("未识别到文字")
+                alert.addButton(withTitle: L("好"))
+                runModalAlert(alert)
+                return
+            }
+            let model = TranslationPresenter.shared.present(original: original)
+            model.isLoading = true
+            do {
+                model.translation = try await TranslationService.translate(original, config: AppSettings.shared.translationConfig)
+            } catch {
+                model.error = error.localizedDescription
+            }
+            model.isLoading = false
         }
     }
 

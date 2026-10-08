@@ -210,6 +210,10 @@
 "保存" = "Save";
 "拷贝" = "Copy";
 "取字" = "Copy Text";
+"快捷操作" = "Quick Actions";
+"二维码" = "QR Code";
+"拖拽框选要识别的二维码" = "Drag to select the QR code to scan";
+"拖拽框选要翻译的文字" = "Drag to select the text to translate";
 "识别中…" = "Recognizing…";
 "拖拽框选图片中的文字并复制到剪贴板" = "Drag to select text in the image, then copy it to the clipboard";
 "拖拽框选要识别的文字" = "Drag to select the text to recognize";

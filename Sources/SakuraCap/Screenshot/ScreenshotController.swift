@@ -149,6 +149,15 @@ final class ScreenshotController {
 
     @available(macOS 14.0, *)
     func captureImage(displayID: CGDirectDisplayID, region: RegionSelection?) async throws -> CGImage {
+        // CGDisplayCreateImageForRect returns the display's native pixel buffer
+        // directly. It avoids ScreenCaptureKit's point-to-pixel conversion for
+        // small selections, which can otherwise produce a softer crop on Retina
+        // and mixed-DPI displays.
+        if let region,
+           let image = Self.nativeDisplayImage(displayID: displayID, region: region) {
+            Log.app.debug("区域截图原生像素: \(image.width)x\(image.height, privacy: .public)")
+            return image
+        }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw ScreenshotError.displayMissing
@@ -156,19 +165,57 @@ final class ScreenshotController {
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let scale = CGFloat(filter.pointPixelScale)
         let config = SCStreamConfiguration()
-        config.width = Int((filter.contentRect.width * scale).rounded())
-        config.height = Int((filter.contentRect.height * scale).rounded())
+        if let region {
+            // Ask ScreenCaptureKit for the selected area at its native pixel
+            // size. Capturing the whole display and then downsampling/cropping
+            // can make small text softer than a full-screen screenshot.
+            config.sourceRect = region.sckRect
+            config.width = max(2, region.pixelWidth)
+            config.height = max(2, region.pixelHeight)
+        } else {
+            config.width = Int((filter.contentRect.width * scale).rounded())
+            config.height = Int((filter.contentRect.height * scale).rounded())
+        }
         config.showsCursor = false
         config.captureResolution = .best
         var image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-        if let region {
-            let rect = CGRect(x: region.sckRect.minX * scale,
-                              y: region.sckRect.minY * scale,
-                              width: region.sckRect.width * scale,
-                              height: region.sckRect.height * scale).integral
-            if let cropped = image.cropping(to: rect) { image = cropped }
+        if let region, config.sourceRect == .zero {
+            // Use the actual returned image scale instead of assuming that
+            // pointPixelScale always matches the screenshot buffer. Some
+            // macOS/display combinations return a different native scale;
+            // using the filter scale there crops the right area at the wrong
+            // pixel size and makes the region look softer than a full display.
+            let actualScaleX = CGFloat(image.width) / max(filter.contentRect.width, 1)
+            let actualScaleY = CGFloat(image.height) / max(filter.contentRect.height, 1)
+            let requestedWidth = region.pixelWidth > 0
+                ? CGFloat(region.pixelWidth)
+                : region.sckRect.width * actualScaleX
+            let requestedHeight = region.pixelHeight > 0
+                ? CGFloat(region.pixelHeight)
+                : region.sckRect.height * actualScaleY
+            let rect = CGRect(x: region.sckRect.minX * actualScaleX,
+                              y: region.sckRect.minY * actualScaleY,
+                              width: requestedWidth,
+                              height: requestedHeight).integral
+            let bounded = rect.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            if bounded.width > 0, bounded.height > 0, let cropped = image.cropping(to: bounded) {
+                image = cropped
+            }
         }
         return image
+    }
+
+    private static func nativeDisplayImage(displayID: CGDirectDisplayID,
+                                           region: RegionSelection) -> CGImage? {
+        guard region.sckRect.width > 0, region.sckRect.height > 0 else { return nil }
+        let scaleX = CGFloat(region.pixelWidth) / region.sckRect.width
+        let scaleY = CGFloat(region.pixelHeight) / region.sckRect.height
+        guard scaleX > 0, scaleY > 0 else { return nil }
+        let rect = CGRect(x: region.sckRect.minX * scaleX,
+                          y: region.sckRect.minY * scaleY,
+                          width: CGFloat(region.pixelWidth),
+                          height: CGFloat(region.pixelHeight)).integral
+        return CGDisplayCreateImage(displayID, rect: rect)
     }
 
     private func showError(_ error: Error) {

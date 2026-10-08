@@ -93,9 +93,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private(set) var cropRect: CGRect? // 图片坐标
     private var cropAnchor: CGPoint?
 
-    // OCR 取字：一次性框选（图片坐标）
-    var onOCRSelection: ((CGRect) -> Void)?
-    private(set) var isSelectingOCR = false
+    // 一次性识别框选（图片坐标）
+    enum RecognitionAction { case ocr, barcode, translate }
+    var onRecognitionSelection: ((RecognitionAction, CGRect) -> Void)?
+    private(set) var recognitionAction: RecognitionAction?
     private var ocrRect: CGRect?
     private var ocrAnchor: CGPoint?
 
@@ -135,14 +136,14 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        if isSelectingOCR || isPickingColor || isMeasuring || measureStart != nil { addCursorRect(bounds, cursor: .crosshair) }
+        if recognitionAction != nil || isPickingColor || isMeasuring || measureStart != nil { addCursorRect(bounds, cursor: .crosshair) }
     }
 
     override func cancelOperation(_ sender: Any?) { cancelTransient() }
 
     override func keyDown(with event: NSEvent) {
         // 53 = Esc
-        if event.keyCode == 53, isSelectingOCR || isPickingColor || isMeasuring || measureStart != nil {
+        if event.keyCode == 53, recognitionAction != nil || isPickingColor || isMeasuring || measureStart != nil {
             cancelTransient()
             return
         }
@@ -159,24 +160,24 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     private func cancelTransient() {
-        endOCRSelection()
+        endRecognitionSelection()
         endColorPick()
         endMeasure()
     }
 
-    // MARK: OCR 取字框选
+    // MARK: 识别框选
 
-    func beginOCRSelection() {
-        endOCRSelection()
-        isSelectingOCR = true
+    func beginRecognitionSelection(_ action: RecognitionAction) {
+        cancelTransient()
+        recognitionAction = action
         window?.invalidateCursorRects(for: self)
         window?.makeFirstResponder(self)
         needsDisplay = true
     }
 
-    func endOCRSelection() {
-        guard isSelectingOCR || ocrRect != nil else { return }
-        isSelectingOCR = false
+    func endRecognitionSelection() {
+        guard recognitionAction != nil || ocrRect != nil else { return }
+        recognitionAction = nil
         ocrRect = nil
         ocrAnchor = nil
         window?.invalidateCursorRects(for: self)
@@ -249,7 +250,9 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var fitScale: CGFloat {
         let size = imageSize
         guard size.width > 0, size.height > 0, bounds.width > 0, bounds.height > 0 else { return 1 }
-        return min(bounds.width / size.width, bounds.height / size.height)
+        // Never enlarge a small region screenshot in the editor. It is a
+        // preview choice only; export remains at the source pixel dimensions.
+        return min(1, min(bounds.width / size.width, bounds.height / size.height))
     }
 
     private var displayScale: CGFloat { fitScale * zoom }
@@ -280,12 +283,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     /// 以某个视图点为锚点缩放（保持该点下的图像不动）
     func zoom(at viewPoint: CGPoint, factor: CGFloat) {
-        let imagePt = imagePoint(viewPoint)
-        zoom = min(8, max(0.2, zoom * factor))
-        let scale = displayScale
-        let base = baseDisplayOrigin
-        panOffset = CGPoint(x: viewPoint.x - imagePt.x * scale - base.x,
-                            y: viewPoint.y - imagePt.y * scale - base.y)
+        // Keep zoom centered on the image rather than following the cursor.
+        // This makes toolbar, trackpad and wheel zoom behave consistently.
+        zoom = min(20, max(0.2, zoom * factor))
+        panOffset = .zero
         needsDisplay = true
         onChange?()
     }
@@ -299,18 +300,23 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         } else {
             // 单独滚轮：缩放
             let factor = min(1.18, max(0.85, pow(1.02, event.scrollingDeltaY)))
-            zoom(at: convert(event.locationInWindow, from: nil), factor: factor)
+            zoom(at: CGPoint(x: bounds.midX, y: bounds.midY), factor: factor)
         }
     }
 
     override func magnify(with event: NSEvent) {
-        zoom(at: convert(event.locationInWindow, from: nil), factor: 1 + event.magnification)
+        zoom(at: CGPoint(x: bounds.midX, y: bounds.midY), factor: 1 + event.magnification)
     }
 
     private func imagePoint(_ viewPoint: CGPoint) -> CGPoint {
         let scale = displayScale
         let origin = displayOrigin
         return CGPoint(x: (viewPoint.x - origin.x) / scale, y: (viewPoint.y - origin.y) / scale)
+    }
+
+    private func isInsideImage(_ point: CGPoint) -> Bool {
+        let size = imageSize
+        return point.x >= 0 && point.y >= 0 && point.x <= size.width && point.y <= size.height
     }
 
     private func viewPoint(_ imagePoint: CGPoint) -> CGPoint {
@@ -334,7 +340,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             drawSelection(annotations[index])
         }
         if let cropRect, tool == .crop { drawCropOverlay(cropRect) }
-        if isSelectingOCR { drawOCRSelection() }
+        if recognitionAction != nil { drawOCRSelection() }
         if let a = measureStart, let b = measureEnd { drawMeasure(from: a, to: b) }
         if isPickingColor { drawColorPickOverlay() }
     }
@@ -779,8 +785,15 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     override func mouseDown(with event: NSEvent) {
         if activeField != nil { commitActiveField() }
         let point = imagePoint(convert(event.locationInWindow, from: nil))
+        // The canvas may be larger than a small screenshot. Do not create
+        // annotations in the editor's empty area outside the source image.
+        guard isInsideImage(point) else {
+            selectedIndex = nil
+            needsDisplay = true
+            return
+        }
         // OCR 取字框选（一次性）
-        if isSelectingOCR {
+        if recognitionAction != nil {
             ocrAnchor = point
             ocrRect = CGRect(origin: point, size: .zero)
             needsDisplay = true
@@ -878,8 +891,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             needsDisplay = true
             return
         }
-        if isSelectingOCR {
-            if let anchor = ocrAnchor { ocrRect = imageRect(anchor, point) }
+        if recognitionAction != nil {
+            if let anchor = ocrAnchor {
+                let end = CGPoint(x: min(max(0, point.x), imageSize.width),
+                                  y: min(max(0, point.y), imageSize.height))
+                ocrRect = imageRect(anchor, end)
+            }
             needsDisplay = true
             return
         }
@@ -925,10 +942,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     override func mouseUp(with event: NSEvent) {
         measureDrag = nil
-        if isSelectingOCR {
+        if let action = recognitionAction {
             let rect = ocrRect
-            endOCRSelection()
-            if let rect, rect.width >= 4, rect.height >= 4 { onOCRSelection?(rect) }
+            endRecognitionSelection()
+            if let rect, rect.width >= 4, rect.height >= 4 { onRecognitionSelection?(action, rect) }
             return
         }
         if tool == .crop {
@@ -1074,7 +1091,20 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         copy.baseImage = baseImage
         copy.annotations = annotations
         copy.cropRect = cropRect
-        guard let rep = copy.bitmapImageRepForCachingDisplay(in: copy.bounds) else { return nil }
+        // Create an explicitly sized bitmap. NSView's convenience bitmap rep
+        // can use the Retina backing scale, which makes a small crop export at
+        // a larger pixel size than the source screenshot.
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil,
+                                         pixelsWide: baseImage.width,
+                                         pixelsHigh: baseImage.height,
+                                         bitsPerSample: 8,
+                                         samplesPerPixel: 4,
+                                         hasAlpha: true,
+                                         isPlanar: false,
+                                         colorSpaceName: .deviceRGB,
+                                         bitmapFormat: .alphaFirst,
+                                         bytesPerRow: baseImage.width * 4,
+                                         bitsPerPixel: 32) else { return nil }
         copy.cacheDisplay(in: copy.bounds, to: rep)
         guard let cg = rep.cgImage else { return nil }
         if let cropRect {

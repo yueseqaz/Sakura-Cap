@@ -7,12 +7,14 @@ final class PanelViewModel: ObservableObject {
     let controller: RecordingController
 
     @Published var settingsSection = "general"
+    @Published private(set) var permissionRefreshToken = UUID()
 
     init(controller: RecordingController) {
         self.controller = controller
     }
 
     func appear() {
+        refreshPermissions()
         if PermissionCenter.screenCaptureGranted() {
             refreshContent()
         }
@@ -25,6 +27,11 @@ final class PanelViewModel: ObservableObject {
         if AppSettings.shared.keyDisplayEnabled {
             KeyDisplay.shared.start()
         }
+    }
+
+    func refreshPermissions() {
+        CameraPiP.shared.refreshPermissionStatus()
+        permissionRefreshToken = UUID()
     }
 
     func refreshContent() {

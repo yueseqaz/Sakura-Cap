@@ -5,6 +5,30 @@ import CoreGraphics
 /// 三类权限的检测与系统设置深链：
 /// 屏幕录制（TCC ScreenCapture）、麦克风（TCC Microphone）、输入监控（TCC ListenEvent）。
 enum PermissionCenter {
+    enum AccessState: Equatable {
+        case authorized, notDetermined, denied, restricted
+
+        var isAuthorized: Bool { self == .authorized }
+    }
+
+    static func accessState(_ status: AVAuthorizationStatus) -> AccessState {
+        switch status {
+        case .authorized: return .authorized
+        case .notDetermined: return .notDetermined
+        case .restricted: return .restricted
+        case .denied: return .denied
+        @unknown default: return .denied
+        }
+    }
+
+    static var cameraAccess: AccessState {
+        accessState(AVCaptureDevice.authorizationStatus(for: .video))
+    }
+
+    static var microphoneAccess: AccessState {
+        accessState(AVCaptureDevice.authorizationStatus(for: .audio))
+    }
+
     // MARK: - 检测
 
     static func screenCaptureGranted() -> Bool {
@@ -12,7 +36,7 @@ enum PermissionCenter {
     }
 
     static var microphoneDenied: Bool {
-        AVCaptureDevice.authorizationStatus(for: .audio) == .denied
+        microphoneAccess == .denied || microphoneAccess == .restricted
     }
 
     static var microphoneUndetermined: Bool {

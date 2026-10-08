@@ -9,6 +9,7 @@ final class CameraPiP: ObservableObject {
     static let shared = CameraPiP()
 
     @Published private(set) var devices: [AVCaptureDevice] = []
+    @Published private(set) var authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
     @Published private(set) var permissionDenied = false
     @Published private(set) var running = false
 
@@ -20,6 +21,28 @@ final class CameraPiP: ObservableObject {
     private var configuredDeviceID: String?
 
     private init() { refreshDevices() }
+
+    /// 系统设置切回来后重新读取权限；设置页通过 ObservableObject 自动刷新状态。
+    func refreshPermissionStatus() {
+        authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        permissionDenied = authorizationStatus != .authorized && authorizationStatus != .notDetermined
+    }
+
+    /// Requests camera access from the permissions panel. If macOS has already
+    /// made a decision, the caller should take the user to System Settings.
+    func requestPermission(completion: @escaping () -> Void) {
+        refreshPermissionStatus()
+        guard authorizationStatus == .notDetermined else {
+            completion()
+            return
+        }
+        AVCaptureDevice.requestAccess(for: .video) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshPermissionStatus()
+                completion()
+            }
+        }
+    }
 
     /// 绑定录制状态，自动在合适阶段显示/隐藏
     func attach(controller: RecordingController) {
@@ -35,11 +58,13 @@ final class CameraPiP: ObservableObject {
         var types: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera]
         if #available(macOS 14.0, *) { types.append(.external) } else { types.append(.externalUnknown) }
         devices = AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .video, position: .unspecified).devices
+        if devices.isEmpty { stop() }
     }
 
     /// 设置面板开关
     func setEnabled(_ enabled: Bool) {
         guard enabled else { stop(); return }
+        refreshPermissionStatus()
         requestPermissionIfNeeded { [weak self] in self?.sync() }
     }
 
@@ -69,6 +94,7 @@ final class CameraPiP: ObservableObject {
     }
 
     private func start() {
+        refreshPermissionStatus()
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             break
@@ -81,6 +107,11 @@ final class CameraPiP: ObservableObject {
         }
         permissionDenied = false
         if devices.isEmpty { refreshDevices() }
+        guard !devices.isEmpty else {
+            stop()
+            Toast.show(title: L("没有可用的摄像头"), detail: L("请连接摄像头后重试"))
+            return
+        }
         configureDeviceIfNeeded()
         showWindow()
         applyConfiguration()
@@ -126,6 +157,7 @@ final class CameraPiP: ObservableObject {
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 Task { @MainActor [weak self] in
+                    self?.refreshPermissionStatus()
                     self?.permissionDenied = !granted
                     completion()
                 }

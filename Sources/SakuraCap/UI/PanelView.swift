@@ -73,7 +73,13 @@ struct PanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 560, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
-        .onAppear { viewModel.appear() }
+        .onAppear {
+            viewModel.appear()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // macOS 的隐私设置在外部修改；回到应用时重新读取，避免显示旧状态。
+            viewModel.refreshPermissions()
+        }
     }
 
     // MARK: - 侧边栏
@@ -408,36 +414,70 @@ struct PanelView: View {
     // MARK: 权限
 
     private var permissionsSection: some View {
-        group("权限", icon: "lock.shield") {
+        Group {
+            let _ = viewModel.permissionRefreshToken
+            group("权限", icon: "lock.shield") {
             permissionRow(name: L("屏幕录制"),
                           granted: PermissionCenter.screenCaptureGranted(),
                           detail: L("录制与截图需要。"),
                           action: { PermissionCenter.openScreenCaptureSettings() })
             permissionRow(name: L("麦克风"),
-                          granted: !PermissionCenter.microphoneDenied,
+                          state: PermissionCenter.microphoneAccess,
                           detail: L("录制麦克风声音需要。"),
-                          action: { PermissionCenter.openMicrophoneSettings() })
+                          action: requestMicrophonePermission)
             permissionRow(name: L("输入监控"),
                           granted: PermissionCenter.inputMonitoringGranted(),
                           detail: L("鼠标点击标记 / 键盘按键显示需要。"),
                           action: { PermissionCenter.openInputMonitoringSettings() })
             permissionRow(name: L("摄像头"),
-                          granted: AVCaptureDevice.authorizationStatus(for: .video) == .authorized,
-                          detail: L("摄像头画中画需要。"),
-                          action: { PermissionCenter.openCameraSettings() })
+                          state: PermissionCenter.cameraAccess,
+                          detail: camera.devices.isEmpty ? L("未检测到摄像头设备。") : L("摄像头画中画需要。"),
+                          action: requestCameraPermission)
+            }
         }
     }
 
-    private func permissionRow(name: String, granted: Bool, detail: String, action: @escaping () -> Void) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(granted ? Color.green : Color.orange)
+    private func requestMicrophonePermission() {
+        if PermissionCenter.microphoneAccess == .notDetermined {
+            PermissionCenter.requestMicrophone { _ in
+                Task { @MainActor in viewModel.refreshPermissions() }
+            }
+        } else {
+            PermissionCenter.openMicrophoneSettings()
+        }
+    }
+
+    private func requestCameraPermission() {
+        camera.requestPermission {
+            viewModel.refreshPermissions()
+            if PermissionCenter.cameraAccess != .authorized {
+                PermissionCenter.openCameraSettings()
+            }
+        }
+    }
+
+    private func permissionRow(name: String, state: PermissionCenter.AccessState? = nil,
+                               granted: Bool? = nil, detail: String, action: @escaping () -> Void) -> some View {
+        let isGranted = state?.isAuthorized ?? (granted ?? false)
+        let isPending = state == .notDetermined
+        let statusText: String = isGranted ? L("已授权") : L("未授权")
+        let statusIcon = isGranted ? "checkmark.circle.fill" : "xmark.circle.fill"
+        let statusColor: Color = isGranted ? .green : (isPending ? .orange : .red)
+        return HStack(alignment: .center, spacing: 10) {
+            Image(systemName: statusIcon)
+                .foregroundStyle(statusColor)
             VStack(alignment: .leading, spacing: 1) {
-                Text(name).font(.callout).fontWeight(.medium)
+                HStack(spacing: 6) {
+                    Text(name).font(.callout).fontWeight(.medium)
+                    Text(statusText)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(statusColor)
+                }
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button(granted ? L("打开系统设置") : L("去授权")) { action() }
+            Button(isGranted || isPending ? L("打开系统设置") : L("去授权")) { action() }
                 .controlSize(.small)
         }
         .padding(9)
