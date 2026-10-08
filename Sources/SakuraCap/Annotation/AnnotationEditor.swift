@@ -39,6 +39,21 @@ final class AnnotationEditorWindow: NSWindow {
     private let ocrButton = NSButton()
     private var isOCRBusy = false
 
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "z" {
+            if modifiers.contains(.shift) { canvas.redo() } else { canvas.undo() }
+            refresh()
+            return
+        }
+        if modifiers.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "y" {
+            canvas.redo()
+            refresh()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
     private let allTools = AnnotationTool.allCases
 
     init(image: CGImage, suggestedName: String, onClose: @escaping (AnnotationEditorWindow) -> Void) {

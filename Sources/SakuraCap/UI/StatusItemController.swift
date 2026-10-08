@@ -20,6 +20,9 @@ final class StatusItemController: NSObject {
             .applying(NSImage.SymbolConfiguration(paletteColors: [tint]))
         let image = NSImage(systemSymbolName: Self.baseSymbol, accessibilityDescription: "Sakura-Cap")?
             .withSymbolConfiguration(config)
+        // Keep the symbol inside the status item's 22pt-high menu bar slot.
+        // A symbol image without an explicit size can be clipped by NSStatusBarButton.
+        image?.size = NSSize(width: 17, height: 17)
         image?.isTemplate = false
         return image
     }
@@ -33,6 +36,8 @@ final class StatusItemController: NSObject {
 
         if let button = item.button {
             button.image = baseIcon(tint: .systemPink)
+            button.imageScaling = .scaleProportionallyDown
+            button.imagePosition = .imageOnly
             button.target = self
             button.action = #selector(statusClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])

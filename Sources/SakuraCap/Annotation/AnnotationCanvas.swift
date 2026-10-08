@@ -146,6 +146,15 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             cancelTransient()
             return
         }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "z" {
+            if modifiers.contains(.shift) { redo() } else { undo() }
+            return
+        }
+        if modifiers.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "y" {
+            redo()
+            return
+        }
         super.keyDown(with: event)
     }
 
@@ -664,7 +673,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         border.setLineDash(pattern, count: 2, phase: 0)
         NSColor.controlAccentColor.setStroke()
         border.stroke()
-        for hp in handlePoints(a) {
+        // A number's handle is its body. Drawing the usual white handle on top
+        // of it hides the digit until the next repaint.
+        let handles = a.tool == .number || a.tool == .text ? [] : handlePoints(a)
+        for hp in handles {
             let vp = viewPoint(hp)
             let handle = NSBezierPath(ovalIn: NSRect(x: vp.x - 5, y: vp.y - 5, width: 10, height: 10))
             NSColor.white.setFill()
