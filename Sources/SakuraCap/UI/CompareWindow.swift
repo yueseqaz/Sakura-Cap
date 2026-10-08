@@ -58,9 +58,9 @@ final class CompareWindowController {
         compareView.imageA = original
 
         let container = NSView()
-        let bar = NSView()
-        bar.wantsLayer = true
-        bar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let bar = NSVisualEffectView()
+        bar.material = .windowBackground
+        bar.blendingMode = .withinWindow
 
         let captureButton = NSButton(title: L("框选截图"), target: self, action: #selector(captureTapped))
         captureButton.bezelStyle = .rounded

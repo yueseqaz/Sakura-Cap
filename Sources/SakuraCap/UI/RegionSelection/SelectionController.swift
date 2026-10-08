@@ -242,11 +242,16 @@ final class SelectionOverlayView: NSView {
                 needsDisplay = true
                 return
             }
+            // Use the display's actual pixel dimensions rather than
+            // NSScreen.backingScaleFactor. The latter can be stale or rounded
+            // on mixed-DPI/Retina setups and makes the captured area drift.
+            let scaleX = CGFloat(CGDisplayPixelsWide(screen.displayID)) / max(screen.frame.width, 1)
+            let scaleY = CGFloat(CGDisplayPixelsHigh(screen.displayID)) / max(screen.frame.height, 1)
             let selection = RegionSelection(
                 displayID: screen.displayID,
                 sckRect: ScreenCoordinate.sckSourceRect(fromAppKitLocalRect: rect, in: screen),
-                pixelWidth: Int(rect.width * screen.backingScaleFactor),
-                pixelHeight: Int(rect.height * screen.backingScaleFactor))
+                pixelWidth: max(2, Int((rect.width * scaleX).rounded())),
+                pixelHeight: max(2, Int((rect.height * scaleY).rounded())))
             controller?.finish(result: .region(selection))
             return
         }

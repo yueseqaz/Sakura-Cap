@@ -145,9 +145,9 @@ final class AnnotationEditorWindow: NSWindow {
     }
 
     private func buildToolbar() -> NSView {
-        let bar = NSView()
-        bar.wantsLayer = true
-        bar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let bar = NSVisualEffectView()
+        bar.material = .windowBackground
+        bar.blendingMode = .withinWindow
 
         toolSegment.segmentCount = allTools.count
         toolSegment.trackingMode = .selectOne
@@ -244,9 +244,9 @@ final class AnnotationEditorWindow: NSWindow {
     }
 
     private func buildQuickActions() -> NSView {
-        let panel = NSView()
-        panel.wantsLayer = true
-        panel.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        let panel = NSVisualEffectView()
+        panel.material = .windowBackground
+        panel.blendingMode = .withinWindow
 
         for (button, symbol, label, action) in [
             (ocrButton, "text.viewfinder", L("取字"), #selector(ocrTapped)),
@@ -257,6 +257,7 @@ final class AnnotationEditorWindow: NSWindow {
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular))
             button.imagePosition = .imageOnly
             button.bezelStyle = .rounded
+            button.contentTintColor = .labelColor
             button.toolTip = label
             button.setAccessibilityLabel(label)
             button.target = self
@@ -283,7 +284,9 @@ final class AnnotationEditorWindow: NSWindow {
 
     private func configure(_ button: NSButton, symbol: String, action: Selector) {
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        button.isBordered = false
+        button.bezelStyle = .rounded
+        button.imagePosition = .imageOnly
+        button.contentTintColor = .labelColor
         button.target = self
         button.action = action
         button.widthAnchor.constraint(equalToConstant: 28).isActive = true

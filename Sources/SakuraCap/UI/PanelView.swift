@@ -72,6 +72,8 @@ struct PanelView: View {
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(.regularMaterial)
+        .tint(.accentColor)
         .frame(minWidth: 560, maxWidth: .infinity, minHeight: 500, maxHeight: .infinity)
         .onAppear {
             viewModel.appear()
@@ -121,10 +123,10 @@ struct PanelView: View {
                     .padding(.horizontal, 9)
                     .frame(minHeight: 34)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(selected == section ? Color.accentColor.opacity(0.16) : Color.clear)
-                    )
+                    .background(RoundedRectangle(cornerRadius: 8)
+                        .fill(selected == section ? Color.accentColor.opacity(0.16) : Color.clear))
+                    .overlay(RoundedRectangle(cornerRadius: 8)
+                        .stroke(selected == section ? Color.accentColor.opacity(0.18) : Color.clear, lineWidth: 0.5))
                     .foregroundStyle(selected == section ? Color.accentColor : Color.primary)
                     .contentShape(Rectangle())
                 }
@@ -153,7 +155,10 @@ struct PanelView: View {
         .padding(.top, 2)
         .frame(width: 204)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color.primary.opacity(0.035))
+        .background(.thinMaterial)
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(Color.primary.opacity(0.08)).frame(width: 1)
+        }
     }
 
     // MARK: - 头部
@@ -607,7 +612,8 @@ struct PanelView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.045)))
+            .background(RoundedRectangle(cornerRadius: 10).fill(.regularMaterial))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 0.5))
         }
     }
 

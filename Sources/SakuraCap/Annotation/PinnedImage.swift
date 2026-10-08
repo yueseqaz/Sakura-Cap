@@ -56,6 +56,8 @@ final class PinnedImageWindow: NSWindow {
         controls.orientation = .horizontal
         controls.spacing = 6
         controls.translatesAutoresizingMaskIntoConstraints = false
+        controls.isHidden = true
+        pinnedView.controls = controls
         pinnedView.addSubview(controls)
         NSLayoutConstraint.activate([
             controls.topAnchor.constraint(equalTo: pinnedView.topAnchor, constant: 8),
@@ -109,6 +111,21 @@ final class PinnedImageWindow: NSWindow {
 
 final class PinnedImageView: NSView {
     var image: CGImage? { didSet { needsDisplay = true } }
+    weak var controls: NSView?
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+        let area = NSTrackingArea(rect: .zero,
+                                  options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { controls?.isHidden = false }
+    override func mouseExited(with event: NSEvent) { controls?.isHidden = true }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let image else { return }

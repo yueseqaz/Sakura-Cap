@@ -232,8 +232,9 @@ private struct RecordingHUDView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(on ? Color.accentColor : Color.secondary)
+                .foregroundStyle(on ? Color.accentColor : Color.primary)
                 .frame(width: 24, height: 24)
+                .background(Circle().fill(on ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.10)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -292,8 +293,9 @@ private struct RecordingHUDView: View {
         Button(action: action) {
             Image(systemName: "xmark")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .frame(width: 22, height: 22)
+                .background(Circle().fill(Color.primary.opacity(0.10)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -355,7 +357,7 @@ struct InputMenuButton: NSViewRepresentable {
         let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(config)
-        button.contentTintColor = isOn ? .controlAccentColor : .secondaryLabelColor
+        button.contentTintColor = isOn ? .controlAccentColor : .labelColor
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
