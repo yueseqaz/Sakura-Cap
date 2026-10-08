@@ -79,7 +79,27 @@ struct PanelView: View {
     // MARK: - 侧边栏
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "camera.aperture")
+                    .font(.title3)
+                    .foregroundStyle(.pink)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Color.pink.opacity(0.12)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sakura-Cap")
+                        .font(.headline)
+                    Text("录制 · 截图 · 标注")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 14)
+            .padding(.bottom, 18)
+
+            VStack(alignment: .leading, spacing: 3) {
             ForEach(Section.allCases) { section in
                 Button {
                     viewModel.settingsSection = section.rawValue
@@ -93,6 +113,7 @@ struct PanelView: View {
                     .font(.callout)
                     .padding(.vertical, 6)
                     .padding(.horizontal, 9)
+                    .frame(minHeight: 34)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
                         RoundedRectangle(cornerRadius: 7)
@@ -103,10 +124,28 @@ struct PanelView: View {
                 }
                 .buttonStyle(.plain)
             }
+            }
+
             Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Label(controller.state == .recording ? L("正在录制") : L("准备就绪"),
+                      systemImage: controller.state == .recording ? "record.circle.fill" : "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(controller.state == .recording ? .red : .secondary)
+                Text(L("从菜单栏图标开始录制或截图"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.045)))
+            .padding(.horizontal, 10)
+            .padding(.bottom, 12)
         }
-        .padding(10)
-        .frame(width: 168)
+        .padding(.top, 2)
+        .frame(width: 204)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color.primary.opacity(0.035))
     }
@@ -302,7 +341,7 @@ struct PanelView: View {
                 }
                 fieldRow("API Key") {
                     HStack(spacing: 6) {
-                        TextField("", text: settings.translateProvider == .deepSeek ? $settings.translateAPIKey : $settings.translateCustomAPIKey)
+                        SecureField("", text: settings.translateProvider == .deepSeek ? $settings.translateAPIKey : $settings.translateCustomAPIKey)
                             .textFieldStyle(.roundedBorder)
                         Button("清除") {
                             if settings.translateProvider == .deepSeek { settings.translateAPIKey = "" } else { settings.translateCustomAPIKey = "" }
