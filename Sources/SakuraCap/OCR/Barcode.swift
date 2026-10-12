@@ -16,7 +16,7 @@ enum Barcode {
                 }
                 continuation.resume(returning: payloads)
             }
-            let handler = VNImageRequestHandler(cgImage: image, options: [:])
+            let handler = VNImageRequestHandler(cgImage: OCR.preparedImage(image), options: [:])
             do {
                 try handler.perform([request])
             } catch {

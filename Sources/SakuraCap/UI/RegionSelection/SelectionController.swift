@@ -221,15 +221,17 @@ final class SelectionOverlayView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard anchor != nil, controller?.currentIntent == .regionOnly else { return } // 仅框选模式响应拖拽
         currentPoint = convert(event.locationInWindow, from: nil)
+        let recognition = controller?.currentPurpose == .ocr || controller?.currentPurpose == .qr || controller?.currentPurpose == .translate
         if !isDraggingRegion, let a = anchor, let c = currentPoint,
-           Self.distance(a, c) > 6 {
+           Self.distance(a, c) > (recognition ? 2 : 6) {
             isDraggingRegion = true
         }
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let a = anchor, let c = currentPoint else { return }
+        guard let a = anchor else { return }
+        let c = convert(event.locationInWindow, from: nil)
         anchor = nil
         currentPoint = nil
         let dragging = isDraggingRegion
@@ -238,7 +240,9 @@ final class SelectionOverlayView: NSView {
         if dragging {
             // 拖拽 → 区域（intersection(bounds)：越界部分钳制在本屏，区域不跨屏）
             let rect = Self.normalized(a, c).intersection(bounds)
-            guard rect.width >= 24, rect.height >= 24 else {
+            let recognition = controller?.currentPurpose == .ocr || controller?.currentPurpose == .qr || controller?.currentPurpose == .translate
+            let minimum: CGFloat = recognition ? 3 : 24
+            guard rect.width >= minimum, rect.height >= minimum else {
                 needsDisplay = true
                 return
             }

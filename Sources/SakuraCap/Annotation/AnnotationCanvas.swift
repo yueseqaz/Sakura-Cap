@@ -90,6 +90,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var redoStack: [Snapshot] = []
     private var activeField: NSTextField?
     private var pendingTextPoint: CGPoint = .zero
+    private var awaitingTextSelectionClick = false
     private(set) var cropRect: CGRect? // 图片坐标
     private var cropAnchor: CGPoint?
 
@@ -784,6 +785,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     override func mouseDown(with event: NSEvent) {
         if activeField != nil { commitActiveField() }
+        // The first click after finishing text only confirms its selection.
+        // A subsequent click can place another text annotation.
+        if tool == .text, awaitingTextSelectionClick {
+            awaitingTextSelectionClick = false
+            needsDisplay = true
+            return
+        }
         let point = imagePoint(convert(event.locationInWindow, from: nil))
         // The canvas may be larger than a small screenshot. Do not create
         // annotations in the editor's empty area outside the source image.
@@ -943,9 +951,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     override func mouseUp(with event: NSEvent) {
         measureDrag = nil
         if let action = recognitionAction {
-            let rect = ocrRect
+            let point = imagePoint(convert(event.locationInWindow, from: nil))
+            let end = CGPoint(x: min(max(0, point.x), imageSize.width),
+                              y: min(max(0, point.y), imageSize.height))
+            let rect = ocrAnchor.map { imageRect($0, end) }
             endRecognitionSelection()
-            if let rect, rect.width >= 4, rect.height >= 4 { onRecognitionSelection?(action, rect) }
+            if let rect, rect.width >= 2, rect.height >= 2 { onRecognitionSelection?(action, rect) }
             return
         }
         if tool == .crop {
@@ -978,6 +989,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         annotations.append(annotation)
         // 自动选中新标注，画完即可直接调整（拖控制点/本体），无需切回选择工具
         selectedIndex = annotations.count - 1
+        needsDisplay = true
         onChange?()
     }
 
@@ -1048,6 +1060,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     // MARK: 文字（原地输入）
 
     private func beginTextInput(at point: CGPoint) {
+        awaitingTextSelectionClick = false
         window?.makeKey()
         pendingTextPoint = point
         let view = viewPoint(point)
@@ -1078,6 +1091,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         activeField = nil
         if !text.isEmpty {
             commit(Annotation(tool: .text, points: [point], text: text, color: textColor))
+            awaitingTextSelectionClick = true
+            window?.makeFirstResponder(self)
         }
         needsDisplay = true
     }

@@ -502,7 +502,7 @@ struct PanelView: View {
                     Button("更改…") { viewModel.chooseOutputDirectory() }.controlSize(.small)
                 }
             }
-            group("文件命名", icon: "textformat.abc") {
+            group("文件命名", icon: "tag") {
                 TextField("{date}-{time}-{rand}", text: $settings.fileNamePattern)
                     .textFieldStyle(.roundedBorder)
                 HStack(spacing: 6) {
@@ -526,6 +526,10 @@ struct PanelView: View {
                     footnote("通过「快捷指令」切换专注模式：在「快捷指令」App 新建两个快捷指令（用「设置专注模式」动作），名称如下：")
                     fieldRow("开启") { TextField("", text: $settings.dndOnShortcut).textFieldStyle(.roundedBorder) }
                     fieldRow("关闭") { TextField("", text: $settings.dndOffShortcut).textFieldStyle(.roundedBorder) }
+                    Button("打开快捷指令…") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Shortcuts.app"))
+                    }
+                    .controlSize(.small)
                 }
             }
         }

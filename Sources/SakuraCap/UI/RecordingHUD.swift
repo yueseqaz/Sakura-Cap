@@ -3,13 +3,14 @@ import SwiftUI
 import Combine
 
 /// 录制中的悬浮控制条：计时 / 暂停继续 / 停止。
-/// 窗口 sharingType = .none，因此永远不会出现在录像画面里；可拖动，位置自动记忆。
+/// 窗口 sharingType = .none，因此永远不会出现在录像画面里；每次显示时按目标屏幕定位。
 @MainActor
 final class RecordingHUDController {
     private let controller: RecordingController
     private var window: NSWindow?
     private var hosting: NSHostingView<RecordingHUDView>?
     private var cancellables = Set<AnyCancellable>()
+    private var screenObserver: NSObjectProtocol?
 
     init(controller: RecordingController) {
         self.controller = controller
@@ -17,6 +18,18 @@ final class RecordingHUDController {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.sync() }
             .store(in: &cancellables)
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let window = self.window, window.isVisible else { return }
+                self.positionBottomCenter(window)
+            }
+        }
+    }
+
+    deinit {
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
     }
 
     /// 待开始 / 准备 / 倒计时 / 录制期间都显示
@@ -32,8 +45,9 @@ final class RecordingHUDController {
     private func show() {
         let window = window ?? makeWindow()
         self.window = window
+        positionBottomCenter(window)
         window.orderFrontRegardless()
-        // 等 SwiftUI 根据新状态布局后，再按内容尺寸调整窗口（保持右上角不动）
+        // SwiftUI 布局完成后用真实宽度重新居中。
         DispatchQueue.main.async { [weak self] in self?.resizeToFit() }
     }
 
@@ -42,12 +56,10 @@ final class RecordingHUDController {
         hosting.layoutSubtreeIfNeeded()
         let size = hosting.fittingSize
         guard size.width > 1, size.height > 1 else { return }
-        guard abs(window.frame.width - size.width) > 0.5 || abs(window.frame.height - size.height) > 0.5 else { return }
-        // 保持底部居中不动
-        let centerX = window.frame.midX
-        let bottomY = window.frame.minY
-        window.setFrame(NSRect(x: centerX - size.width / 2, y: bottomY,
-                               width: size.width, height: size.height), display: true)
+        if abs(window.frame.width - size.width) > 0.5 || abs(window.frame.height - size.height) > 0.5 {
+            window.setContentSize(size)
+        }
+        positionBottomCenter(window)
     }
 
     private func hide() {
@@ -73,17 +85,24 @@ final class RecordingHUDController {
         window.isMovableByWindowBackground = true
         window.contentView = hosting
         window.setContentSize(size)
-        // 位置持久化；无历史记录时落在主屏底部居中
-        if !window.setFrameAutosaveName("RecordingHUDBottom") || window.frame.origin == .zero {
-            positionBottomCenter(window, size: size)
-        }
         return window
     }
 
-    private func positionBottomCenter(_ window: NSWindow, size: NSSize) {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+    private func targetScreen() -> NSScreen? {
+        let settings = AppSettings.shared
+        let displayID = settings.captureMode == .region
+            ? settings.lastRegion?.displayID : settings.selectedDisplayID
+        if let displayID, let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
+            return screen
+        }
+        return NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
+            ?? NSScreen.main ?? NSScreen.screens.first
+    }
+
+    private func positionBottomCenter(_ window: NSWindow) {
+        guard let screen = targetScreen() else { return }
         let visible = screen.visibleFrame
-        window.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2,
+        window.setFrameOrigin(NSPoint(x: visible.midX - window.frame.width / 2,
                                       y: visible.minY + 24))
     }
 }

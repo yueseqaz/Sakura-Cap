@@ -26,6 +26,7 @@ final class RecordingController: ObservableObject {
     private var pauseStartedAt: Date?
     private var pausedTotal: TimeInterval = 0
     private var generation = 0
+    private var focusEnabledForRecording = false
     private let screenMonitor = ScreenChangeMonitor()
 
     init() {
@@ -253,7 +254,43 @@ final class RecordingController: ObservableObject {
             }
         }
 
-        // 10. 正式开录
+        // 10. 先切换勿扰并等待完成，避免开录后的首批通知进入画面。
+        if settings.dndDuringRecording {
+            do {
+                try await FocusMode.run(shortcut: settings.dndOnShortcut)
+                focusEnabledForRecording = true
+            } catch {
+                Log.app.error("开启勿扰失败: \(error.localizedDescription, privacy: .public)")
+                banner = error.localizedDescription
+                let alert = NSAlert()
+                alert.messageText = L("勿扰未开启")
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: L("仍要录制"))
+                alert.addButton(withTitle: L("取消录制"))
+                if runModalAlert(alert) != .alertFirstButtonReturn {
+                    IndicatorEngine.shared.endCapture()
+                    KeyDisplay.shared.endCapture()
+                    mic?.stop(); mic = nil
+                    _ = await teardownSessions(saveFiles: false)
+                    state = .idle
+                    return
+                }
+            }
+        }
+        guard gen == generation, state == .preparing || state == .countdown else {
+            if focusEnabledForRecording {
+                focusEnabledForRecording = false
+                try? await FocusMode.run(shortcut: settings.dndOffShortcut)
+            }
+            IndicatorEngine.shared.endCapture()
+            KeyDisplay.shared.endCapture()
+            mic?.stop(); mic = nil
+            _ = await teardownSessions(saveFiles: false)
+            state = .idle
+            return
+        }
+
+        // 11. 正式开录
         for session in sessions { session.armWriter() }
         recordStart = Date()
         pauseStartedAt = nil
@@ -263,7 +300,6 @@ final class RecordingController: ObservableObject {
         startTimer()
         state = .recording
         SoundCue.playStart()
-        if settings.dndDuringRecording { FocusMode.run(shortcut: settings.dndOnShortcut) }
         Log.app.info("开始录制：\(self.sessions.count) 路输出")
     }
 
@@ -314,7 +350,15 @@ final class RecordingController: ObservableObject {
         recordStart = nil
         elapsed = 0
         state = .idle
-        if wasRecording, settings.dndDuringRecording { FocusMode.run(shortcut: settings.dndOffShortcut) }
+        if wasRecording, focusEnabledForRecording {
+            focusEnabledForRecording = false
+            do {
+                try await FocusMode.run(shortcut: settings.dndOffShortcut)
+            } catch {
+                Log.app.error("关闭勿扰失败: \(error.localizedDescription, privacy: .public)")
+                Toast.show(title: L("勿扰未关闭"), detail: error.localizedDescription)
+            }
+        }
 
         if wasRecording {
             if files.isEmpty {
