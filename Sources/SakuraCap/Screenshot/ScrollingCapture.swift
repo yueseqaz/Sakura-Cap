@@ -9,6 +9,9 @@ final class ScrollingCapture {
 
     private var region: RegionSelection?
     private var timer: Timer?
+    private var autoScrollTask: Task<Void, Never>?
+    private var scrollMonitor: Any?
+    private var localScrollMonitor: Any?
     private var hud: ScrollingHUDWindow?
     private var preview: ScrollingPreviewWindow?
     private var capturing = false
@@ -20,14 +23,17 @@ final class ScrollingCapture {
     private var stitchedHeight = 0
     private var stitchedWidth = 0
     private var lastGray: [UInt8] = []
+    private var autoScrolling = false
 
     func start(region: RegionSelection) {
+        stopAutoScroll()
         self.region = region
         segments.removeAll()
         stitchedHeight = 0
         lastGray = []
         let hud = ScrollingHUDWindow(onFinish: { [weak self] in self?.finish() },
-                                     onCancel: { [weak self] in self?.cancel() })
+                                     onCancel: { [weak self] in self?.cancel() },
+                                     onToggleScroll: { [weak self] in self?.toggleAutoScroll() })
         hud.orderFrontRegardless()
         self.hud = hud
         let preview = ScrollingPreviewWindow(region: region)
@@ -36,6 +42,17 @@ final class ScrollingCapture {
         filter = nil
         config = nil
         startTimer()
+        scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            // Synthetic events carry our marker; a user's wheel/trackpad input pauses automation.
+            guard event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.scrollMarker else { return }
+            Task { @MainActor in self?.stopAutoScroll() }
+        }
+        localScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            if event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.scrollMarker {
+                self?.stopAutoScroll()
+            }
+            return event
+        }
     }
 
     private func startTimer() {
@@ -47,7 +64,63 @@ final class ScrollingCapture {
         Task { @MainActor in
             await prepareCapture()
             await captureOnce()
+            startAutoScroll()
         }
+    }
+
+    private static let scrollMarker: Int64 = 0x53414b555241
+
+    private func startAutoScroll() {
+        guard region != nil, !autoScrolling, !segments.isEmpty else { return }
+        guard PermissionCenter.accessibilityGranted() || PermissionCenter.requestAccessibility() else {
+            hud?.setScrollState(L("自动滚动需要辅助功能权限，请手动滚动"), running: false)
+            PermissionCenter.openAccessibilitySettings()
+            return
+        }
+        autoScrolling = true
+        hud?.setScrollState(L("自动滚动中"), running: true)
+        autoScrollTask = Task { @MainActor [weak self] in
+            var unchangedSteps = 0
+            while let self, self.autoScrolling, !Task.isCancelled {
+                self.postScroll()
+                try? await Task.sleep(for: .milliseconds(850))
+                guard !Task.isCancelled, self.autoScrolling else { break }
+                if self.stitchedHeight == self.lastAutoHeight {
+                    unchangedSteps += 1
+                } else {
+                    unchangedSteps = 0
+                }
+                self.lastAutoHeight = self.stitchedHeight
+                if unchangedSteps >= 4 {
+                    self.stopAutoScroll(message: L("未检测到新内容，已停止滚动"))
+                    break
+                }
+            }
+        }
+    }
+
+    private var lastAutoHeight = 0
+
+    private func postScroll() {
+        guard let region, let screen = NSScreen.screens.first(where: { $0.displayID == region.displayID }),
+              let event = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
+                                  wheel1: -4, wheel2: 0, wheel3: 0) else { return }
+        let frame = ScreenCoordinate.cgFrame(of: screen)
+        event.location = CGPoint(x: frame.minX + region.sckRect.midX,
+                                 y: frame.minY + region.sckRect.midY)
+        event.setIntegerValueField(.eventSourceUserData, value: Self.scrollMarker)
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func toggleAutoScroll() {
+        if autoScrolling { stopAutoScroll() } else { lastAutoHeight = stitchedHeight; startAutoScroll() }
+    }
+
+    private func stopAutoScroll(message: String? = nil) {
+        autoScrolling = false
+        autoScrollTask?.cancel()
+        autoScrollTask = nil
+        hud?.setScrollState(message ?? L("已暂停自动滚动"), running: false)
     }
 
     /// 只构建一次过滤器/配置，之后每帧直接重采样，更跟手也更稳
@@ -121,6 +194,8 @@ final class ScrollingCapture {
     }
 
     private func finish() {
+        stopAutoScroll()
+        removeScrollMonitor()
         stopTimer()
         hud?.orderOut(nil)
         hud = nil
@@ -133,6 +208,8 @@ final class ScrollingCapture {
     }
 
     private func cancel() {
+        stopAutoScroll()
+        removeScrollMonitor()
         stopTimer()
         hud?.orderOut(nil)
         hud = nil
@@ -145,6 +222,13 @@ final class ScrollingCapture {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+
+    private func removeScrollMonitor() {
+        if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
+        if let localScrollMonitor { NSEvent.removeMonitor(localScrollMonitor) }
+        scrollMonitor = nil
+        localScrollMonitor = nil
     }
 
     private func compose() -> CGImage? {
@@ -213,8 +297,11 @@ final class ScrollingCapture {
 /// 长截图时的悬浮提示条
 final class ScrollingHUDWindow: NSPanel {
     private let heightLabel = NSTextField(labelWithString: "")
-    init(onFinish: @escaping () -> Void, onCancel: @escaping () -> Void) {
-        let size = NSSize(width: 360, height: 52)
+    private let stateLabel = NSTextField(labelWithString: L("准备自动滚动…"))
+    private let scrollButton = NSButton(title: L("暂停"), target: nil, action: nil)
+    init(onFinish: @escaping () -> Void, onCancel: @escaping () -> Void,
+         onToggleScroll: @escaping () -> Void) {
+        let size = NSSize(width: 390, height: 52)
         super.init(contentRect: NSRect(origin: .zero, size: size),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         isFloatingPanel = true
@@ -234,10 +321,14 @@ final class ScrollingHUDWindow: NSPanel {
         container.layer?.borderWidth = 0.5
         container.layer?.borderColor = NSColor.separatorColor.cgColor
 
-        let label = NSTextField(labelWithString: L("滚动到需要的位置，完成后点「完成」"))
-        label.font = .systemFont(ofSize: 12)
+        stateLabel.font = .systemFont(ofSize: 12)
         heightLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         heightLabel.textColor = .secondaryLabelColor
+
+        scrollButton.bezelStyle = .rounded
+        scrollButton.target = ClosureTarget.shared
+        scrollButton.action = #selector(ClosureTarget.toggleScrollTapped)
+        ClosureTarget.shared.toggleScroll = onToggleScroll
 
         let finish = NSButton(title: L("完成"), target: nil, action: nil)
         finish.bezelStyle = .rounded
@@ -250,7 +341,7 @@ final class ScrollingHUDWindow: NSPanel {
         cancel.action = #selector(ClosureTarget.cancelTapped)
         ClosureTarget.shared.cancel = onCancel
 
-        let stack = NSStackView(views: [label, heightLabel, finish, cancel])
+        let stack = NSStackView(views: [stateLabel, heightLabel, scrollButton, finish, cancel])
         stack.orientation = .horizontal
         stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -275,6 +366,14 @@ final class ScrollingHUDWindow: NSPanel {
         heightLabel.stringValue = String(format: L("已拼接 %d px"), height)
     }
 
+    func setScrollState(_ message: String, running: Bool) {
+        stateLabel.stringValue = message
+        scrollButton.title = running ? L("暂停") : L("继续")
+        contentView?.layoutSubtreeIfNeeded()
+        let fitted = contentView?.fittingSize ?? frame.size
+        if fitted.width > 1 { setContentSize(fitted) }
+    }
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
@@ -284,8 +383,10 @@ final class ClosureTarget: NSObject {
     static let shared = ClosureTarget()
     var finish: (() -> Void)?
     var cancel: (() -> Void)?
+    var toggleScroll: (() -> Void)?
     @objc func finishTapped() { finish?() }
     @objc func cancelTapped() { cancel?() }
+    @objc func toggleScrollTapped() { toggleScroll?() }
 }
 
 /// 长截图实时预览：把当前拼接结果缩略显示在旁边

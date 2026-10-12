@@ -36,6 +36,7 @@ final class AnnotationEditorWindow: NSWindow {
     private let widthValue = NSTextField(labelWithString: "4")
     private let zoomLabel = NSTextField(labelWithString: "100%")
     private let deleteButton = NSButton()
+    private let discardImageButton = NSButton()
     private let ocrButton = NSButton()
     private let barcodeButton = NSButton()
     private let translateButton = NSButton()
@@ -221,6 +222,10 @@ final class AnnotationEditorWindow: NSWindow {
         let saveButton = NSButton(title: L("保存"), target: self, action: #selector(saveTapped))
         saveButton.bezelStyle = .rounded
         saveButton.keyEquivalent = "\r"
+        discardImageButton.title = L("删除截图")
+        discardImageButton.bezelStyle = .rounded
+        discardImageButton.target = self
+        discardImageButton.action = #selector(discardImageTapped)
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -230,7 +235,8 @@ final class AnnotationEditorWindow: NSWindow {
                                         widthLabel, widthSlider, widthValue, undoButton, redoButton,
                                         deleteButton, clearButton, spacer,
                                         zoomOutButton, zoomLabel, zoomInButton, fitButton, pinButton,
-                                        compareButton, eyedropperButton, measureButton, copyButton, saveButton])
+                                        compareButton, eyedropperButton, measureButton, copyButton, saveButton,
+                                        discardImageButton])
         stack.orientation = .horizontal
         stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -333,6 +339,15 @@ final class AnnotationEditorWindow: NSWindow {
     }
     @objc private func deleteTapped() { canvas.deleteSelected(); refresh() }
     @objc private func clearTapped() { canvas.clearAll(); refresh() }
+    @objc private func discardImageTapped() {
+        let alert = NSAlert()
+        alert.messageText = L("删除这张截图？")
+        alert.informativeText = L("删除后不会保存标注内容，此操作不可撤销。")
+        alert.addButton(withTitle: L("删除"))
+        alert.addButton(withTitle: L("取消"))
+        guard runModalAlert(alert) == .alertFirstButtonReturn else { return }
+        close()
+    }
     @objc private func zoomInTapped() { canvas.zoomIn(); refresh() }
     @objc private func zoomOutTapped() { canvas.zoomOut(); refresh() }
     @objc private func fitTapped() { canvas.resetZoom(); refresh() }

@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: RecordingController?
     private var statusItem: StatusItemController?
     private var hud: RecordingHUDController?
+    private var fpsOverlay: FPSOverlay?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {        // 单实例：已有实例则激活它并退出
@@ -26,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusItem = statusItem
         // 录制悬浮控制条（自己订阅 controller 状态，此处仅保留引用）
         self.hud = RecordingHUDController(controller: controller)
+        self.fpsOverlay = FPSOverlay(controller: controller)
         // 摄像头画中画：绑定录制状态
         CameraPiP.shared.attach(controller: controller)
 

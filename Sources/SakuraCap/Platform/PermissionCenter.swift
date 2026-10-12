@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CoreGraphics
+import ApplicationServices
 
 /// 三类权限的检测与系统设置深链：
 /// 屏幕录制（TCC ScreenCapture）、麦克风（TCC Microphone）、输入监控（TCC ListenEvent）。
@@ -58,6 +59,18 @@ enum PermissionCenter {
     static func openMicrophoneSettings() { openPrivacyPane("Privacy_Microphone") }
     static func openCameraSettings() { openPrivacyPane("Privacy_Camera") }
     static func openInputMonitoringSettings() { openPrivacyPane("Privacy_ListenEvent") }
+    static func openAccessibilitySettings() { openPrivacyPane("Privacy_Accessibility") }
+
+    static func accessibilityGranted() -> Bool { CGPreflightPostEventAccess() }
+
+    @discardableResult
+    static func requestAccessibility() -> Bool { CGRequestPostEventAccess() }
+
+    static func authorizeAccessibility() {
+        if accessibilityGranted() || !requestAccessibility() {
+            openAccessibilitySettings()
+        }
+    }
 
     // MARK: - 输入监控（ListenEvent，全局键盘/鼠标监听）
 

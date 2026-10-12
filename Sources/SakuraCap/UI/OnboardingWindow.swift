@@ -153,6 +153,8 @@ struct OnboardingView: View {
                           detail: L("录制麦克风声音需要。")) { PermissionCenter.openMicrophoneSettings() }
             permissionRow(L("输入监控"), required: false, granted: model.inputGranted,
                           detail: L("鼠标点击标记 / 键盘按键显示需要。")) { PermissionCenter.openInputMonitoringSettings() }
+            permissionRow(L("辅助功能"), required: false, granted: PermissionCenter.accessibilityGranted(),
+                          detail: L("长截图自动滚动需要。")) { PermissionCenter.authorizeAccessibility() }
             permissionRow(L("摄像头"), required: false, granted: model.cameraGranted,
                           detail: L("摄像头画中画需要。")) { PermissionCenter.openCameraSettings() }
 

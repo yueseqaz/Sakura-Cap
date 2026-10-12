@@ -253,6 +253,7 @@ struct PanelView: View {
             group("其它", icon: "switch.2") {
                 Toggle("开始前 3 秒倒计时", isOn: $settings.countdownEnabled)
                 Toggle("显示鼠标指针", isOn: $settings.showCursor)
+                Toggle("显示录制帧率角标", isOn: $settings.showFPSOverlay)
                 Toggle("开始 / 结束提示音", isOn: $settings.soundEnabled)
                 footnote("录制前可在悬浮控制条上临时切换；这里设为默认值。")
             }
@@ -434,6 +435,10 @@ struct PanelView: View {
                           granted: PermissionCenter.inputMonitoringGranted(),
                           detail: L("鼠标点击标记 / 键盘按键显示需要。"),
                           action: { PermissionCenter.openInputMonitoringSettings() })
+            permissionRow(name: L("辅助功能"),
+                          granted: PermissionCenter.accessibilityGranted(),
+                          detail: L("长截图自动滚动需要。"),
+                          action: { PermissionCenter.authorizeAccessibility() })
             permissionRow(name: L("摄像头"),
                           state: PermissionCenter.cameraAccess,
                           detail: camera.devices.isEmpty ? L("未检测到摄像头设备。") : L("摄像头画中画需要。"),

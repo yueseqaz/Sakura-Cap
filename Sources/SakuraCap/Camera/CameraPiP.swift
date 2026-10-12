@@ -12,6 +12,9 @@ final class CameraPiP: ObservableObject {
     @Published private(set) var authorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
     @Published private(set) var permissionDenied = false
     @Published private(set) var running = false
+    @Published private(set) var previewEnabled = false
+    private var previewScale: CGFloat = 1
+    private var previewFrameInitialized = false
 
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.sakura.sakuracap.camera")
@@ -63,15 +66,47 @@ final class CameraPiP: ObservableObject {
 
     /// 设置面板开关
     func setEnabled(_ enabled: Bool) {
-        guard enabled else { stop(); return }
+        guard enabled else { sync(); return }
         refreshPermissionStatus()
         requestPermissionIfNeeded { [weak self] in self?.sync() }
     }
 
+    func togglePreview() {
+        refreshPermissionStatus()
+        if !previewEnabled, permissionDenied {
+            PermissionCenter.openCameraSettings()
+            Toast.show(title: L("需要摄像头权限"), detail: L("请在系统设置中允许摄像头访问"))
+            return
+        }
+        previewEnabled.toggle()
+        previewFrameInitialized = false
+        sync()
+    }
+
+    func enlargePreview() {
+        previewScale = min(2.5, previewScale * 1.2)
+        if previewEnabled { applyConfiguration() }
+    }
+
+    func shrinkPreview() {
+        previewScale = max(0.5, previewScale / 1.2)
+        if previewEnabled { applyConfiguration() }
+    }
+
+    func resetPreviewSize() {
+        previewScale = 1
+        if previewEnabled { applyConfiguration() }
+    }
+
     /// 画中画上的关闭按钮：关掉并同步关闭设置开关
     func disable() {
+        if previewEnabled {
+            previewEnabled = false
+            sync()
+            return
+        }
         AppSettings.shared.cameraPiPEnabled = false
-        stop()
+        sync()
     }
 
     /// 运行中改动设置（设备 / 大小 / 位置 / 镜像）后调用
@@ -85,8 +120,8 @@ final class CameraPiP: ObservableObject {
 
     func sync() {
         let visible: [RecordingController.State] = [.ready, .preparing, .countdown, .recording]
-        guard AppSettings.shared.cameraPiPEnabled,
-              let state = controller?.state, visible.contains(state) else {
+        guard previewEnabled || (AppSettings.shared.cameraPiPEnabled &&
+              controller.map { visible.contains($0.state) } == true) else {
             stop()
             return
         }
@@ -181,6 +216,24 @@ final class CameraPiP: ObservableObject {
     private func applyConfiguration() {
         guard let window else { return }
         let settings = AppSettings.shared
+        if previewEnabled {
+            let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
+                ?? NSScreen.main ?? NSScreen.screens.first
+            guard let screen else { return }
+            let visible = screen.visibleFrame
+            if !previewFrameInitialized {
+                let width = min(400, visible.width * 0.42) * previewScale
+                let size = NSSize(width: width, height: width * 3 / 4)
+                window.setFrame(NSRect(x: visible.midX - size.width / 2,
+                                       y: visible.midY - size.height / 2,
+                                       width: size.width, height: size.height), display: true)
+                previewFrameInitialized = true
+            }
+            window.sharingType = .none
+            window.setMirrored(true)
+            return
+        }
+        window.sharingType = .readOnly
         let target = RecordingTarget.rect() ?? (NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1440, height: 900))
         let width = max(160, target.width * settings.cameraPiPSize / 100)
         let size = NSSize(width: width, height: (width * 9.0 / 16.0).rounded())
@@ -277,7 +330,7 @@ private final class CameraPiPWindow: NSWindow {
 
     init(session: AVCaptureSession) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
-                   styleMask: [.borderless], backing: .buffered, defer: false)
+                   styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         level = .screenSaver
@@ -286,6 +339,8 @@ private final class CameraPiPWindow: NSWindow {
         hasShadow = true
         ignoresMouseEvents = false
         isMovableByWindowBackground = true
+        minSize = NSSize(width: 180, height: 120)
+        maxSize = NSSize(width: 1200, height: 900)
 
         preview.wantsLayer = true
         preview.previewLayer.session = session

@@ -29,6 +29,9 @@ final class StreamSession: NSObject, SCStreamOutput {
     private let cropContext = CIContext(options: [.cacheIntermediates: false])
     private var streamStarted = false
     private var loggedFirstFrame = false
+    var onFrameRate: ((Int) -> Void)?
+    private var frameCount = 0
+    private var frameWindowStart = ProcessInfo.processInfo.systemUptime
 
     init(spec: StreamSpec, codec: AVVideoCodecType,
          quality: VideoQuality, frameRate: Int, customBitrateMbps: Double,
@@ -92,6 +95,15 @@ final class StreamSession: NSObject, SCStreamOutput {
         switch type {
         case .screen:
             guard isCompleteFrame(sampleBuffer) else { return }
+            if onFrameRate != nil {
+                frameCount += 1
+                let now = ProcessInfo.processInfo.systemUptime
+                if now - frameWindowStart >= 1 {
+                    onFrameRate?(Int((Double(frameCount) / (now - frameWindowStart)).rounded()))
+                    frameCount = 0
+                    frameWindowStart = now
+                }
+            }
             if !loggedFirstFrame {
                 loggedFirstFrame = true
                 if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {

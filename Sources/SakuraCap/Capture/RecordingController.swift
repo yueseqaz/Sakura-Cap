@@ -13,6 +13,7 @@ final class RecordingController: ObservableObject {
     @Published private(set) var state: State = .idle
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var isPaused = false
+    @Published private(set) var measuredFPS = 0
     @Published var banner: String?
 
     private(set) var lastSavedFiles: [URL] = []
@@ -68,6 +69,7 @@ final class RecordingController: ObservableObject {
             Log.app.info("录制已继续")
         } else {
             isPaused = true
+            measuredFPS = 0
             pauseStartedAt = Date()
             for session in sessions { session.pause() }
             Log.app.info("录制已暂停")
@@ -183,14 +185,23 @@ final class RecordingController: ObservableObject {
                 ? nil
                 : (specs.firstIndex { $0.capturesSystemAudio } ?? specs.indices.first)
             for (index, spec) in specs.enumerated() {
-                sessions.append(try StreamSession(
+                let session = try StreamSession(
                     spec: spec,
                     codec: settings.codec.avCodecType,
                     quality: settings.quality,
                     frameRate: settings.fps.rawValue,
                     customBitrateMbps: settings.customBitrateMbps,
                     systemAudio: spec.capturesSystemAudio,
-                    micAudio: index == micTargetIndex ? micFormat : nil))
+                    micAudio: index == micTargetIndex ? micFormat : nil)
+                if index == 0 {
+                    session.onFrameRate = { [weak self] fps in
+                        Task { @MainActor [weak self] in
+                            guard let self, self.state == .recording, !self.isPaused else { return }
+                            self.measuredFPS = fps
+                        }
+                    }
+                }
+                sessions.append(session)
             }
             if let capture = mic, let micTargetIndex,
                sessions.indices.contains(micTargetIndex) {
@@ -336,6 +347,7 @@ final class RecordingController: ObservableObject {
     private func stopFlow() async {
         let wasRecording = state == .recording
         state = .finalizing
+        measuredFPS = 0
         stopTimer()
         isPaused = false
         pauseStartedAt = nil

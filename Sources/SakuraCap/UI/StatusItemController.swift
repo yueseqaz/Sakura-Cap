@@ -102,6 +102,9 @@ final class StatusItemController: NSObject {
             menu.addItem(shot)
         }
         menu.addItem(.separator())
+        let preview = makeItem(L("Camera Preview"), #selector(menuCameraPreview))
+        preview.state = CameraPiP.shared.previewEnabled ? .on : .off
+        menu.addItem(preview)
         menu.addItem(makeItem(L("打开文件夹"), #selector(menuOpenFolder)))
         menu.addItem(makeItem(L("标注图片…"), #selector(annotateImage)))
         menu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
@@ -119,6 +122,7 @@ final class StatusItemController: NSObject {
     @objc private func menuToggle() { controller.toggle() }
     @objc private func menuCancelArmed() { controller.cancelArmed() }
     @objc private func menuPause() { controller.togglePause() }
+    @objc private func menuCameraPreview() { CameraPiP.shared.togglePreview() }
 
     // 菜单项 / 全局快捷键 共用入口
     func recordFullScreen() { beginSelection(.displayOnly) }
