@@ -182,11 +182,17 @@ final class CompareView: NSView {
     }
 
     private func fittedRect(for image: CGImage) -> NSRect {
+        fittedRect(for: image, in: bounds)
+    }
+
+    private func fittedRect(for image: CGImage, in container: NSRect) -> NSRect {
         let iw = CGFloat(image.width), ih = CGFloat(image.height)
-        guard iw > 0, ih > 0, bounds.width > 0, bounds.height > 0 else { return bounds }
-        let scale = min(bounds.width / iw, bounds.height / ih)
+        guard iw > 0, ih > 0, container.width > 0, container.height > 0 else { return container }
+        let scale = min(container.width / iw, container.height / ih)
         let w = iw * scale, h = ih * scale
-        return NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
+        return NSRect(x: container.minX + (container.width - w) / 2,
+                      y: container.minY + (container.height - h) / 2,
+                      width: w, height: h)
     }
 
     private var imageRect: NSRect { imageA.map(fittedRect) ?? bounds }
@@ -197,6 +203,9 @@ final class CompareView: NSView {
         NSImage(cgImage: imageA, size: rect.size).draw(in: rect)
 
         guard let imageB else { return }
+        // Keep the second image's aspect ratio even when its dimensions differ
+        // from the original; never stretch it into the first image's rectangle.
+        let secondRect = fittedRect(for: imageB, in: rect)
         NSGraphicsContext.saveGraphicsState()
         let lineAt: CGFloat
         let clip: NSRect
@@ -208,7 +217,7 @@ final class CompareView: NSView {
             clip = NSRect(x: rect.minX, y: lineAt, width: rect.width, height: rect.maxY - lineAt)
         }
         NSBezierPath(rect: clip).addClip()
-        NSImage(cgImage: imageB, size: rect.size).draw(in: rect)
+        NSImage(cgImage: imageB, size: secondRect.size).draw(in: secondRect)
         NSGraphicsContext.restoreGraphicsState()
 
         // 分割线 + 手柄

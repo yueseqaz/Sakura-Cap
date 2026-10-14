@@ -16,6 +16,12 @@ final class CameraPiP: ObservableObject {
     private var previewScale: CGFloat = 1
     private var previewFrameInitialized = false
 
+    /// Used by screenshot filters to exclude the preview from captured images.
+    var previewWindowNumber: CGWindowID? {
+        guard previewEnabled, let number = window?.windowNumber, number > 0 else { return nil }
+        return CGWindowID(number)
+    }
+
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.sakura.sakuracap.camera")
     private var window: CameraPiPWindow?
@@ -229,7 +235,8 @@ final class CameraPiP: ObservableObject {
                                        width: size.width, height: size.height), display: true)
                 previewFrameInitialized = true
             }
-            window.sharingType = .none
+            // Preview is intentionally part of screenshots and recordings.
+            window.sharingType = .readOnly
             window.setMirrored(true)
             return
         }

@@ -340,12 +340,6 @@ final class AnnotationEditorWindow: NSWindow {
     @objc private func deleteTapped() { canvas.deleteSelected(); refresh() }
     @objc private func clearTapped() { canvas.clearAll(); refresh() }
     @objc private func discardImageTapped() {
-        let alert = NSAlert()
-        alert.messageText = L("删除这张截图？")
-        alert.informativeText = L("删除后不会保存标注内容，此操作不可撤销。")
-        alert.addButton(withTitle: L("删除"))
-        alert.addButton(withTitle: L("取消"))
-        guard runModalAlert(alert) == .alertFirstButtonReturn else { return }
         close()
     }
     @objc private func zoomInTapped() { canvas.zoomIn(); refresh() }

@@ -528,7 +528,20 @@ struct PanelView: View {
             group("录屏勿扰", icon: "moon") {
                 Toggle("录屏时开启勿扰模式", isOn: $settings.dndDuringRecording)
                 if settings.dndDuringRecording {
-                    footnote("通过「快捷指令」切换专注模式：在「快捷指令」App 新建两个快捷指令（用「设置专注模式」动作），名称如下：")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("快捷指令设置教程")
+                            .font(.callout.weight(.semibold))
+                        Text("1. 打开「快捷指令」App，点击右上角的“+”新建快捷指令。")
+                        Text("2. 添加“设置专注模式”动作，选择“勿扰模式”，设为“打开”。")
+                        Text("3. 将快捷指令命名为下面“开启”一栏中的名称。")
+                        Text("4. 再新建一个快捷指令，把同一个动作设为“关闭”，命名为下面“关闭”一栏中的名称。")
+                        Text("5. 名称必须与下方填写的文字完全一致；完成后可点击“打开快捷指令…”检查。")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
                     fieldRow("开启") { TextField("", text: $settings.dndOnShortcut).textFieldStyle(.roundedBorder) }
                     fieldRow("关闭") { TextField("", text: $settings.dndOffShortcut).textFieldStyle(.roundedBorder) }
                     Button("打开快捷指令…") {

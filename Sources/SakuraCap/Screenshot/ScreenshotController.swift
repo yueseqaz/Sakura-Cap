@@ -153,10 +153,14 @@ final class ScreenshotController {
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw ScreenshotError.displayMissing
         }
-        if let region, let image = Self.nativeDisplayImage(displayID: displayID, region: region) {
+        if let region, CameraPiP.shared.previewWindowNumber == nil,
+           let image = Self.nativeDisplayImage(displayID: displayID, region: region) {
             Log.app.debug("区域截图原生像素: \(image.width)x\(image.height, privacy: .public)")
             return image
         }
+        // Keep Camera Preview in the captured composition when it is visible.
+        // The native CGDisplay path above cannot reliably include app windows,
+        // so the ScreenCaptureKit path is used whenever the preview is active.
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let scale = CGFloat(filter.pointPixelScale)
         let config = SCStreamConfiguration()

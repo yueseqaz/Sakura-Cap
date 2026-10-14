@@ -173,7 +173,8 @@ final class StatusItemController: NSObject {
             }
             // 刷新显示器列表（同时验证权限有效），再进入对应的选择层
             _ = try? await DisplayCatalog.shared.refresh()
-            SelectionController.shared.begin(intent, purpose: purpose)
+            SelectionController.shared.begin(intent, purpose: purpose,
+                                             autoSelectHoveredDisplay: intent == .displayOnly)
         }
     }
 
@@ -225,7 +226,9 @@ final class StatusItemController: NSObject {
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "Sakura-Cap"
-        window.level = .floating
+        // Settings should behave like a normal document window, not stay above
+        // every other app while the menu-bar utility remains running.
+        window.level = .normal
         window.isReleasedWhenClosed = false
         window.sharingType = .none // 设置窗口永不进入录制画面
         window.contentView = NSHostingView(rootView: PanelView(viewModel: viewModel))

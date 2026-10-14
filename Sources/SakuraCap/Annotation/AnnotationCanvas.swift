@@ -116,6 +116,9 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var selectedIndex: Int?
     private var dragState: DragState = .none
     private var dragLast: CGPoint = .zero
+    private var panning = false
+    private var panStartView: CGPoint = .zero
+    private var panStartOffset: CGPoint = .zero
     private enum DragState: Equatable { case none, move, handle(Int) }
 
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
@@ -793,6 +796,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             return
         }
         let point = imagePoint(convert(event.locationInWindow, from: nil))
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        if tool == .select, zoom > 1, event.buttonNumber == 2 {
+            panning = true
+            panStartView = viewPoint
+            panStartOffset = panOffset
+            return
+        }
         // The canvas may be larger than a small screenshot. Do not create
         // annotations in the editor's empty area outside the source image.
         guard isInsideImage(point) else {
@@ -871,6 +881,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             } else {
                 selectedIndex = nil
                 dragState = .none
+                // When zoomed in, dragging an empty area pans the image so its
+                // corners can be inspected without changing annotation tools.
+                if zoom > 1 {
+                    panning = true
+                    panStartView = viewPoint
+                    panStartOffset = panOffset
+                }
             }
         case .pen:
             current = Annotation(tool: .pen, points: [point], color: color, lineWidth: lineWidth)
@@ -890,6 +907,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if panning {
+            let viewPoint = convert(event.locationInWindow, from: nil)
+            panOffset = CGPoint(x: panStartOffset.x + viewPoint.x - panStartView.x,
+                                y: panStartOffset.y + viewPoint.y - panStartView.y)
+            needsDisplay = true
+            return
+        }
         let point = imagePoint(convert(event.locationInWindow, from: nil))
         if let drag = measureDrag {
             switch drag {
@@ -949,6 +973,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if panning {
+            panning = false
+            onChange?()
+            needsDisplay = true
+            return
+        }
         measureDrag = nil
         if let action = recognitionAction {
             let point = imagePoint(convert(event.locationInWindow, from: nil))

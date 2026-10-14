@@ -42,7 +42,8 @@ final class SelectionController: NSObject {
 
     var isActive: Bool { !windows.isEmpty }
 
-    func begin(_ intent: SelectionIntent, purpose: SelectionPurpose = .record) {
+    func begin(_ intent: SelectionIntent, purpose: SelectionPurpose = .record,
+               autoSelectHoveredDisplay: Bool = false) {
         guard windows.isEmpty else { return }
         currentIntent = intent
         currentPurpose = purpose
@@ -62,6 +63,10 @@ final class SelectionController: NSObject {
         }
         startHoverTimer()
         updateHover()
+        if autoSelectHoveredDisplay, currentIntent == .displayOnly,
+           let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) {
+            finish(result: .display(screen.displayID))
+        }
     }
 
     fileprivate func finish(result: SelectionResult?) {

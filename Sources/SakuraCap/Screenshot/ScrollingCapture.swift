@@ -78,23 +78,32 @@ final class ScrollingCapture {
             return
         }
         autoScrolling = true
+        // In automatic mode capture one settled frame per scroll step. The old
+        // independent timer sampled intermediate frames and made late stitching
+        // increasingly ambiguous as the page moved.
+        stopTimer()
         hud?.setScrollState(L("自动滚动中"), running: true)
         autoScrollTask = Task { @MainActor [weak self] in
-            var unchangedSteps = 0
             while let self, self.autoScrolling, !Task.isCancelled {
                 self.postScroll()
-                try? await Task.sleep(for: .milliseconds(850))
+                try? await Task.sleep(for: .milliseconds(500))
                 guard !Task.isCancelled, self.autoScrolling else { break }
-                if self.stitchedHeight == self.lastAutoHeight {
-                    unchangedSteps += 1
-                } else {
-                    unchangedSteps = 0
+                var advanced = false
+                // Retry the same scroll position before sending another scroll.
+                // This prevents one late/animated frame from causing the next
+                // successful match to swallow several page segments.
+                for attempt in 0..<3 {
+                    advanced = await self.captureOnce()
+                    if advanced { break }
+                    if attempt < 2 {
+                        try? await Task.sleep(for: .milliseconds(300))
+                    }
                 }
-                self.lastAutoHeight = self.stitchedHeight
-                if unchangedSteps >= 4 {
-                    self.stopAutoScroll(message: L("未检测到新内容，已停止滚动"))
+                guard advanced else {
+                    self.stopAutoScroll(message: L("无法确认新的滚动内容，已停止滚动"))
                     break
                 }
+                try? await Task.sleep(for: .milliseconds(350))
             }
         }
     }
@@ -104,7 +113,7 @@ final class ScrollingCapture {
     private func postScroll() {
         guard let region, let screen = NSScreen.screens.first(where: { $0.displayID == region.displayID }),
               let event = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
-                                  wheel1: -4, wheel2: 0, wheel3: 0) else { return }
+                                  wheel1: -3, wheel2: 0, wheel3: 0) else { return }
         let frame = ScreenCoordinate.cgFrame(of: screen)
         event.location = CGPoint(x: frame.minX + region.sckRect.midX,
                                  y: frame.minY + region.sckRect.midY)
@@ -140,22 +149,23 @@ final class ScrollingCapture {
         pixelScale = scale
     }
 
-    private func captureOnce() async {
-        guard !capturing, let region else { return }
+    @discardableResult
+    private func captureOnce() async -> Bool {
+        guard !capturing, let region else { return false }
         capturing = true
         defer { capturing = false }
-        guard #available(macOS 14.0, *), let filter, let config else { return }
-        guard let full = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) else { return }
+        guard #available(macOS 14.0, *), let filter, let config else { return false }
+        guard let full = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) else { return false }
         let scale = pixelScale
         let rect = CGRect(x: region.sckRect.minX * scale, y: region.sckRect.minY * scale,
                           width: region.sckRect.width * scale, height: region.sckRect.height * scale).integral
-        append(full.cropping(to: rect) ?? full)
+        return append(full.cropping(to: rect) ?? full)
     }
 
-    private func append(_ frame: CGImage) {
+    private func append(_ frame: CGImage) -> Bool {
         let width = frame.width
         let height = frame.height
-        guard height > 4 else { return }
+        guard height > 4 else { return false }
 
         if segments.isEmpty {
             segments = [(frame, CGRect(x: 0, y: 0, width: width, height: height))]
@@ -163,18 +173,16 @@ final class ScrollingCapture {
             stitchedWidth = width
             lastGray = gray(frame)
             updateHUD()
-            return
+            return true
         }
 
         let grayNew = gray(frame)
         let shift = bestVerticalShift(prev: lastGray, next: grayNew, width: 60, height: height)
         guard shift >= 3, shift < height - 8 else {
-            lastGray = grayNew
-            return // 没滚动或没匹配上，跳过
+            return false // 保留上一帧作为基准，等待同一步的稳定画面重试
         }
         guard stitchedHeight < 60000 else {
-            lastGray = grayNew
-            return // 安全上限，避免长图无限长
+            return false // 安全上限，避免长图无限长
         }
         // next 真正新增的部分：next 的底部 shift 行（内容坐标从上一帧底部继续）
         let newRect = CGRect(x: 0, y: height - shift, width: width, height: shift)
@@ -182,6 +190,7 @@ final class ScrollingCapture {
         stitchedHeight += shift
         lastGray = grayNew
         updateHUD()
+        return true
     }
 
     private func updateHUD() {
@@ -271,8 +280,11 @@ final class ScrollingCapture {
         while shift <= maxShift {
             var diff = 0
             var samples = 0
-            var y = shift
-            while y < height {
+            // Ignore the extreme bottom/top bands where fixed toolbars and
+            // chat composers commonly stay pinned during scrolling.
+            var y = max(shift, Int(Double(height) * 0.10))
+            let endY = Int(Double(height) * 0.88)
+            while y < endY {
                 let py = y * width
                 let ny = (y - shift) * width
                 var x = 0
