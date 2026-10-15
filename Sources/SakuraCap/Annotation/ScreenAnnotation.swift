@@ -145,14 +145,27 @@ final class ScreenAnnotationController: NSObject {
         clearButton = clear
         let pass = iconButton("cursorarrow", L("穿透：关"), #selector(passTapped))
         passButton = pass
-        let exit = iconButton("xmark", L("结束标注"), #selector(exitTapped))
+        let exit = AnnotationCloseButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L("结束标注")) ?? NSImage(),
+                                         target: self, action: #selector(exitTapped))
+        exit.configureAppearance()
+        exit.toolTip = L("结束标注")
+        exit.setAccessibilityLabel(L("结束标注"))
+        exit.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        exit.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        let divider = NSView()
+        divider.wantsLayer = true
+        divider.layer?.backgroundColor = NSColor.separatorColor.cgColor
+        divider.widthAnchor.constraint(equalToConstant: 1).isActive = true
+        divider.heightAnchor.constraint(equalToConstant: 18).isActive = true
         let grip = NSImageView(image: NSImage(systemSymbolName: "circle.grid.2x3.fill", accessibilityDescription: L("拖动移动")) ?? NSImage())
         grip.contentTintColor = .secondaryLabelColor
         grip.toolTip = L("拖动移动")
         grip.widthAnchor.constraint(equalToConstant: 17).isActive = true
-        let top = NSStackView(views: [grip, picker, color, undo, redo, delete, measure, clear, pass, exit])
+        let top = NSStackView(views: [grip, picker, color, undo, redo, delete, measure, clear, pass, divider, exit])
         top.orientation = .horizontal
         top.spacing = 6
+        top.setCustomSpacing(14, after: pass)
+        top.setCustomSpacing(11, after: divider)
 
         let width = NSSlider(value: 4, minValue: 1, maxValue: 20, target: self, action: #selector(widthChanged(_:)))
         width.widthAnchor.constraint(equalToConstant: 110).isActive = true
@@ -379,4 +392,44 @@ final class ScreenAnnotationController: NSObject {
 private final class ScreenAnnotationWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+private final class AnnotationCloseButton: NSButton {
+    private var hoverTracking: NSTrackingArea?
+    private var isHovered = false
+
+    func configureAppearance() { updateAppearance() }
+
+    override func updateTrackingAreas() {
+        if let hoverTracking { removeTrackingArea(hoverTracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTracking = area
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        updateAppearance()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        updateAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        isBordered = false
+        imagePosition = .imageOnly
+        wantsLayer = true
+        layer?.cornerRadius = 15
+        layer?.backgroundColor = isHovered ? NSColor.systemRed.withAlphaComponent(0.16).cgColor : NSColor.clear.cgColor
+        contentTintColor = isHovered ? .systemRed : .secondaryLabelColor
+    }
 }

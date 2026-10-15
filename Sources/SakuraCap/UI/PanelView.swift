@@ -505,6 +505,11 @@ struct PanelView: View {
                         .font(.caption).lineLimit(1).truncationMode(.middle)
                     Spacer()
                     Button("更改…") { viewModel.chooseOutputDirectory() }.controlSize(.small)
+                    Button("打开文件夹") {
+                        if let directory = settings.outputDirectory { NSWorkspace.shared.open(directory) }
+                    }
+                    .controlSize(.small)
+                    .disabled(settings.outputDirectory == nil)
                 }
             }
             group("文件命名", icon: "tag") {

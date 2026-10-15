@@ -106,10 +106,9 @@ final class StatusItemController: NSObject {
             ? L("结束屏幕标注") : L("屏幕标注"), #selector(menuScreenAnnotation))
         annotation.state = ScreenAnnotationController.shared.isActive ? .on : .off
         menu.addItem(annotation)
-        let preview = makeItem(L("Camera Preview"), #selector(menuCameraPreview))
+        let preview = makeItem(L("镜头预览"), #selector(menuCameraPreview))
         preview.state = CameraPiP.shared.previewEnabled ? .on : .off
         menu.addItem(preview)
-        menu.addItem(makeItem(L("打开文件夹"), #selector(menuOpenFolder)))
         menu.addItem(makeItem(L("标注图片…"), #selector(annotateImage)))
         menu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
         menu.addItem(makeItem(L("设置…"), #selector(menuSettings)))
@@ -207,13 +206,6 @@ final class StatusItemController: NSObject {
                 TrimWindowController.shared.show(url: url, origin: .manual)
             }
         }
-    }
-    @objc private func menuOpenFolder() {
-        guard let directory = AppSettings.shared.outputDirectory else {
-            showSettings()
-            return
-        }
-        NSWorkspace.shared.open(directory)
     }
     @objc private func menuQuit() { NSApp.terminate(nil) }
 

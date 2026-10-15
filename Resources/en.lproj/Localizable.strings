@@ -187,7 +187,7 @@
 "显示录制帧率角标" = "Show recording FPS overlay";
 "需要摄像头权限" = "Camera access required";
 "请在系统设置中允许摄像头访问" = "Allow camera access in System Settings";
-"Camera Preview" = "Camera Preview";
+"镜头预览" = "Camera Preview";
 "屏幕标注" = "Screen Annotation";
 "结束屏幕标注" = "Stop Screen Annotation";
 "选择工具后在屏幕上绘制；Esc 退出" = "Choose a tool and draw on screen; Esc to exit";
