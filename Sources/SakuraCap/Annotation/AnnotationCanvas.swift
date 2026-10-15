@@ -65,6 +65,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     var mosaicStyle: MosaicStyle = .pixelate
     var mosaicStrength: CGFloat = 4
     var lineWidth: CGFloat = 4
+    var measurementScale: CGFloat = 1
     var allowCrop = true
 
     /// 底图（图片编辑时提供；直播覆盖层为 nil）
@@ -82,6 +83,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     /// 变更回调（用于刷新撤销/重做按钮状态、编辑器脏标记）
     var onChange: (() -> Void)?
+    var onMeasurementCompleted: (() -> Void)?
 
     private(set) var annotations: [Annotation] = []
     private var current: Annotation?
@@ -109,6 +111,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var measureEnd: CGPoint?
     private enum MeasureDrag { case start, end }
     private var measureDrag: MeasureDrag?
+    var hasMeasurement: Bool { measureStart != nil }
     private var hoverColor: NSColor?
     private var hoverPoint: CGPoint?
 
@@ -514,9 +517,9 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             dot.stroke()
         }
 
-        let dx = Int(abs(b.x - a.x).rounded())
-        let dy = Int(abs(b.y - a.y).rounded())
-        let distance = Int(hypot(b.x - a.x, b.y - a.y).rounded())
+        let dx = Int((abs(b.x - a.x) * measurementScale).rounded())
+        let dy = Int((abs(b.y - a.y) * measurementScale).rounded())
+        let distance = Int((hypot(b.x - a.x, b.y - a.y) * measurementScale).rounded())
         let mainAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold),
             .foregroundColor: NSColor.white,
@@ -829,11 +832,14 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             if measureStart == nil {
                 measureStart = point
                 measureEnd = point
+                onChange?()
             } else {
                 measureEnd = point
                 isMeasuring = false
                 window?.acceptsMouseMovedEvents = false
                 window?.invalidateCursorRects(for: self)
+                onChange?()
+                onMeasurementCompleted?()
             }
             needsDisplay = true
             return

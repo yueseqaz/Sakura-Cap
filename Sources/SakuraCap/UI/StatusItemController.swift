@@ -102,6 +102,10 @@ final class StatusItemController: NSObject {
             menu.addItem(shot)
         }
         menu.addItem(.separator())
+        let annotation = makeItem(ScreenAnnotationController.shared.isActive
+            ? L("结束屏幕标注") : L("屏幕标注"), #selector(menuScreenAnnotation))
+        annotation.state = ScreenAnnotationController.shared.isActive ? .on : .off
+        menu.addItem(annotation)
         let preview = makeItem(L("Camera Preview"), #selector(menuCameraPreview))
         preview.state = CameraPiP.shared.previewEnabled ? .on : .off
         menu.addItem(preview)
@@ -123,6 +127,7 @@ final class StatusItemController: NSObject {
     @objc private func menuCancelArmed() { controller.cancelArmed() }
     @objc private func menuPause() { controller.togglePause() }
     @objc private func menuCameraPreview() { CameraPiP.shared.togglePreview() }
+    @objc private func menuScreenAnnotation() { ScreenAnnotationController.shared.toggle() }
 
     // 菜单项 / 全局快捷键 共用入口
     func recordFullScreen() { beginSelection(.displayOnly) }
