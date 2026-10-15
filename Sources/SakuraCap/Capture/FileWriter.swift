@@ -91,6 +91,10 @@ final class FileWriter {
             ]
             let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
             input.expectsMediaDataInRealTime = true
+            let label = AVMutableMetadataItem()
+            label.identifier = .commonIdentifierTitle
+            label.value = (setup.kind == .system ? "sakuracap.system" : "sakuracap.microphone") as NSString
+            input.metadata = [label]
             writer.add(input)
             audioInputs[setup.kind] = input
             expectedAudioFormats[setup.kind] = (setup.sampleRate, setup.channels)

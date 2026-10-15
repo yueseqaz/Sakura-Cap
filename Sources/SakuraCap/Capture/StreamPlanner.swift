@@ -26,7 +26,8 @@ enum StreamPlanner {
                                         Int((filter.contentRect.height * scale).rounded()))
             specs.append(StreamSpec(displayID: nil,
                                     filter: filter,
-                                    config: baseConfig(settings: settings, width: w, height: h, source: .zero),
+                                    config: baseConfig(settings: settings, width: w, height: h, source: .zero,
+                                                       capturesAudio: settings.recordSystemAudio),
                                     fileURL: fileURL(in: directory, stamp: stamp, suffix: " - \(pending.name)"),
                                     pixelWidth: w,
                                     pixelHeight: h,
@@ -62,7 +63,8 @@ enum StreamPlanner {
                 let suffix = chosen.count > 1 ? " - \(FileName.sanitize(info.name))" : ""
                 specs.append(StreamSpec(displayID: info.id,
                                         filter: filter,
-                                        config: baseConfig(settings: settings, width: w, height: h, source: source),
+                                        config: baseConfig(settings: settings, width: w, height: h, source: source,
+                                                           capturesAudio: capturesAudio),
                                         fileURL: fileURL(in: directory, stamp: stamp, suffix: suffix),
                                         pixelWidth: w,
                                         pixelHeight: h,
@@ -92,7 +94,8 @@ enum StreamPlanner {
             let (fullWidth, fullHeight) = pixelSize(filter: filter, fallback: (info.widthPx, info.heightPx))
             specs.append(StreamSpec(displayID: region.displayID,
                                     filter: filter,
-                                    config: baseConfig(settings: settings, width: fullWidth, height: fullHeight, source: .zero),
+                                    config: baseConfig(settings: settings, width: fullWidth, height: fullHeight, source: .zero,
+                                                       capturesAudio: settings.recordSystemAudio),
                                     fileURL: fileURL(in: directory, stamp: stamp, suffix: L(" - 区域")),
                                     pixelWidth: w,
                                     pixelHeight: h,
@@ -140,7 +143,8 @@ enum StreamPlanner {
         return evenDimensions(Int((Double(w) * factor).rounded()), Int((Double(h) * factor).rounded()))
     }
 
-    private static func baseConfig(settings: AppSettings, width: Int, height: Int, source: CGRect) -> SCStreamConfiguration {
+    private static func baseConfig(settings: AppSettings, width: Int, height: Int, source: CGRect,
+                                   capturesAudio: Bool) -> SCStreamConfiguration {
         var config = SCStreamConfiguration()
         config.width = width
         config.height = height
@@ -148,6 +152,7 @@ enum StreamPlanner {
         config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(1, settings.fps.rawValue)))
         config.queueDepth = 6
         config.showsCursor = settings.showCursor
+        config.capturesAudio = capturesAudio
         // 不把本进程（提示音等）的声音采集进去；其他 App 的系统声音不受影响
         config.excludesCurrentProcessAudio = true
         if #available(macOS 14.0, *) {

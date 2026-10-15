@@ -42,6 +42,9 @@
 /* 设置-音频 */
 "系统声音" = "System Audio";
 "麦克风" = "Microphone";
+"音轨 %d" = "Audio Track %d";
+"点击静音" = "Click to mute";
+"点击恢复声音" = "Click to unmute";
 "系统声音与麦克风会分开录制，可在播放器中切换。" = "System audio and microphone are recorded as separate tracks; switch between them in your player.";
 
 /* 设置-标记 */

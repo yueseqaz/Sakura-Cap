@@ -65,6 +65,12 @@ final class TrimViewModel: ObservableObject {
     @Published var isExporting = false
     @Published var isPlaying = false
     @Published var status: String?
+    struct AudioOption: Identifiable {
+        let id: CMPersistentTrackID
+        let title: String
+    }
+    @Published private(set) var audioOptions: [AudioOption] = []
+    @Published private(set) var mutedTrackIDs = Set<CMPersistentTrackID>()
 
     /// 由窗口控制器注入：导出确认后关闭裁剪窗口
     var requestClose: (() -> Void)?
@@ -102,6 +108,42 @@ final class TrimViewModel: ObservableObject {
         duration = CMTimeGetSeconds(d)
         start = 0
         end = duration
+        let tracks = (try? await asset.loadTracks(withMediaType: .audio)) ?? []
+        var options: [AudioOption] = []
+        for (index, track) in tracks.enumerated() {
+            let metadata = (try? await track.load(.metadata)) ?? []
+            let identifier = metadata.first(where: { $0.identifier == .commonIdentifierTitle })?.stringValue
+            let title: String
+            switch identifier {
+            case "sakuracap.system": title = L("系统声音")
+            case "sakuracap.microphone": title = L("麦克风")
+            default:
+                // Older Sakura-Cap recordings wrote system audio before microphone audio.
+                // A lone unlabelled track cannot safely be identified by its position.
+                title = tracks.count == 2 ? (index == 0 ? L("系统声音") : L("麦克风"))
+                    : String(format: L("音轨 %d"), index + 1)
+            }
+            options.append(AudioOption(id: track.trackID, title: title))
+        }
+        audioOptions = options
+    }
+
+    func toggleMute(_ id: CMPersistentTrackID) {
+        if mutedTrackIDs.contains(id) { mutedTrackIDs.remove(id) }
+        else { mutedTrackIDs.insert(id) }
+        player.currentItem?.audioMix = audioMix()
+    }
+
+    private func audioMix() -> AVAudioMix? {
+        guard !mutedTrackIDs.isEmpty else { return nil }
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = mutedTrackIDs.map { id in
+            let parameters = AVMutableAudioMixInputParameters()
+            parameters.trackID = id
+            parameters.setVolume(0, at: .zero)
+            return parameters
+        }
+        return mix
     }
 
     func togglePlay() {
@@ -242,8 +284,17 @@ final class TrimViewModel: ObservableObject {
         isPlaying = false
         defer { isExporting = false }
 
-        let asset = AVURLAsset(url: sourceURL)
-        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+        let asset: AVAsset
+        do {
+            asset = try await exportAsset()
+        } catch {
+            status = String(format: L("导出失败：%@"), error.localizedDescription)
+            return
+        }
+        // Passthrough retains both independent tracks when nothing is muted;
+        // removing a track requires a composition and a normal export.
+        let preset = mutedTrackIDs.isEmpty ? AVAssetExportPresetPassthrough : AVAssetExportPresetHighestQuality
+        guard let exporter = AVAssetExportSession(asset: asset, presetName: preset) else {
             status = L("无法创建导出任务")
             return
         }
@@ -283,6 +334,26 @@ final class TrimViewModel: ObservableObject {
             alert.addButton(withTitle: L("好"))
             runModalAlert(alert)
         }
+    }
+
+    private func exportAsset() async throws -> AVAsset {
+        let source = AVURLAsset(url: sourceURL)
+        guard !mutedTrackIDs.isEmpty else { return source }
+        let composition = AVMutableComposition()
+        let duration = try await source.load(.duration)
+        let range = CMTimeRange(start: .zero, duration: duration)
+        for video in try await source.loadTracks(withMediaType: .video) {
+            guard let target = composition.addMutableTrack(withMediaType: .video,
+                                                           preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
+            try target.insertTimeRange(range, of: video, at: .zero)
+            target.preferredTransform = try await video.load(.preferredTransform)
+        }
+        for audio in try await source.loadTracks(withMediaType: .audio) where !mutedTrackIDs.contains(audio.trackID) {
+            guard let target = composition.addMutableTrack(withMediaType: .audio,
+                                                           preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
+            try target.insertTimeRange(range, of: audio, at: .zero)
+        }
+        return composition
     }
 
     /// 点「导出 GIF」：先弹确认框（含尺寸选择）
@@ -389,6 +460,27 @@ struct TrimView: View {
 
                 Text(String(format: L("截取 %@ – %@　共 %@"), CompletionNotifier.format(model.start), CompletionNotifier.format(model.end), CompletionNotifier.format(model.trimmedDuration)))
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+
+            if !model.audioOptions.isEmpty {
+                HStack(spacing: 8) {
+                    Text(L("音频"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(model.audioOptions) { option in
+                        let muted = model.mutedTrackIDs.contains(option.id)
+                        Button {
+                            model.toggleMute(option.id)
+                        } label: {
+                            Label(option.title, systemImage: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(muted ? .red : .accentColor)
+                        .help(muted ? L("点击恢复声音") : L("点击静音"))
+                        .disabled(model.isExporting)
+                    }
+                    Spacer()
+                }
             }
 
             HStack {
