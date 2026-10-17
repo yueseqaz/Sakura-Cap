@@ -1,201 +1,182 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sakura-Cap · 菜单栏极简 Mac 录屏 / 截图工具</title>
-<meta name="description" content="Sakura-Cap 是一款菜单栏常驻的极简 Mac 录屏 / 截图工具：全屏/区域/窗口录制、截图 OCR、滚动截屏、图片标注。" />
-<style>
-  :root {
-    --bg: #0f0d12;
-    --panel: #17141d;
-    --panel-2: #1e1a26;
-    --text: #f4f2f7;
-    --muted: #a49fb0;
-    --line: #2b2733;
-    --pink: #f0466b;
-    --pink-2: #ff7a95;
-    --radius: 16px;
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    margin: 0;
-    background: radial-gradient(1200px 600px at 50% -10%, #2a1520 0%, var(--bg) 55%) no-repeat, var(--bg);
-    color: var(--text);
-    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    -webkit-font-smoothing: antialiased;
-  }
-  a { color: var(--pink-2); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 0 22px; }
-
-  nav {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 18px 0; position: sticky; top: 0; z-index: 10;
-    backdrop-filter: saturate(160%) blur(12px);
-    background: rgba(15,13,18,0.72);
-    border-bottom: 1px solid transparent;
-  }
-  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; }
-  nav .brand img { width: 26px; height: 26px; border-radius: 7px; }
-  nav .links a { color: var(--muted); margin-left: 18px; font-size: 14px; }
-  nav .links a:hover { color: var(--text); }
-
-  header.hero { text-align: center; padding: 72px 0 40px; }
-  header.hero img.icon { width: 96px; height: 96px; border-radius: 22px; box-shadow: 0 20px 60px rgba(240,70,107,.28); }
-  header.hero h1 { font-size: 44px; margin: 22px 0 8px; letter-spacing: -.5px; }
-  header.hero p.tagline { color: var(--muted); font-size: 18px; margin: 0 auto; max-width: 560px; }
-  .badges { display: flex; gap: 10px; justify-content: center; margin: 22px 0 26px; flex-wrap: wrap; }
-  .badge { background: var(--panel); border: 1px solid var(--line); color: var(--muted); font-size: 12.5px; padding: 5px 12px; border-radius: 999px; }
-
-  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 11px 20px; border-radius: 12px; font-weight: 600; font-size: 14.5px; cursor: pointer;
-    border: 1px solid var(--line); background: var(--panel); color: var(--text);
-    transition: .18s transform, .18s background, .18s border-color;
-  }
-  .btn:hover { transform: translateY(-1px); text-decoration: none; }
-  .btn.primary { background: linear-gradient(135deg, var(--pink), var(--pink-2)); border-color: transparent; color: #fff; }
-  .btn.ghost { background: transparent; }
-
-  /* HUD mock */
-  .hud {
-    margin: 40px auto 0; width: fit-content; display: flex; align-items: center; gap: 12px;
-    background: rgba(30,26,38,.85); border: 1px solid var(--line); border-radius: 999px;
-    padding: 9px 14px; font-size: 14px; box-shadow: 0 16px 50px rgba(0,0,0,.45);
-  }
-  .hud .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pink); }
-  .hud .ic { color: #8f8a9c; font-size: 15px; }
-  .hud .ic.on { color: var(--pink-2); }
-  .hud .sep { width: 1px; height: 16px; background: var(--line); }
-  .hud .play { width: 26px; height: 26px; border-radius: 50%; background: var(--pink); display: grid; place-items: center; color: #fff; font-size: 12px; }
-
-  section { padding: 56px 0; }
-  section h2 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.3px; }
-  section p.sub { color: var(--muted); margin: 0 0 26px; }
-
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
-  .card h3 { margin: 0 0 6px; font-size: 16px; }
-  .card p { margin: 0; color: var(--muted); font-size: 14px; }
-  .card .emoji { font-size: 20px; }
-
-  pre.code {
-    background: #0b0910; border: 1px solid var(--line); border-radius: 12px;
-    padding: 16px 18px; overflow: auto; position: relative; font-size: 13.5px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #e7e3ee;
-  }
-  pre.code .copy {
-    position: absolute; top: 10px; right: 10px; font: inherit; font-size: 12px;
-    background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
-    border-radius: 8px; padding: 4px 10px; cursor: pointer;
-  }
-  pre.code .copy:hover { color: var(--text); }
-  code.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 13px; }
-
-  footer { border-top: 1px solid var(--line); padding: 30px 0 50px; color: var(--muted); font-size: 13.5px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f7">
+  <meta name="description" content="Sakura-Cap：为 Mac 设计的菜单栏录屏、截图与标注工具。轻巧、直接、功能完整。">
+  <meta property="og:title" content="Sakura-Cap — 捕捉刚刚好">
+  <meta property="og:description" content="录屏、截图、实时标注与视频裁剪。一个安静的 Mac 工具。">
+  <meta property="og:image" content="assets/app-icon.png">
+  <title>Sakura-Cap — 捕捉刚刚好</title>
+  <link rel="icon" href="assets/app-icon.png">
+  <style>
+    :root { --bg:#f5f5f7; --white:#fff; --ink:#1d1d1f; --sub:#6e6e73; --line:#d9d9df; --accent:#c64063; --max:1120px; --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Hiragino Sans GB",sans-serif; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--white); color:var(--ink); font-family:var(--font); -webkit-font-smoothing:antialiased; }
+    a { color:inherit; text-decoration:none; }
+    button { font:inherit; }
+    :focus-visible { outline:3px solid #c64063; outline-offset:4px; }
+    .wrap { width:min(calc(100% - 48px),var(--max)); margin:auto; }
+    .nav { height:54px; position:sticky; top:0; z-index:30; background:rgba(255,255,255,.82); backdrop-filter:saturate(180%) blur(20px); -webkit-backdrop-filter:saturate(180%) blur(20px); border-bottom:1px solid rgba(0,0,0,.07); }
+    .nav-inner { height:100%; display:flex; align-items:center; gap:30px; }
+    .brand { display:inline-flex; align-items:center; gap:9px; font-weight:650; letter-spacing:-.035em; font-size:15px; white-space:nowrap; }
+    .brand img { width:25px; height:25px; border-radius:7px; }
+    .nav-links { display:flex; align-items:center; gap:28px; margin-left:auto; color:#515156; font-size:12px; }
+    .nav-links a:hover,.footer-links a:hover { color:var(--accent); }
+    .nav-cta { font-size:12px; color:white; background:var(--ink); padding:8px 15px; border-radius:20px; white-space:nowrap; }
+    .nav-cta:hover { background:#414146; }
+    .hero { padding:100px 0 0; overflow:hidden; text-align:center; background:linear-gradient(#fff 0%,#fff 60%,var(--bg) 100%); }
+    .kicker { color:var(--accent); font-weight:700; font-size:13px; letter-spacing:.06em; }
+    h1,h2,h3,p { margin-top:0; }
+    .hero h1 { margin:22px auto 21px; max-width:900px; font-size:clamp(56px,7.1vw,100px); line-height:1.08; font-weight:710; letter-spacing:-.065em; }
+    .hero h1 span { color:#808084; }
+    .hero-lede { max-width:620px; margin:0 auto; color:var(--sub); font-size:clamp(18px,2vw,22px); line-height:1.65; letter-spacing:-.025em; }
+    .actions { display:flex; align-items:center; justify-content:center; gap:20px; margin-top:31px; }
+    .pill { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:46px; border-radius:25px; padding:0 21px; background:var(--ink); color:white; font-size:14px; font-weight:600; transition:transform .22s,background .22s; }
+    .pill:hover { transform:translateY(-2px); background:#424247; }
+    .text-link { color:#365db2; font-size:14px; font-weight:550; }
+    .text-link:hover { text-decoration:underline; }
+    .hero-meta { margin-top:17px; color:#929297; font-size:12px; }
+    .showcase { width:min(calc(100% - 48px),1100px); margin:73px auto 0; padding:0 22px; }
+    .screen { position:relative; height:clamp(430px,47vw,575px); border:7px solid #2a2b2e; border-bottom:0; border-radius:17px 17px 0 0; background:#f5f5f7; box-shadow:0 24px 70px rgba(22,26,35,.16); overflow:hidden; text-align:left; }
+    .screen-bar { height:28px; display:flex; justify-content:space-between; align-items:center; padding:0 14px; border-bottom:1px solid #d9d9dc; background:rgba(255,255,255,.94); font-size:11px; color:#35353a; }
+    .screen-bar span:last-child { letter-spacing:6px; }
+    .screen-body { position:absolute; inset:28px 0 0; display:grid; grid-template-columns:22% 1fr; background:#fff; }
+    .fake-sidebar { padding:27px 15px; border-right:1px solid #e6e6e9; background:#f8f8f9; }
+    .fake-sidebar .sidebar-title { display:block; margin-bottom:21px; font-size:12px; font-weight:700; }
+    .fake-sidebar .side-item { display:flex; gap:11px; align-items:center; margin:4px 0; border-radius:7px; padding:10px 9px; font-size:11px; color:#65656b; }
+    .fake-sidebar .side-item.active { color:#202024; background:#e9e9ed; font-weight:650; }
+    .side-icon { width:15px; text-align:center; font-size:15px; }
+    .fake-content { padding:30px 36px; }
+    .fake-content .crumb { font-size:11px; color:#85858b; }
+    .fake-content h3 { margin:27px 0 8px; font-size:26px; letter-spacing:-.045em; }
+    .fake-content p { color:#77777d; font-size:12px; margin-bottom:25px; }
+    .setting-row { display:flex; justify-content:space-between; align-items:center; border-top:1px solid #ebebee; padding:15px 1px; font-size:12px; }
+    .setting-row b { font-weight:550; }
+    .setting-row small { color:#8e8e95; }
+    .switch { position:relative; width:30px; height:18px; background:#34c759; border-radius:20px; }
+    .switch::after { content:""; position:absolute; right:2px; top:2px; width:14px; height:14px; border-radius:50%; background:white; }
+    .switch.off { background:#d1d1d6; }.switch.off::after { right:14px; }
+    .control-hud { position:absolute; z-index:5; bottom:35px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:13px; padding:9px 11px 9px 18px; border:1px solid rgba(255,255,255,.9); border-radius:40px; background:rgba(244,244,246,.83); box-shadow:0 12px 32px rgba(30,35,45,.18); backdrop-filter:blur(22px); white-space:nowrap; font-size:12px; font-weight:600; }
+    .control-hud i { width:8px; height:8px; border-radius:50%; background:#e64f67; }
+    .control-hud .divider { width:1px; height:19px; background:#c8c8cd; }
+    .control-hud .glyph { color:#5b5b62; font-size:16px; }
+    .control-hud .play { display:grid; place-items:center; width:29px; height:29px; border-radius:50%; background:#e34d65; color:white; font-size:11px; }
+    .showcase-caption { position:absolute; bottom:13px; right:14px; color:#aaaab1; font-size:10px; }
+    .stats { background:var(--bg); border-bottom:1px solid #e9e9ed; }
+    .stat-list { display:grid; grid-template-columns:repeat(3,1fr); padding:50px 0 53px; }
+    .stat { padding:0 25px; border-right:1px solid var(--line); text-align:center; }.stat:last-child { border:0; }
+    .stat strong { display:block; font-size:clamp(27px,3.7vw,48px); letter-spacing:-.055em; line-height:1.2; font-weight:680; }
+    .stat span { display:block; margin-top:8px; color:var(--sub); font-size:13px; }
+    .section { padding:125px 0; scroll-margin-top:55px; }
+    .section-head { max-width:730px; margin:0 auto 55px; text-align:center; }
+    .section-head h2 { margin:14px 0 13px; font-size:clamp(40px,5vw,64px); font-weight:690; letter-spacing:-.06em; line-height:1.16; }
+    .section-head p { color:var(--sub); font-size:18px; line-height:1.6; }
+    .chapter { display:grid; grid-template-columns:1fr 1fr; align-items:center; gap:75px; padding:70px 0; border-top:1px solid #ededf0; }
+    .chapter:last-child { padding-bottom:0; }
+    .chapter:nth-child(even) .chapter-copy { order:2; }
+    .chapter-label { color:var(--accent); font-size:12px; letter-spacing:.09em; font-weight:750; }
+    .chapter h3 { font-size:clamp(32px,3.7vw,48px); font-weight:670; letter-spacing:-.055em; line-height:1.2; margin:16px 0; }
+    .chapter p { color:var(--sub); font-size:16px; line-height:1.75; margin-bottom:25px; }
+    .checks { display:grid; grid-template-columns:1fr 1fr; gap:13px 20px; font-size:13px; color:#4b4b51; }
+    .checks span::before { content:"✓"; display:inline-grid; place-items:center; width:18px; height:18px; margin-right:9px; color:#5e6470; background:#eeeeF1; border-radius:50%; font-size:11px; font-weight:700; }
+    .chapter-visual { min-width:0; height:380px; display:flex; align-items:center; justify-content:center; padding:32px; border-radius:26px; background:#f4f4f6; overflow:hidden; }
+    .recorder-card { width:100%; border:1px solid #dedee3; border-radius:16px; background:white; box-shadow:0 19px 42px rgba(28,29,38,.07); overflow:hidden; }
+    .card-top { height:38px; display:flex; align-items:center; gap:7px; padding:0 15px; background:#fafafa; border-bottom:1px solid #ececf0; font-size:11px; color:#77777d; }
+    .traffic { display:inline-block; width:9px; height:9px; border-radius:50%; background:#ff6259; }.traffic.yellow { background:#ffbf2e; }.traffic.green { background:#28c840; }
+    .card-top .title { margin-left:auto; margin-right:auto; }
+    .recorder-preview { height:205px; background:linear-gradient(135deg,#f0f1f3 0%,#e4e6ea 100%); display:flex; align-items:center; justify-content:center; }
+    .preview-box { width:65%; height:66%; background:white; border-radius:8px; box-shadow:0 5px 16px rgba(30,30,40,.08); padding:19px; }
+    .preview-box .line { width:78%; height:7px; background:#e5e7eb; border-radius:5px; margin-bottom:12px; }.preview-box .line.short { width:49%; }.preview-box .line.pink { background:#ebc5ce; width:61%; }
+    .recorder-bottom { display:flex; align-items:center; gap:12px; padding:17px 19px; font-size:11px; color:#5a5a61; }
+    .red-dot { width:8px; height:8px; border-radius:50%; background:#ef5665; }.timeline { height:5px; flex:1; border-radius:5px; background:linear-gradient(90deg,#ea6172 60%,#e5e5e9 60%); }
+    .annotate-card { width:100%; height:285px; display:flex; flex-direction:column; background:white; border:1px solid #dddde2; border-radius:14px; box-shadow:0 18px 40px rgba(25,30,39,.08); overflow:hidden; }
+    .annotate-canvas { position:relative; flex:1; background:#fafafa; padding:33px; }
+    .annotate-canvas .note { width:68%; height:110px; background:white; border:1px solid #e4e4e7; padding:18px; color:#52525a; font-size:12px; line-height:2; }
+    .annotate-canvas .arrow { position:absolute; right:17%; top:23%; font-size:64px; font-weight:300; color:#ed5570; transform:rotate(20deg); }
+    .annotate-canvas .number { position:absolute; right:23%; top:24%; display:grid; place-items:center; width:27px; height:27px; border-radius:50%; color:white; background:#e45169; font-size:11px; font-weight:700; }
+    .annotate-toolbar { display:flex; align-items:center; justify-content:center; gap:12px; height:45px; border-top:1px solid #e8e8eb; background:#f8f8fa; color:#73737b; font-size:16px; white-space:nowrap; }
+    .annotate-toolbar b { color:#e24b67; font-weight:500; }
+    .annotation-chip { display:flex; align-items:center; gap:6px; font-size:11px; color:#52525a; }
+    .utilities { background:var(--bg); }
+    .utility-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+    .utility { min-height:196px; padding:26px; border:1px solid #e8e8ed; border-radius:18px; background:white; }
+    .utility .icon { display:grid; place-items:center; width:37px; height:37px; border-radius:10px; margin-bottom:28px; color:#51525a; background:#f1f1f4; font-size:18px; }
+    .utility h3 { font-size:17px; letter-spacing:-.035em; margin:0 0 8px; }.utility p { margin:0; color:var(--sub); font-size:13px; line-height:1.65; }
+    .specs { background:#fff; }
+    .spec-grid { display:grid; grid-template-columns:.9fr 1.1fr; align-items:center; gap:80px; }
+    .specs h2 { font-size:clamp(40px,5vw,64px); letter-spacing:-.06em; line-height:1.14; margin:16px 0; }
+    .specs p { color:var(--sub); font-size:17px; line-height:1.7; }
+    .spec-card { border-radius:23px; padding:38px; background:var(--bg); }
+    .spec-card .number { font-size:clamp(59px,7vw,96px); font-weight:700; line-height:1; letter-spacing:-.08em; }
+    .spec-card .number small { font-size:33px; letter-spacing:-.045em; }.spec-card .number .approx { font-size:40px; vertical-align:top; margin-right:5px; }
+    .spec-card strong { display:block; font-size:17px; margin:20px 0 6px; }
+    .spec-card p { font-size:13px; line-height:1.7; margin-bottom:0; }
+    .download { background:var(--bg); }
+    .install-layout { display:grid; grid-template-columns:1fr 1fr; gap:55px; align-items:start; }
+    .install-layout h2 { font-size:clamp(42px,5vw,66px); letter-spacing:-.06em; margin:13px 0 18px; }
+    .install-layout p { color:var(--sub); line-height:1.7; font-size:16px; }
+    .download-actions { display:flex; align-items:center; gap:17px; margin-top:27px; }
+    .install-box { min-width:0; background:white; border-radius:20px; padding:28px; border:1px solid #e6e6ea; }
+    .install-box h3 { font-size:16px; margin:0 0 5px; }.install-box p { font-size:13px; margin:0 0 18px; }
+    .terminal { min-width:0; position:relative; border-radius:10px; background:#202124; color:#f0f0f2; overflow-x:auto; padding:21px 18px; }
+    .terminal code { white-space:pre; font:11px/2 "SFMono-Regular",Menlo,monospace; }
+    .terminal .prompt { color:#a7d7aa; }
+    .copy { position:absolute; right:10px; top:9px; border:1px solid #54545b; border-radius:6px; background:#38383e; color:white; padding:5px 8px; font-size:11px; cursor:pointer; }.copy:hover { background:#55555b; }
+    .note { margin-top:18px; color:#8c8c92; font-size:12px; line-height:1.65; }
+    footer { background:var(--bg); border-top:1px solid #e5e5e9; padding:30px 0 42px; }
+    .footer-inner { display:flex; justify-content:space-between; gap:25px; align-items:center; font-size:12px; color:#7d7d83; }.footer-links { display:flex; gap:23px; }.footer-links a { color:#55555c; }
+    .animate { opacity:0; transform:translateY(18px); animation:appear .8s cubic-bezier(.2,.8,.2,1) forwards; }.hero .animate:nth-child(2) { animation-delay:.1s; }.hero .animate:nth-child(3) { animation-delay:.2s; }.hero .animate:nth-child(4) { animation-delay:.3s; }.showcase.animate { animation-delay:.38s; }
+    @keyframes appear { to { opacity:1; transform:translateY(0); } }
+    @media(max-width:850px) { .chapter { gap:32px; }.spec-grid { gap:35px; }.install-layout { gap:28px; } }
+    @media(max-width:640px) {
+      .wrap { width:min(calc(100% - 36px),var(--max)); }.nav-links { display:none; }.nav-cta { margin-left:auto; }
+      .hero { padding-top:75px; }.hero h1 { font-size:clamp(49px,11.6vw,70px); }.hero-lede { font-size:17px; }
+      .showcase { width:100%; padding:0 12px; margin-top:58px; }.screen { height:360px; border-width:5px; }.screen-body { grid-template-columns:minmax(0,1fr); }.fake-sidebar { display:none; }.fake-content { padding:25px; }.fake-content h3 { font-size:23px; }.control-hud { gap:9px; font-size:10px; }.control-hud .glyph:nth-of-type(n+4) { display:none; }
+      .stat-list { padding:34px 0; }.stat { padding:0 8px; }.stat strong { font-size:24px; }.stat span { font-size:11px; }
+      .section { padding:85px 0; }.section-head { margin-bottom:30px; }.section-head h2 { font-size:43px; }.section-head p { font-size:16px; }
+      .chapter,.chapter:nth-child(even) { display:flex; flex-direction:column; gap:27px; padding:52px 0; }.chapter:nth-child(even) .chapter-copy { order:0; }.chapter-visual { width:100%; height:320px; }.chapter h3 { font-size:37px; }.checks { font-size:12px; }
+      .utility-grid { grid-template-columns:1fr 1fr; }.utility { min-height:174px; padding:20px; }.utility .icon { margin-bottom:20px; }
+      .spec-grid,.install-layout { grid-template-columns:minmax(0,1fr); gap:25px; }.spec-card { padding:29px; }.footer-inner { flex-direction:column; align-items:flex-start; }.footer-links { flex-wrap:wrap; }
+    }
+    @media(max-width:410px) { .actions { flex-direction:column; gap:16px; }.utility-grid { grid-template-columns:1fr; }.utility { min-height:auto; }.stat strong { font-size:21px; }.checks { grid-template-columns:1fr 1fr; }.control-hud .glyph { display:none; } }
+    @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; scroll-behavior:auto!important; } }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <nav>
-    <span class="brand"><img src="https://raw.githubusercontent.com/yueseqaz/Sakura-Cap/main/Resources/AppIcon.png" alt="Sakura-Cap" />Sakura-Cap</span>
-    <span class="links">
-      <a href="#features">功能</a>
-      <a href="#install">安装</a>
-      <a href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener">GitHub ↗</a>
-    </span>
-  </nav>
-
-  <header class="hero">
-    <img class="icon" src="https://raw.githubusercontent.com/yueseqaz/Sakura-Cap/main/Resources/AppIcon.png" alt="Sakura-Cap 图标" />
-    <h1>Sakura-Cap</h1>
-    <p class="tagline">菜单栏常驻的极简 Mac 录屏 / 截图工具。点一下就能开录，录完顺手裁一刀、标一标，截图取字一步到位。</p>
-    <div class="badges">
-      <span class="badge">macOS 13+</span>
-      <span class="badge">零第三方依赖</span>
-      <span class="badge">开源免费</span>
-      <span class="badge">中文 / English</span>
-    </div>
-    <div class="cta">
-      <a class="btn primary" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener">下载最新版</a>
-      <a class="btn" href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener">GitHub 仓库</a>
-    </div>
-
-    <div class="hud">
-      <span class="ic">⠿</span>
-      <span class="dot"></span>
-      <span>准备就绪</span>
-      <span class="sep"></span>
-      <span class="ic on">🎤</span>
-      <span class="ic on">🔊</span>
-      <span class="ic">📷</span>
-      <span class="ic on">🖱</span>
-      <span class="ic on">⌨</span>
-      <span class="sep"></span>
-      <span class="ic">原始 ▾</span>
-      <span class="play">▶</span>
-      <span class="ic">✕</span>
-    </div>
-  </header>
-
-  <section id="features">
-    <h2>功能</h2>
-    <p class="sub">录音、截图、标注，一条龙。</p>
-    <div class="grid">
-      <div class="card"><div class="emoji">🎬</div><h3>录屏</h3><p>全屏（单屏 / 多屏并行）、框选区域、窗口录制；录制中可暂停 / 继续 / 停止。</p></div>
-      <div class="card"><div class="emoji">🎚️</div><h3>悬浮控制条</h3><p>就地选输出分辨率、麦克风与系统声音、摄像头、点击标记与按键显示，点 ▶ 才开始。</p></div>
-      <div class="card"><div class="emoji">✂️</div><h3>录制后裁剪</h3><p>录完自动进裁剪页：拖动区间、只循环预览选中片段，导出为新文件（可选删除原文件）。</p></div>
-      <div class="card"><div class="emoji">📸</div><h3>截图</h3><p>全屏 / 区域截图，完成后进入标注编辑器，保存或直接拷贝到剪贴板。</p></div>
-      <div class="card"><div class="emoji">🔍</div><h3>OCR 取字</h3><p>框选任意区域，系统 Vision 离线识别文字，一键复制到剪贴板。</p></div>
-      <div class="card"><div class="emoji">📜</div><h3>滚动截屏</h3><p>边滚动边按重叠自动拼接成一张长图，右侧实时预览。</p></div>
-      <div class="card"><div class="emoji">🖊️</div><h3>标注编辑器</h3><p>画笔、箭头、矩形、文字、序号、马赛克（像素块/模糊/六边形）、裁剪；可二次编辑、撤销重做、滚轮缩放。</p></div>
-      <div class="card"><div class="emoji">📌</div><h3>「定住」贴图</h3><p>把结果干净地贴在屏幕上当参考图：红虚线框、可拖动、滚轮等比缩放、右上角关闭。</p></div>
-      <div class="card"><div class="emoji">👆</div><h3>点击标记 &amp; 按键显示</h3><p>录制时标出鼠标点击（指向箭头）、在角落显示所按按键。</p></div>
-      <div class="card"><div class="emoji">🎥</div><h3>摄像头画中画</h3><p>录制时在角落叠一个可拖动的圆角摄像头小窗，可选具体设备。</p></div>
-      <div class="card"><div class="emoji">⌨️</div><h3>自定义快捷键</h3><p>每个动作都能绑快捷键：录制、截图、OCR、滚动截屏，默认留空由你设置。</p></div>
-      <div class="card"><div class="emoji">🌙</div><h3>录屏勿扰 &amp; 提示音</h3><p>可选录制时切换专注模式；开始 / 结束提示音，且不会被录进视频。</p></div>
-    </div>
-  </section>
-
-  <section id="install">
-    <h2>安装</h2>
-    <p class="sub">推荐用 Homebrew。</p>
-    <pre class="code"><button class="copy" data-copy="brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap
-brew trust yueseqaz/sakura-cap
-brew install --cask sakura-cap">复制</button>brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap
-brew trust yueseqaz/sakura-cap
-brew install --cask sakura-cap</pre>
-    <p class="sub" style="margin-top:18px">或者从源码构建：</p>
-    <pre class="code"><button class="copy" data-copy="git clone https://github.com/yueseqaz/Sakura-Cap.git
-cd Sakura-Cap
-./run.sh">复制</button>git clone https://github.com/yueseqaz/Sakura-Cap.git
-cd Sakura-Cap
-./run.sh</pre>
-    <p class="sub" style="margin-top:16px">应用未公证，首次打开若被拦截，请右键「打开」，或在「系统设置 → 隐私与安全性」中允许；按需授予屏幕录制 / 麦克风 / 摄像头 / 输入监控权限。</p>
-  </section>
-
-  <footer>
-    <span>© 2026 Sakura · Sakura-Cap</span>
-    <span>
-      <a href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener">仓库</a> ·
-      <a href="https://github.com/yueseqaz/Sakura-Cap/releases" target="_blank" rel="noopener">发布</a> ·
-      <a href="https://github.com/yueseqaz/Sakura-Cap/blob/main/docs/DEVELOPMENT.md" target="_blank" rel="noopener">开发文档</a>
-    </span>
-  </footer>
-</div>
-
-<script>
-  document.querySelectorAll('pre.code .copy').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      navigator.clipboard.writeText(btn.dataset.copy || '').then(function () {
-        var old = btn.textContent; btn.textContent = '已复制';
-        setTimeout(function () { btn.textContent = old; }, 1200);
-      });
-    });
-  });
-</script>
+  <nav class="nav" aria-label="主导航"><div class="wrap nav-inner"><a href="#top" class="brand"><img src="assets/app-icon.png" alt="">Sakura-Cap</a><div class="nav-links"><a href="#features">功能</a><a href="#more">更多能力</a><a href="#performance">轻巧</a><a href="#download">安装</a><a href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener noreferrer">GitHub ↗</a></div><a class="nav-cta" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener noreferrer">免费下载 ↗</a></div></nav>
+  <main id="top">
+    <header class="hero"><div class="wrap"><div class="kicker animate">Sakura-Cap for Mac</div><h1 class="animate">捕捉屏幕。<br><span>不打断思路。</span></h1><p class="hero-lede animate">录屏、截图、标注和裁剪，放在一个安静的菜单栏工具里。<br>需要的时候出现，完成之后消失。</p><div class="actions animate"><a class="pill" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener noreferrer">下载最新版 <span aria-hidden="true">↗</span></a><a class="text-link" href="#features">了解功能 ›</a></div><div class="hero-meta animate">免费开源 · macOS 13 或更新版本</div></div>
+      <div class="showcase animate"><div class="screen" role="img" aria-label="Sakura-Cap 软件界面示意：Mac 设置窗口与屏幕底部的录制控制条"><div class="screen-bar"><span>● &nbsp; Sakura-Cap &nbsp; 文件 &nbsp; 编辑</span><span>◖◗ ◉  09:41</span></div><div class="screen-body"><div class="fake-sidebar"><span class="sidebar-title">Sakura-Cap</span><div class="side-item active"><span class="side-icon">◉</span>录制</div><div class="side-item"><span class="side-icon">✦</span>辅助</div><div class="side-item"><span class="side-icon">⌘</span>快捷键</div><div class="side-item"><span class="side-icon">◫</span>翻译</div><div class="side-item"><span class="side-icon">◈</span>权限</div><div class="side-item"><span class="side-icon">⚙</span>通用</div></div><div class="fake-content"><span class="crumb">设置 / 录制</span><h3>屏幕录制</h3><p>按你的方式，记录屏幕上的每一刻。</p><div class="setting-row"><b>录制模式</b><small>全屏录制　⌄</small></div><div class="setting-row"><b>输出分辨率</b><small>原始分辨率　⌄</small></div><div class="setting-row"><b>系统声音</b><span class="switch"></span></div><div class="setting-row"><b>麦克风</b><span class="switch off"></span></div></div></div><div class="control-hud"><i></i>准备就绪<span class="divider"></span><span class="glyph">◉</span><span class="glyph">♫</span><span class="glyph">▣</span><span class="divider"></span>原始 ▾ <span class="play">▶</span></div><span class="showcase-caption">软件界面示意</span></div></div>
+    </header>
+    <div class="stats"><div class="wrap stat-list"><div class="stat"><strong>约 25 MB</strong><span>空闲状态常驻内存</span></div><div class="stat"><strong>macOS 13+</strong><span>支持较新的 Mac 系统</span></div><div class="stat"><strong>0</strong><span>第三方运行依赖</span></div></div></div>
+    <section class="section" id="features"><div class="wrap"><div class="section-head"><div class="kicker">Capture, your way</div><h2>从捕捉到表达，<br>一次完成。</h2><p>不是复杂的创作软件，而是一套恰好够用的屏幕工具。</p></div>
+      <article class="chapter"><div class="chapter-copy"><div class="chapter-label">01 / 录屏</div><h3>想录哪里，<br>就录哪里。</h3><p>全屏、框选区域或单个窗口。底部悬浮 HUD 让分辨率、系统声音、麦克风和摄像头随手可调，确认准备好再开始。</p><div class="checks"><span>多屏并行录制</span><span>暂停 / 继续</span><span>原始 / 1080p / 720p</span><span>鼠标与按键标记</span><span>摄像头画中画</span><span>录制帧率角标</span></div></div><div class="chapter-visual"><div class="recorder-card"><div class="card-top"><i class="traffic"></i><i class="traffic yellow"></i><i class="traffic green"></i><span class="title">录制预览 · 屏幕 1</span></div><div class="recorder-preview"><div class="preview-box"><div class="line"></div><div class="line pink"></div><div class="line short"></div><div class="line"></div></div></div><div class="recorder-bottom"><span class="red-dot"></span><strong>00:18</strong><span class="timeline"></span>◼　Ⅱ</div></div></div></article>
+      <article class="chapter"><div class="chapter-copy"><div class="chapter-label">02 / 截图与识别</div><h3>看见的内容，<br>马上用得上。</h3><p>全屏与区域截图，或自动滚动拼接长图。框选文字可离线 OCR，二维码能识别，翻译也能在框选后直接完成。</p><div class="checks"><span>全屏 / 区域截图</span><span>滚动长截图</span><span>离线 OCR 取字</span><span>二维码识别</span><span>框选翻译</span><span>截图对比</span></div></div><div class="chapter-visual"><div class="annotate-card"><div class="card-top"><i class="traffic"></i><i class="traffic yellow"></i><i class="traffic green"></i><span class="title">标注图片</span></div><div class="annotate-canvas"><div class="note">把重要内容留下来。<br>然后清楚地告诉别人。</div><span class="arrow">↗</span><span class="number">1</span></div><div class="annotate-toolbar"><span>⌖</span><b>✎</b><span>↗</span><span>▭</span><span>A</span><span>①</span><span>▦</span><span class="annotation-chip">↶ &nbsp; ↷</span></div></div></div></article>
+      <article class="chapter"><div class="chapter-copy"><div class="chapter-label">03 / 标注与导出</div><h3>表达清楚。<br>也收尾漂亮。</h3><p>图片标注可改颜色、粗细与马赛克程度；不截图，也能直接在屏幕上标注和测量。录制完成后可裁剪、截帧、导出 GIF，并选择静音系统音轨或麦克风音轨。</p><div class="checks"><span>实时屏幕标注</span><span>马赛克与测量</span><span>撤销 / 重做</span><span>定住图片</span><span>视频裁剪 / GIF</span><span>分音轨静音</span></div></div><div class="chapter-visual"><div class="annotate-card"><div class="card-top"><i class="traffic"></i><i class="traffic yellow"></i><i class="traffic green"></i><span class="title">视频裁剪</span></div><div class="recorder-preview"><div class="preview-box"><div class="line"></div><div class="line short"></div><div class="line pink"></div></div></div><div class="recorder-bottom"><span>▶</span><span>00:04</span><span class="timeline"></span><span>00:21</span></div></div></div></article>
+    </div></section>
+    <section class="section utilities" id="more"><div class="wrap"><div class="section-head"><div class="kicker">The small details matter</div><h2>细节里，也很周到。</h2><p>每个功能都有明确的用途，不用为了一个小动作打开一整套工作流。</p></div><div class="utility-grid">
+      <div class="utility"><div class="icon">⌘</div><h3>全局快捷键</h3><p>录屏、截图、OCR 等动作可自行绑定快捷键；默认不占用系统组合键。</p></div>
+      <div class="utility"><div class="icon">◉</div><h3>镜头预览</h3><p>从菜单栏打开摄像头预览，可调窗口大小，录制时也能使用画中画。</p></div>
+      <div class="utility"><div class="icon">▧</div><h3>实时屏幕标注</h3><p>在桌面上画箭头、序号或马赛克；穿透模式下还能继续操作下方窗口。</p></div>
+      <div class="utility"><div class="icon">◫</div><h3>窗口与长图</h3><p>录制单个窗口，也能滚动拼接长截图；完成后继续编辑而不是立刻保存。</p></div>
+      <div class="utility"><div class="icon">↔</div><h3>识别与翻译</h3><p>OCR 使用系统 Vision 离线识别；翻译服务可自行配置，密钥留在本机。</p></div>
+      <div class="utility"><div class="icon">◈</div><h3>权限可见</h3><p>屏幕录制、摄像头、麦克风与输入监控集中展示，按需授权。</p></div>
+    </div></div></section>
+    <section class="section specs" id="performance"><div class="wrap spec-grid"><div><div class="kicker">Light where it counts</div><h2>轻巧，不是<br>一句口号。</h2><p>菜单栏常驻，没有 Dock 图标。使用 macOS 的 ScreenCaptureKit、AVFoundation 和 Vision，运行时不依赖第三方框架。</p></div><div class="spec-card"><div class="number"><span class="approx">≈</span>25 <small>MB</small></div><strong>空闲状态常驻内存（RSS）</strong><p>安静待命时占用约 25 MB。录制、摄像头、标注和不同显示器配置都会增加内存使用。</p></div></div></section>
+    <section class="section download" id="download"><div class="wrap install-layout"><div><div class="kicker">Get started</div><h2>准备好，就开始。</h2><p>Sakura-Cap 免费开源。下载后它会待在菜单栏，随时等你需要。</p><div class="download-actions"><a class="pill" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener noreferrer">下载最新版本 ↗</a><a class="text-link" href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener noreferrer">源代码 ↗</a></div></div><div class="install-box"><h3>也可以用 Homebrew 安装</h3><p>复制命令，在终端中运行。</p><div class="terminal"><button class="copy" type="button" data-copy="brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap&#10;brew trust yueseqaz/sakura-cap&#10;brew install --cask sakura-cap" aria-label="复制 Homebrew 安装命令">复制</button><code><span class="prompt">$</span> brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap<br><span class="prompt">$</span> brew trust yueseqaz/sakura-cap<br><span class="prompt">$</span> brew install --cask sakura-cap</code></div><div class="note">macOS 13+。应用尚未经过 Apple 公证；首次打开若被拦截，请在「系统设置 → 隐私与安全性」中允许。录屏需要屏幕录制权限，其他权限按需授权。</div></div></div></section>
+  </main>
+  <footer><div class="wrap footer-inner"><span>© 2026 Sakura-Cap · Made for Mac.</span><div class="footer-links"><a href="https://github.com/yueseqaz/Sakura-Cap/releases" target="_blank" rel="noopener noreferrer">版本发布</a><a href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener noreferrer">GitHub</a><a href="https://github.com/yueseqaz/Sakura-Cap/blob/main/docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">开发文档</a></div></div></footer>
+  <script>
+    document.querySelectorAll('[data-copy]').forEach(button => button.addEventListener('click', async () => {
+      try {
+        if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(button.dataset.copy);
+        else { const field=document.createElement('textarea'); field.value=button.dataset.copy; field.style.cssText='position:fixed;opacity:0'; document.body.append(field); field.select(); if (!document.execCommand('copy')) throw new Error('copy failed'); field.remove(); }
+        button.textContent='已复制'; setTimeout(() => button.textContent='复制',1800);
+      } catch { button.textContent='复制失败'; setTimeout(() => button.textContent='复制',1800); }
+    }));
+  </script>
 </body>
 </html>
