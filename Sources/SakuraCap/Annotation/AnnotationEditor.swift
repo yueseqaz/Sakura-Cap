@@ -70,7 +70,8 @@ final class AnnotationEditorWindow: NSWindow {
         super.keyDown(with: event)
     }
 
-    private let allTools = AnnotationTool.allCases
+    private let allTools = AnnotationTool.allCases.filter { $0 != .magnifier }
+    private let magnifierButton = NSButton()
 
     init(image: CGImage, suggestedName: String, source: AnnotationImageSource,
          onClose: @escaping (AnnotationEditorWindow) -> Void) {
@@ -223,6 +224,8 @@ final class AnnotationEditorWindow: NSWindow {
         let measureButton = NSButton()
         configure(measureButton, symbol: "ruler", action: #selector(measureTapped))
         measureButton.toolTip = L("测量：点击两个点量距离（像素）")
+        configure(magnifierButton, symbol: "plus.magnifyingglass", action: #selector(magnifierTapped))
+        magnifierButton.toolTip = L("放大镜：拖出圆形区域，将其中的图片放大 2 倍")
         zoomLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         zoomLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
         let saveButton = NSButton(title: L("保存"), target: self, action: #selector(saveTapped))
@@ -248,7 +251,8 @@ final class AnnotationEditorWindow: NSWindow {
                                         widthLabel, widthSlider, widthValue, undoButton, redoButton,
                                         deleteButton, clearButton, spacer,
                                         zoomOutButton, zoomLabel, zoomInButton, fitButton, pinButton,
-                                        compareButton, eyedropperButton, measureButton, copyButton, saveButton,
+                                        compareButton, eyedropperButton, measureButton, magnifierButton,
+                                        copyButton, saveButton,
                                         discardImageButton])
         stack.orientation = .horizontal
         stack.spacing = 6
@@ -328,11 +332,17 @@ final class AnnotationEditorWindow: NSWindow {
         undoButton.isEnabled = canvas.canUndo
         redoButton.isEnabled = canvas.canRedo
         zoomLabel.stringValue = "\(Int((canvas.zoom * 100).rounded()))%"
+        magnifierButton.state = canvas.tool == .magnifier ? .on : .off
+        if canvas.tool == .magnifier { toolSegment.selectedSegment = -1 }
     }
 
     @objc private func toolChanged() {
         guard let tool = allTools[safe: toolSegment.selectedSegment] else { return }
         canvas.tool = tool
+        refresh()
+    }
+    @objc private func magnifierTapped() {
+        canvas.tool = .magnifier
         refresh()
     }
     @objc private func mosaicChanged() {

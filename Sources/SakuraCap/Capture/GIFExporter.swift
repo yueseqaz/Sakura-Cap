@@ -45,10 +45,12 @@ enum GIFExporter {
     static func export(source: URL,
                        timeRange: CMTimeRange,
                        size: GIFSize,
+                       videoComposition: AVVideoComposition? = nil,
                        fps: Int = 12,
                        to outputURL: URL) async throws {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: source))
         generator.appliesPreferredTrackTransform = true
+        generator.videoComposition = videoComposition
         // 允许半帧误差，提升部分编码/可变帧率视频的解码成功率
         let tolerance = CMTime(value: 1, timescale: CMTimeScale(max(1, fps * 2)))
         generator.requestedTimeToleranceBefore = tolerance

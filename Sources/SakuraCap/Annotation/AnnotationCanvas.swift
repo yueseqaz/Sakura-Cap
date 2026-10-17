@@ -5,7 +5,7 @@ import CoreImage.CIFilterBuiltins
 // MARK: - 模型
 
 enum AnnotationTool: Int, CaseIterable {
-    case select, pen, arrow, rectangle, text, number, mosaic, crop
+    case select, pen, arrow, rectangle, text, number, mosaic, crop, magnifier
 
     var symbolName: String {
         switch self {
@@ -17,11 +17,12 @@ enum AnnotationTool: Int, CaseIterable {
         case .number: return "1.circle"
         case .mosaic: return "square.grid.3x3.fill"
         case .crop: return "crop"
+        case .magnifier: return "plus.magnifyingglass"
         }
     }
 
     /// 直播覆盖层可用（裁剪只用于图片编辑）
-    var availableLive: Bool { self != .crop }
+    var availableLive: Bool { self != .crop && self != .magnifier }
 }
 
 enum MosaicStyle: Int, CaseIterable, Identifiable {
@@ -388,6 +389,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             drawNumber(annotation.text, at: viewPoint(point), color: annotation.color)
         case .mosaic:
             drawMosaic(annotation)
+        case .magnifier:
+            drawMagnifier(annotation)
         case .crop, .select:
             break
         }
@@ -442,6 +445,29 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             NSColor.black.withAlphaComponent(0.55).setFill()
             NSBezierPath(rect: viewRect).fill()
         }
+    }
+
+    private func drawMagnifier(_ annotation: Annotation) {
+        guard let baseImage, annotation.points.count >= 2 else { return }
+        let region = imageRect(annotation.points[0], annotation.points[1])
+        let diameter = min(region.width, region.height)
+        guard diameter >= 2 else { return }
+        let circle = CGRect(x: region.minX, y: region.minY, width: diameter, height: diameter)
+        let viewRect = NSRect(origin: viewPoint(circle.origin),
+                              size: CGSize(width: diameter * displayScale, height: diameter * displayScale))
+        let sampleSize = diameter / 2
+        let sample = CGRect(x: circle.midX - sampleSize / 2, y: circle.midY - sampleSize / 2,
+                            width: sampleSize, height: sampleSize)
+            .intersection(CGRect(x: 0, y: 0, width: baseImage.width, height: baseImage.height))
+        guard let pixels = baseImage.cropping(to: sample.integral) else { return }
+        let path = NSBezierPath(ovalIn: viewRect)
+        NSGraphicsContext.saveGraphicsState()
+        path.addClip()
+        NSImage(cgImage: pixels, size: sample.size).draw(in: viewRect)
+        NSGraphicsContext.restoreGraphicsState()
+        path.lineWidth = max(2, annotation.lineWidth * displayScale)
+        annotation.color.setStroke()
+        path.stroke()
     }
 
     private func drawCropOverlay(_ rect: CGRect) {
@@ -647,6 +673,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         case .mosaic:
             guard a.points.count >= 2 else { return false }
             return imageRect(a.points[0], a.points[1]).contains(point)
+        case .magnifier:
+            guard a.points.count >= 2 else { return false }
+            let rect = imageRect(a.points[0], a.points[1])
+            let diameter = min(rect.width, rect.height)
+            guard diameter > 0 else { return false }
+            return hypot(point.x - (rect.minX + diameter / 2), point.y - (rect.minY + diameter / 2)) <= diameter / 2 + slack
         case .text, .number:
             return boundingBox(a).contains(point)
         case .crop, .select:
@@ -898,7 +930,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             }
         case .pen:
             current = Annotation(tool: .pen, points: [point], color: color, lineWidth: lineWidth)
-        case .arrow, .rectangle, .mosaic:
+        case .arrow, .rectangle, .mosaic, .magnifier:
             current = Annotation(tool: tool, points: [point, point], color: color,
                                  mosaicStyle: mosaicStyle, mosaicStrength: mosaicStrength,
                                  lineWidth: lineWidth)
@@ -952,13 +984,21 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                 }
                 dragLast = point
             case .handle(let h):
-                if annotations[index].points.indices.contains(h) { annotations[index].points[h] = point }
+                if annotations[index].points.indices.contains(h) {
+                    annotations[index].points[h] = annotations[index].tool == .magnifier
+                        ? CGPoint(x: min(max(0, point.x), imageSize.width),
+                                  y: min(max(0, point.y), imageSize.height)) : point
+                }
             case .none:
                 break
             }
         } else if var active = current {
             if active.tool == .pen { active.points.append(point) }
-            else if active.points.count >= 2 { active.points[1] = point }
+            else if active.points.count >= 2 {
+                active.points[1] = active.tool == .magnifier
+                    ? CGPoint(x: min(max(0, point.x), imageSize.width),
+                              y: min(max(0, point.y), imageSize.height)) : point
+            }
             current = active
         }
         needsDisplay = true
@@ -1015,7 +1055,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             return
         }
         if let active = current {
-            if active.tool != .pen || active.points.count > 1 { commit(active) }
+            let validMagnifier = active.tool != .magnifier ||
+                (active.points.count >= 2 && min(abs(active.points[1].x - active.points[0].x),
+                                                  abs(active.points[1].y - active.points[0].y)) >= 8)
+            if validMagnifier && (active.tool != .pen || active.points.count > 1) { commit(active) }
             current = nil
         }
         needsDisplay = true
