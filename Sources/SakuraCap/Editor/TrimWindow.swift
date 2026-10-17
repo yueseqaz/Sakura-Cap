@@ -241,7 +241,7 @@ final class TrimViewModel: ObservableObject {
                 try data.write(to: url)
                 status = String(format: L("已截帧 %@"), url.lastPathComponent)
                 NSWorkspace.shared.activateFileViewerSelecting([url])
-                AnnotationEditorController.shared.open(image: cg, suggestedName: url.lastPathComponent)
+                AnnotationEditorController.shared.open(image: cg, suggestedName: url.lastPathComponent, source: .existingFile)
             } catch {
                 status = String(format: L("截帧失败：%@"), error.localizedDescription)
             }

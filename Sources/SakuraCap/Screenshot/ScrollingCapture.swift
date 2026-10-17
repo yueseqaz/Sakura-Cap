@@ -212,7 +212,7 @@ final class ScrollingCapture {
         preview = nil
         guard let composed = compose() else { cancel(); return }
         let name = FileName.make(ext: "png")
-        AnnotationEditorController.shared.open(image: composed, suggestedName: name)
+        AnnotationEditorController.shared.open(image: composed, suggestedName: name, source: .newCapture)
         region = nil
     }
 

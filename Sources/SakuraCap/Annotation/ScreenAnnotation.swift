@@ -9,7 +9,7 @@ final class ScreenAnnotationController: NSObject {
     private var canvases: [AnnotationCanvas] = []
     private var toolbar: NSPanel?
     private var toolPicker: NSSegmentedControl?
-    private var colorWell: NSColorWell?
+    private var colorPicker: AnnotationColorPicker?
     private var undoButton: NSButton?
     private var redoButton: NSButton?
     private var clearButton: NSButton?
@@ -126,11 +126,12 @@ final class ScreenAnnotationController: NSObject {
         picker.toolTip = L("选择工具后在屏幕上绘制；Esc 退出")
         toolPicker = picker
 
-        let color = NSColorWell(frame: NSRect(x: 0, y: 0, width: 44, height: 26))
-        color.color = .systemRed
-        color.target = self
-        color.action = #selector(colorChanged(_:))
-        colorWell = color
+        let color = AnnotationColorPicker()
+        color.onSelect = { [weak self] chosen in
+            guard let self else { return }
+            self.canvases.forEach { $0.applyColor(chosen) }
+        }
+        colorPicker = color
         let undo = iconButton("arrow.uturn.backward", L("撤销"), #selector(undoTapped))
         undoButton = undo
         let redo = iconButton("arrow.uturn.forward", L("下一步"), #selector(redoTapped))
@@ -270,10 +271,6 @@ final class ScreenAnnotationController: NSObject {
         refreshControls()
     }
 
-    @objc private func colorChanged(_ sender: NSColorWell) {
-        canvases.forEach { $0.color = sender.color }
-    }
-
     @objc private func undoTapped() {
         editingCanvas()?.undo()
     }
@@ -341,7 +338,7 @@ final class ScreenAnnotationController: NSObject {
 
     private func refreshControls() {
         toolPicker?.isEnabled = !passingThrough
-        colorWell?.isEnabled = !passingThrough
+        colorPicker?.isEnabled = !passingThrough
         let mosaic = tools.indices.contains(toolPicker?.selectedSegment ?? -1)
             && tools[toolPicker!.selectedSegment] == .mosaic
         mosaicControls?.isHidden = !mosaic
@@ -370,7 +367,7 @@ final class ScreenAnnotationController: NSObject {
         overlays.removeAll()
         canvases.removeAll()
         toolPicker = nil
-        colorWell = nil
+        colorPicker = nil
         undoButton = nil
         redoButton = nil
         clearButton = nil

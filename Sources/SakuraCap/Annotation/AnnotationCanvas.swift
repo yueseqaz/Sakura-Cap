@@ -703,6 +703,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     func applyColor(_ c: NSColor) {
         color = c
         if let index = selectedIndex, annotations.indices.contains(index) {
+            pushUndo()
             annotations[index].color = c
             needsDisplay = true
             onChange?()

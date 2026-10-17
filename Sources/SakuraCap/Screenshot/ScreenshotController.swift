@@ -79,7 +79,7 @@ final class ScreenshotController {
         do {
             let image = try await captureImage(displayID: displayID, region: region)
             let name = FileName.make(ext: "png")
-            AnnotationEditorController.shared.open(image: image, suggestedName: name)
+            AnnotationEditorController.shared.open(image: image, suggestedName: name, source: .newCapture)
         } catch {
             showError(error)
         }

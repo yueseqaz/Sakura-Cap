@@ -192,7 +192,7 @@ final class StatusItemController: NSObject {
               let image = NSImage(contentsOf: url),
               let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         let base = url.deletingPathExtension().lastPathComponent
-        AnnotationEditorController.shared.open(image: cg, suggestedName: "\(base) - \(L("标注")).png")
+        AnnotationEditorController.shared.open(image: cg, suggestedName: "\(base) - \(L("标注")).png", source: .existingFile)
     }
     @objc private func menuTrim() {
         if let url = controller.lastSavedFiles.first, FileManager.default.fileExists(atPath: url.path) {

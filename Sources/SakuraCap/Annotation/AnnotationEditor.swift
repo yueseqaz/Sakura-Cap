@@ -1,14 +1,19 @@
 import AppKit
 
+enum AnnotationImageSource {
+    case newCapture
+    case existingFile
+}
+
 /// 截屏后的标注编辑器：底图为刚截的图，可标注/裁剪/马赛克，然后「保存」或「拷贝」到剪贴板。
 @MainActor
 final class AnnotationEditorController: NSObject {
     static let shared = AnnotationEditorController()
     private var editors: [AnnotationEditorWindow] = []
 
-    func open(image: CGImage, suggestedName: String) {
+    func open(image: CGImage, suggestedName: String, source: AnnotationImageSource) {
         NSApp.activate(ignoringOtherApps: true)
-        let editor = AnnotationEditorWindow(image: image, suggestedName: suggestedName) { [weak self] window in
+        let editor = AnnotationEditorWindow(image: image, suggestedName: suggestedName, source: source) { [weak self] window in
             self?.editors.removeAll { $0 === window }
         }
         editors.append(editor)
@@ -20,6 +25,7 @@ final class AnnotationEditorWindow: NSWindow {
     private let canvas = AnnotationCanvas(frame: .zero)
     private let image: CGImage
     private let suggestedName: String
+    private let source: AnnotationImageSource
     private let onClose: ((AnnotationEditorWindow) -> Void)?
 
     private let toolSegment = NSSegmentedControl()
@@ -28,7 +34,7 @@ final class AnnotationEditorWindow: NSWindow {
     private let mosaicStrengthLabel = NSTextField(labelWithString: L("程度"))
     private let mosaicStrengthSlider = NSSlider()
     private let mosaicStrengthValue = NSTextField(labelWithString: "4")
-    private let colorWell = NSColorWell()
+    private let colorPicker = AnnotationColorPicker()
     private let undoButton = NSButton()
     private let redoButton = NSButton()
     private let widthLabel = NSTextField(labelWithString: L("粗细"))
@@ -66,9 +72,11 @@ final class AnnotationEditorWindow: NSWindow {
 
     private let allTools = AnnotationTool.allCases
 
-    init(image: CGImage, suggestedName: String, onClose: @escaping (AnnotationEditorWindow) -> Void) {
+    init(image: CGImage, suggestedName: String, source: AnnotationImageSource,
+         onClose: @escaping (AnnotationEditorWindow) -> Void) {
         self.image = image
         self.suggestedName = suggestedName
+        self.source = source
         self.onClose = onClose
 
         let screen = NSScreen.main ?? NSScreen.screens.first
@@ -94,7 +102,7 @@ final class AnnotationEditorWindow: NSWindow {
         }
         canvas.onColorPicked = { [weak self] color in
             guard let self else { return }
-            self.colorWell.color = color
+            self.colorPicker.selectedColor = color
             self.canvas.applyColor(color)
             let hex = color.hexString
             NSPasteboard.general.clearContents()
@@ -179,9 +187,7 @@ final class AnnotationEditorWindow: NSWindow {
         mosaicStrengthSlider.widthAnchor.constraint(equalToConstant: 90).isActive = true
         mosaicStrengthValue.widthAnchor.constraint(equalToConstant: 22).isActive = true
 
-        colorWell.color = .systemRed
-        colorWell.target = self
-        colorWell.action = #selector(colorChanged)
+        colorPicker.onSelect = { [weak self] color in self?.canvas.applyColor(color) }
 
         configure(undoButton, symbol: "arrow.uturn.backward", action: #selector(undoTapped))
         configure(redoButton, symbol: "arrow.uturn.forward", action: #selector(redoTapped))
@@ -222,7 +228,14 @@ final class AnnotationEditorWindow: NSWindow {
         let saveButton = NSButton(title: L("保存"), target: self, action: #selector(saveTapped))
         saveButton.bezelStyle = .rounded
         saveButton.keyEquivalent = "\r"
-        discardImageButton.title = L("删除截图")
+        switch source {
+        case .newCapture:
+            discardImageButton.title = L("删除截图")
+            discardImageButton.toolTip = L("丢弃当前截图，不保存")
+        case .existingFile:
+            discardImageButton.title = L("放弃编辑")
+            discardImageButton.toolTip = L("关闭标注窗口，不保存本次修改；原文件不会被删除")
+        }
         discardImageButton.bezelStyle = .rounded
         discardImageButton.target = self
         discardImageButton.action = #selector(discardImageTapped)
@@ -231,7 +244,7 @@ final class AnnotationEditorWindow: NSWindow {
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let stack = NSStackView(views: [toolSegment, mosaicLabel, mosaicSegment,
                                         mosaicStrengthLabel, mosaicStrengthSlider, mosaicStrengthValue,
-                                        colorWell,
+                                        colorPicker,
                                         widthLabel, widthSlider, widthValue, undoButton, redoButton,
                                         deleteButton, clearButton, spacer,
                                         zoomOutButton, zoomLabel, zoomInButton, fitButton, pinButton,
@@ -331,7 +344,6 @@ final class AnnotationEditorWindow: NSWindow {
         mosaicStrengthValue.stringValue = "\(Int(value.rounded()))"
         canvas.applyMosaicStrength(value)
     }
-    @objc private func colorChanged() { canvas.applyColor(colorWell.color) }
     @objc private func widthChanged() {
         let value = CGFloat(widthSlider.doubleValue)
         widthValue.stringValue = "\(Int(value))"

@@ -276,6 +276,9 @@
 "导出" = "Export";
 "删除" = "Delete";
 "删除截图" = "Delete Screenshot";
+"丢弃当前截图，不保存" = "Discard this screenshot without saving";
+"放弃编辑" = "Discard Edits";
+"关闭标注窗口，不保存本次修改；原文件不会被删除" = "Close without saving changes. The original file will not be deleted.";
 "删除这张截图？" = "Delete this screenshot?";
 "删除后不会保存标注内容，此操作不可撤销。" = "Annotations will not be saved. This cannot be undone.";
 "删除录屏原文件" = "Delete the original recording";
