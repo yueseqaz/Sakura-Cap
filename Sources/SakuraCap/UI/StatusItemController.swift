@@ -199,14 +199,19 @@ final class StatusItemController: NSObject {
     }
     @objc private func menuTrim() {
         if let url = controller.lastSavedFiles.first, FileManager.default.fileExists(atPath: url.path) {
-            TrimWindowController.shared.show(url: url, origin: .manual)
+            DispatchQueue.main.async {
+                TrimWindowController.shared.show(url: url, origin: .manual)
+            }
         } else {
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.movie]
             panel.allowsMultipleSelection = false
             panel.message = "选择要裁剪的视频"
             if panel.runModal() == .OK, let url = panel.url {
-                TrimWindowController.shared.show(url: url, origin: .manual)
+                // Let the file panel and status menu finish dismissing before ordering the editor.
+                DispatchQueue.main.async {
+                    TrimWindowController.shared.show(url: url, origin: .manual)
+                }
             }
         }
     }

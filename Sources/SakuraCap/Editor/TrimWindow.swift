@@ -3,6 +3,7 @@ import AVFoundation
 import AVKit
 import SwiftUI
 import CoreImage
+import CoreImage.CIFilterBuiltins
 
 /// 裁剪面板的来源：录屏结束后自动打开，还是用户主动打开/选文件
 enum TrimOrigin { case recording, manual }
@@ -22,21 +23,34 @@ final class TrimWindowController: NSObject, NSWindowDelegate {
     private var entries: [(window: NSWindow, model: TrimViewModel)] = []
 
     func show(url: URL, origin: TrimOrigin) {
-        NSApp.activate(ignoringOtherApps: true)
+        if let existing = entries.first(where: { $0.model.sourceURL.standardizedFileURL == url.standardizedFileURL }) {
+            NSApp.activate(ignoringOtherApps: true)
+            existing.window.makeKeyAndOrderFront(nil)
+            existing.window.orderFrontRegardless()
+            return
+        }
         let model = TrimViewModel(url: url)
         model.origin = origin
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 520),
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 900)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0,
+                                                   width: min(940, screen.width * 0.82),
+                                                   height: min(760, screen.height * 0.85)),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
         window.title = String(format: L("裁剪 — %@"), url.lastPathComponent)
         window.isReleasedWhenClosed = false
-        window.sharingType = .none // 永不进入录制
+        window.hidesOnDeactivate = false
+        window.collectionBehavior.insert(.moveToActiveSpace)
+        // A non-shareable window is invisible to remote desktops as well as screen recordings.
+        window.sharingType = .readOnly
         window.contentView = NSHostingView(rootView: TrimView(model: model))
         window.delegate = self
         model.requestClose = { [weak window] in window?.close() }
         window.center()
-        window.makeKeyAndOrderFront(nil)
         entries.append((window, model))
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
                                                object: window, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
@@ -56,6 +70,11 @@ final class TrimWindowController: NSObject, NSWindowDelegate {
 
 @MainActor
 final class TrimViewModel: ObservableObject {
+    enum Mode: String, CaseIterable, Identifiable {
+        case trim, annotate
+        var id: String { rawValue }
+        var label: String { self == .trim ? L("裁剪") : L("标注") }
+    }
     let sourceURL: URL
     let player: AVPlayer
 
@@ -72,6 +91,7 @@ final class TrimViewModel: ObservableObject {
     @Published var isExporting = false
     @Published var isPlaying = false
     @Published var status: String?
+    @Published var mode: Mode = .trim
     struct AudioOption: Identifiable {
         let id: CMPersistentTrackID
         let title: String
@@ -91,12 +111,35 @@ final class TrimViewModel: ObservableObject {
         var y: Double = 0.5
         var scale: Double = 2
     }
+    struct VideoAnnotationSegment: Identifiable {
+        var range: FocusSegment
+        var marks: [VideoMark] = []
+        var id: UUID { range.id }
+        var start: Double { range.start }
+        var end: Double { range.end }
+    }
     @Published private(set) var audioOptions: [AudioOption] = []
     @Published var trackVolumes: [CMPersistentTrackID: Double] = [:]
     @Published var audioSegments: [AudioSegment] = []
     @Published var thumbnails: [NSImage] = []
     @Published var focusSegments: [FocusSegment] = []
     @Published var editingFocusID: UUID?
+    @Published var annotationSegments: [VideoAnnotationSegment] = []
+    @Published var editingAnnotationID: UUID?
+    @Published var annotationTool: VideoMarkTool = .pen {
+        didSet { annotationCanvas.tool = annotationTool }
+    }
+    @Published var annotationMosaicStyle: MosaicStyle = .pixelate {
+        didSet { annotationCanvas.mosaicStyle = annotationMosaicStyle }
+    }
+    @Published var annotationColor: NSColor = .systemRed {
+        didSet { annotationCanvas.color = annotationColor }
+    }
+    @Published var annotationLineWidth: CGFloat = 4 {
+        didSet { annotationCanvas.lineWidth = annotationLineWidth }
+    }
+    let annotationCanvas = VideoAnnotationCanvas(frame: .zero)
+    @Published var videoSize = CGSize(width: 1920, height: 1080)
     fileprivate let focusDrag = FocusDragState()
     @Published var videoAspect: CGFloat = 16 / 9
 
@@ -142,6 +185,7 @@ final class TrimViewModel: ObservableObject {
             let oriented = size.applying(transform)
             if oriented.width != 0 && oriented.height != 0 {
                 videoAspect = abs(oriented.width / oriented.height)
+                videoSize = CGSize(width: abs(oriented.width), height: abs(oriented.height))
             }
         }
         let tracks = (try? await asset.loadTracks(withMediaType: .audio)) ?? []
@@ -224,6 +268,7 @@ final class TrimViewModel: ObservableObject {
 
     func beginFocusSelection(_ id: UUID) {
         guard let segment = focusSegments.first(where: { $0.id == id }) else { return }
+        if editingAnnotationID != nil { finishAnnotationSelection() }
         beginScrub()
         seek(to: (segment.start + segment.end) / 2)
         editingFocusID = id
@@ -250,13 +295,86 @@ final class TrimViewModel: ObservableObject {
         refreshVideoPreview()
     }
 
-    private func refreshVideoPreview() {
-        player.currentItem?.videoComposition = editingFocusID == nil ? videoComposition() : nil
+    func addAnnotationSegment() {
+        let s = max(start, min(currentTime, end - 0.05))
+        let segment = VideoAnnotationSegment(range: FocusSegment(start: s, end: min(end, s + 3)))
+        annotationSegments.append(segment)
+        beginAnnotationSelection(segment.id)
     }
 
-    private func videoComposition() -> AVVideoComposition? {
-        guard !focusSegments.isEmpty else { return nil }
+    func switchMode(_ newMode: Mode) {
+        guard mode != newMode else { return }
+        if editingAnnotationID != nil { finishAnnotationSelection() }
+        if editingFocusID != nil { finishFocusSelection() }
+        mode = newMode
+    }
+
+    func beginAnnotationSelection(_ id: UUID) {
+        guard let segment = annotationSegments.first(where: { $0.id == id }) else { return }
+        if editingAnnotationID != nil { finishAnnotationSelection() }
+        if editingFocusID != nil { finishFocusSelection() }
+        beginScrub()
+        seek(to: (segment.start + segment.end) / 2)
+        annotationCanvas.loadMarks(segment.marks)
+        annotationCanvas.previewFrame = nil
+        annotationCanvas.tool = annotationTool
+        annotationCanvas.mosaicStyle = annotationMosaicStyle
+        annotationCanvas.color = annotationColor
+        annotationCanvas.lineWidth = annotationLineWidth
+        annotationCanvas.onChange = { [weak self] in self?.objectWillChange.send() }
+        editingAnnotationID = id
+        refreshVideoPreview()
+        Task { await loadAnnotationFrame(for: id, at: currentTime) }
+    }
+
+    private func loadAnnotationFrame(for id: UUID, at seconds: Double) async {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: sourceURL))
+        generator.appliesPreferredTrackTransform = true
+        generator.videoComposition = videoComposition(excluding: id)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        let frame = try? await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
+        guard editingAnnotationID == id else { return }
+        annotationCanvas.previewFrame = frame
+    }
+
+    func finishAnnotationSelection() {
+        annotationCanvas.finishEditing()
+        if let id = editingAnnotationID,
+           let index = annotationSegments.firstIndex(where: { $0.id == id }) {
+            annotationSegments[index].marks = annotationCanvas.marks
+        }
+        editingAnnotationID = nil
+        annotationCanvas.previewFrame = nil
+        refreshVideoPreview()
+        seek(to: currentTime)
+    }
+
+    func updateAnnotationRange(_ range: FocusSegment) {
+        guard let index = annotationSegments.firstIndex(where: { $0.id == range.id }) else { return }
+        annotationSegments[index].range = range
+        refreshVideoPreview()
+    }
+
+    func removeAnnotation(_ id: UUID) {
+        if editingAnnotationID == id { editingAnnotationID = nil }
+        annotationSegments.removeAll { $0.id == id }
+        refreshVideoPreview()
+    }
+
+    private func refreshVideoPreview() {
+        player.currentItem?.videoComposition = editingFocusID == nil ? videoComposition(excluding: editingAnnotationID) : nil
+    }
+
+    private func videoComposition(excluding annotationID: UUID? = nil) -> AVVideoComposition? {
+        let layers = annotationSegments.filter { $0.id != annotationID && !$0.marks.isEmpty }.map { segment in
+            (start: segment.start, end: segment.end,
+             overlay: VideoAnnotationCanvas.image(marks: segment.marks, size: videoSize).map { CIImage(cgImage: $0) },
+             mosaic: segment.marks.filter { $0.tool == .mosaic })
+        }
+        guard !focusSegments.isEmpty || !layers.isEmpty else { return nil }
         let segments = focusSegments.sorted { $0.start < $1.start }
+        let outputSize = videoSize
         let asset = AVURLAsset(url: sourceURL)
         return AVVideoComposition(asset: asset) { request in
             let seconds = CMTimeGetSeconds(request.compositionTime)
@@ -276,7 +394,27 @@ final class TrimViewModel: ObservableObject {
             let transform = CGAffineTransform(translationX: bounds.midX - focusX * magnification,
                                                y: bounds.midY - focusY * magnification)
                 .scaledBy(x: magnification, y: magnification)
-            let output = image.transformed(by: transform).cropped(to: bounds)
+            var output = image.transformed(by: transform).cropped(to: bounds)
+            for layer in layers where seconds >= layer.start && seconds < layer.end {
+                for mark in layer.mosaic {
+                    let p = VideoAnnotationCanvas.rect(for: mark, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+                    let region = CGRect(x: bounds.minX + p.minX * bounds.width,
+                                        y: bounds.minY + (1 - p.maxY) * bounds.height,
+                                        width: p.width * bounds.width, height: p.height * bounds.height).integral
+                        .intersection(bounds)
+                    guard region.width >= 2, region.height >= 2 else { continue }
+                    if let pixels = VideoAnnotationCanvas.mosaic(image: output, style: mark.mosaicStyle,
+                                                                  region: region, scale: max(10, bounds.width / 110)) {
+                        output = pixels.composited(over: output).cropped(to: bounds)
+                    }
+                }
+                if let overlay = layer.overlay {
+                    let scaled = overlay.transformed(by: CGAffineTransform(scaleX: bounds.width / outputSize.width,
+                                                                            y: bounds.height / outputSize.height))
+                        .transformed(by: CGAffineTransform(translationX: bounds.minX, y: bounds.minY))
+                    output = scaled.composited(over: output).cropped(to: bounds)
+                }
+            }
             request.finish(with: output, context: nil)
         }
     }
@@ -310,6 +448,7 @@ final class TrimViewModel: ObservableObject {
             player.pause()
             isPlaying = false
         } else {
+            if editingAnnotationID != nil { finishAnnotationSelection() }
             if currentTime < start || currentTime >= end {
                 seek(to: start)
             }
@@ -320,6 +459,11 @@ final class TrimViewModel: ObservableObject {
 
     func seek(to seconds: Double) {
         let t = max(0, min(duration, seconds))
+        if let id = editingAnnotationID,
+           let segment = annotationSegments.first(where: { $0.id == id }),
+           (t < segment.start || t >= segment.end) {
+            finishAnnotationSelection()
+        }
         currentTime = t
         player.seek(to: CMTime(seconds: t, preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero)
@@ -342,6 +486,7 @@ final class TrimViewModel: ObservableObject {
     /// 点「导出」：先弹确认框（含「删除原文件」勾选），确认后再导出
     func exportTapped() {
         guard trimmedDuration > 0.05 else { status = L("裁剪区间太短"); return }
+        if editingAnnotationID != nil { finishAnnotationSelection() }
         let outURL = Self.availableURL(for: Self.outputURL(for: sourceURL))
         let alert = NSAlert()
         alert.messageText = L("导出裁剪后的视频")
@@ -385,6 +530,7 @@ final class TrimViewModel: ObservableObject {
     /// 截帧：把播放头所在帧存为 PNG，并打开标注编辑器
     func captureFrameTapped() {
         guard !isExporting, let dir = OutputDirectoryPicker.ensureDirectory(current: AppSettings.shared.outputDirectory) else { return }
+        if editingAnnotationID != nil { finishAnnotationSelection() }
         player.pause()
         isPlaying = false
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: sourceURL))
@@ -451,7 +597,8 @@ final class TrimViewModel: ObservableObject {
             status = String(format: L("导出失败：%@"), error.localizedDescription)
             return
         }
-        let hasEdits = !trackVolumes.isEmpty || !audioSegments.isEmpty || !focusSegments.isEmpty
+        let hasEdits = !trackVolumes.isEmpty || !audioSegments.isEmpty || !focusSegments.isEmpty ||
+            annotationSegments.contains { !$0.marks.isEmpty }
         let preset = hasEdits ? AVAssetExportPresetHighestQuality : AVAssetExportPresetPassthrough
         guard let exporter = AVAssetExportSession(asset: asset, presetName: preset) else {
             status = L("无法创建导出任务")
@@ -502,6 +649,7 @@ final class TrimViewModel: ObservableObject {
     /// 点「导出 GIF」：先弹确认框（含尺寸选择）
     func exportGIFTapped() {
         guard trimmedDuration > 0.05 else { status = L("裁剪区间太短"); return }
+        if editingAnnotationID != nil { finishAnnotationSelection() }
         let outURL = Self.availableURL(for: Self.gifOutputURL(for: sourceURL))
         let alert = NSAlert()
         alert.messageText = L("导出 GIF")
@@ -583,8 +731,15 @@ struct TrimView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Picker(L("编辑模式"), selection: Binding(get: { model.mode }, set: { model.switchMode($0) })) {
+                ForEach(TrimViewModel.Mode.allCases) { mode in Text(mode.label).tag(mode) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 220)
+
             PlayerView(player: model.player)
-                .frame(maxWidth: .infinity, minHeight: 250)
+                .frame(maxWidth: .infinity, minHeight: 280, maxHeight: .infinity)
                 .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay {
@@ -598,6 +753,17 @@ struct TrimView: View {
                                         model.updateFocus(updated)
                                     },
                                     onDone: { model.finishFocusSelection() })
+                    }
+                }
+                .overlay {
+                    if model.editingAnnotationID != nil {
+                        GeometryReader { geometry in
+                            let width = min(geometry.size.width, geometry.size.height * model.videoAspect)
+                            let height = width / model.videoAspect
+                            VideoAnnotationView(canvas: model.annotationCanvas)
+                                .frame(width: width, height: height)
+                                .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                        }
                     }
                 }
 
@@ -632,65 +798,147 @@ struct TrimView: View {
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
 
-            if !model.audioOptions.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(model.audioOptions) { option in
-                        let volume = model.trackVolumes[option.id] ?? 1
-                        HStack(spacing: 8) {
-                            Text(option.title).frame(width: 72, alignment: .leading)
-                            Button {
-                                model.setVolume(volume == 0 ? 1 : 0, for: option.id)
-                            } label: {
-                                Image(systemName: volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            }.buttonStyle(.plain).help(L("整轨静音 / 恢复"))
-                            Slider(value: Binding(get: { model.trackVolumes[option.id] ?? 1 },
-                                                  set: { model.setVolume($0, for: option.id) }), in: 0...1)
-                                .frame(width: 100)
-                            Text("\(Int(volume * 100))%")
-                                .monospacedDigit().frame(width: 42, alignment: .trailing)
-                            Button(L("添加静音段")) { model.addAudioSegment(for: option.id) }
+            if model.mode == .trim {
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !model.audioOptions.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(model.audioOptions) { option in
+                                    let volume = model.trackVolumes[option.id] ?? 1
+                                    HStack(spacing: 8) {
+                                        Text(option.title).frame(width: 72, alignment: .leading)
+                                        Button {
+                                            model.setVolume(volume == 0 ? 1 : 0, for: option.id)
+                                        } label: {
+                                            Image(systemName: volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                        }.buttonStyle(.plain).help(L("整轨静音 / 恢复"))
+                                        Slider(value: Binding(get: { model.trackVolumes[option.id] ?? 1 },
+                                                              set: { model.setVolume($0, for: option.id) }), in: 0...1)
+                                            .frame(width: 100)
+                                        Text("\(Int(volume * 100))%")
+                                            .monospacedDigit().frame(width: 42, alignment: .trailing)
+                                        Button(L("添加静音段")) { model.addAudioSegment(for: option.id) }
+                                            .buttonStyle(.bordered)
+                                            .help(L("从播放头开始添加 3 秒静音段，可编辑起止时间与音量"))
+                                        Spacer()
+                                    }
+                                    .font(.caption)
+                                    AudioLane(duration: model.duration, playhead: model.currentTime,
+                                              segments: model.audioSegments.filter { $0.trackID == option.id },
+                                              onSelect: { model.seek(to: $0) })
+                                        .frame(height: 16)
+                                    ForEach(model.audioSegments.filter { $0.trackID == option.id }) { segment in
+                                        AudioSegmentRow(segment: segment, duration: model.duration,
+                                                        onChange: { model.updateSegment($0) },
+                                                        onDelete: { model.removeSegment(segment.id) })
+                                    }
+                                }
+                            }
+                        }
+
+                        HStack {
+                            Text(L("画面聚焦")).font(.caption).foregroundStyle(.secondary)
+                            Button(L("添加聚焦")) { model.addFocusSegment() }
                                 .buttonStyle(.bordered)
-                                .help(L("从播放头开始添加 3 秒静音段，可编辑起止时间与音量"))
+                                .help(L("在播放头创建聚焦段，然后在画面中拖动框调整位置和范围"))
                             Spacer()
                         }
-                        .font(.caption)
-                        AudioLane(duration: model.duration, playhead: model.currentTime,
-                                  segments: model.audioSegments.filter { $0.trackID == option.id },
-                                  onSelect: { model.seek(to: $0) })
-                            .frame(height: 16)
-                        ForEach(model.audioSegments.filter { $0.trackID == option.id }) { segment in
-                            AudioSegmentRow(segment: segment, duration: model.duration,
-                                            onChange: { model.updateSegment($0) },
-                                            onDelete: { model.removeSegment(segment.id) })
+                        FocusLane(duration: model.duration, trimStart: model.start, trimEnd: model.end,
+                                  playhead: model.currentTime, segments: model.focusSegments,
+                                  selectedID: model.editingFocusID, dragState: model.focusDrag,
+                                  symbol: "plus.magnifyingglass",
+                                  onChange: { model.updateFocus($0) },
+                                  onSelect: { model.beginFocusSelection($0) },
+                                  onSeek: { model.seek(to: $0) })
+                            .frame(height: 32)
+                        if let id = model.editingFocusID,
+                           let segment = model.focusSegments.first(where: { $0.id == id }) {
+                            HStack {
+                                Text(String(format: L("聚焦 %@–%@ · %.1f×"),
+                                            CompletionNotifier.format(segment.start), CompletionNotifier.format(segment.end), segment.scale))
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Button(L("删除聚焦")) { model.removeFocus(id) }.buttonStyle(.plain)
+                                Button(L("完成")) { model.finishFocusSelection() }.buttonStyle(.bordered)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 5)
                 }
-            }
-
-            HStack {
-                Text(L("画面聚焦")).font(.caption).foregroundStyle(.secondary)
-                Button(L("添加聚焦")) { model.addFocusSegment() }
-                    .buttonStyle(.bordered)
-                    .help(L("在播放头创建聚焦段，然后在画面中拖动框调整位置和范围"))
-                Spacer()
-            }
-            FocusLane(duration: model.duration, trimStart: model.start, trimEnd: model.end,
-                      playhead: model.currentTime, segments: model.focusSegments,
-                      selectedID: model.editingFocusID, dragState: model.focusDrag,
-                      onChange: { model.updateFocus($0) },
-                      onSelect: { model.beginFocusSelection($0) },
-                      onSeek: { model.seek(to: $0) })
-                .frame(height: 32)
-            if let id = model.editingFocusID,
-               let segment = model.focusSegments.first(where: { $0.id == id }) {
-                HStack {
-                    Text(String(format: L("聚焦 %@–%@ · %.1f×"),
-                                CompletionNotifier.format(segment.start), CompletionNotifier.format(segment.end), segment.scale))
-                        .font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(L("删除聚焦")) { model.removeFocus(id) }.buttonStyle(.plain)
-                    Button(L("完成")) { model.finishFocusSelection() }.buttonStyle(.bordered)
+                .frame(height: 170)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(L("视频标注")).font(.caption).foregroundStyle(.secondary)
+                        Button(L("添加标注段")) { model.addAnnotationSegment() }
+                            .buttonStyle(.bordered)
+                            .help(L("在播放头创建标注段，然后直接在预览画面绘制"))
+                        Spacer()
+                    }
+                    FocusLane(duration: model.duration, trimStart: model.start, trimEnd: model.end,
+                              playhead: model.currentTime, segments: model.annotationSegments.map(\.range),
+                              selectedID: model.editingAnnotationID, dragState: model.focusDrag,
+                              symbol: "pencil.tip",
+                              onChange: { model.updateAnnotationRange($0) },
+                              onSelect: { model.beginAnnotationSelection($0) },
+                              onSeek: { model.seek(to: $0) })
+                        .frame(height: 32)
+                    HStack(spacing: 6) {
+                        ForEach(VideoMarkTool.allCases) { tool in
+                            Button { model.annotationTool = tool } label: {
+                                Image(systemName: tool.symbol).frame(width: 20)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(model.annotationTool == tool ? .accentColor : nil)
+                            .help(tool.label)
+                            .disabled(model.editingAnnotationID == nil)
+                        }
+                        Divider().frame(height: 24)
+                        Button(L("撤回")) { model.annotationCanvas.undo() }
+                            .disabled(model.editingAnnotationID == nil || model.annotationCanvas.undoStack.isEmpty)
+                        Button(L("删除选中")) { model.annotationCanvas.deleteSelected() }
+                            .disabled(model.editingAnnotationID == nil || model.annotationCanvas.selectedIndex == nil)
+                        Button(L("清空")) { model.annotationCanvas.clear() }
+                            .disabled(model.editingAnnotationID == nil || model.annotationCanvas.marks.isEmpty)
+                        Spacer()
+                        if let id = model.editingAnnotationID {
+                            Button(L("删除标注段")) { model.removeAnnotation(id) }.buttonStyle(.plain)
+                            Button(L("完成标注")) { model.finishAnnotationSelection() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .font(.caption)
+                    HStack(spacing: 10) {
+                        if model.annotationTool == .mosaic {
+                            Text(L("马赛克"))
+                            Picker(L("马赛克样式"), selection: $model.annotationMosaicStyle) {
+                                ForEach(MosaicStyle.allCases) { style in Text(style.label).tag(style) }
+                            }
+                            .pickerStyle(.segmented).labelsHidden().frame(width: 240)
+                        } else {
+                            Text(L("颜色"))
+                            ForEach([NSColor.systemRed, .systemYellow, .systemBlue, .systemGreen, .white], id: \.self) { color in
+                                Button { model.annotationColor = color } label: {
+                                    Circle().fill(Color(nsColor: color))
+                                        .frame(width: 16, height: 16)
+                                        .padding(3)
+                                        .overlay(Circle().stroke(model.annotationColor == color ? Color.accentColor : .clear, lineWidth: 2))
+                                }.buttonStyle(.plain)
+                            }
+                            Text(L("粗细"))
+                            Slider(value: Binding(get: { Double(model.annotationLineWidth) },
+                                                  set: { model.annotationLineWidth = CGFloat($0) }), in: 1...12)
+                                .frame(width: 105)
+                        }
+                        Spacer()
+                        Text(model.editingAnnotationID == nil ? L("先添加标注段") : L("在画面上绘制"))
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.caption)
+                    .disabled(model.editingAnnotationID == nil)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             HStack {
@@ -714,7 +962,7 @@ struct TrimView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 640, minHeight: 470)
+        .frame(minWidth: 700, minHeight: 540)
         .task { await model.load() }
         .onDisappear { model.player.pause() }
     }
@@ -1022,6 +1270,7 @@ private struct FocusLane: View {
     let segments: [TrimViewModel.FocusSegment]
     let selectedID: UUID?
     let dragState: FocusDragState
+    let symbol: String
     let onChange: (TrimViewModel.FocusSegment) -> Void
     let onSelect: (UUID) -> Void
     let onSeek: (Double) -> Void
@@ -1035,7 +1284,8 @@ private struct FocusLane: View {
                 ForEach(segments) { segment in
                     FocusBlock(segment: segment, selected: selectedID == segment.id,
                                width: width, duration: duration, trimStart: trimStart, trimEnd: trimEnd,
-                               dragState: dragState, onChange: onChange, onSelect: { onSelect(segment.id) })
+                               dragState: dragState, symbol: symbol,
+                               onChange: onChange, onSelect: { onSelect(segment.id) })
                         .frame(width: max(5, width * CGFloat((segment.end - segment.start) / max(duration, 0.01))))
                         .offset(x: width * CGFloat(segment.start / max(duration, 0.01)))
                 }
@@ -1056,6 +1306,7 @@ private struct FocusBlock: View {
     let trimStart: Double
     let trimEnd: Double
     let dragState: FocusDragState
+    let symbol: String
     let onChange: (TrimViewModel.FocusSegment) -> Void
     let onSelect: () -> Void
 
@@ -1083,7 +1334,7 @@ private struct FocusBlock: View {
             Capsule().fill(.white.opacity(0.85)).frame(width: 7).padding(.horizontal, 3)
                 .contentShape(Rectangle()).gesture(drag(.left))
             Spacer(minLength: 0)
-            Image(systemName: "plus.magnifyingglass").font(.caption2)
+            Image(systemName: symbol).font(.caption2)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
