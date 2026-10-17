@@ -94,12 +94,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 选择完成后不立即开录：进入待开始状态，由 HUD 上的「开始录制」确认
             controller.arm()
         }
-        // 仅「录制」的框选被取消时回到设置窗口；截图 / OCR / 二维码 / 对比取消则什么都不做
-        SelectionController.shared.onCancelled = { [weak self] _ in
+        // 取消选择不应自行弹出设置窗口；只有用户点「设置…」才打开它。
+        SelectionController.shared.onCancelled = { _ in
             let purpose = SelectionController.shared.currentPurpose
-            if purpose == .record {
-                self?.statusItem?.showSettings()
-            } else if purpose == .compare {
+            if purpose == .compare {
                 CompareController.shared.cancelPendingCapture()
             }
         }

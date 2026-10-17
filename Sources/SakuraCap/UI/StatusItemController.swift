@@ -147,6 +147,7 @@ final class StatusItemController: NSObject {
     @objc private func recordWindow() { startWindowRecording() }
 
     func startWindowRecording() {
+        settingsWindow?.orderOut(nil)
         Task { @MainActor in
             guard #available(macOS 14.0, *) else {
                 let alert = NSAlert()
@@ -165,6 +166,8 @@ final class StatusItemController: NSObject {
     }
 
     private func beginSelection(_ intent: SelectionIntent, purpose: SelectionPurpose = .record) {
+        // Activating the app for selection must not bring an old settings window forward.
+        settingsWindow?.orderOut(nil)
         Task { @MainActor in
             guard PermissionCenter.screenCaptureGranted() else {
                 PermissionCenter.openScreenCaptureSettings()
