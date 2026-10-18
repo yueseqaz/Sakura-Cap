@@ -137,7 +137,11 @@ final class ScrollingCapture {
         guard #available(macOS 14.0, *), filter == nil, let region else { return }
         guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
               let display = content.displays.first(where: { $0.displayID == region.displayID }) else { return }
-        let newFilter = SCContentFilter(display: display, excludingWindows: [])
+        // Keep these controls visible to remote viewers, but out of the long
+        // screenshot itself so they cannot be stitched back into the page.
+        let controlIDs = Set([hud?.windowNumber, preview?.windowNumber].compactMap { $0 })
+        let controls = content.windows.filter { controlIDs.contains(Int($0.windowID)) }
+        let newFilter = SCContentFilter(display: display, excludingWindows: controls)
         let scale = CGFloat(newFilter.pointPixelScale)
         let newConfig = SCStreamConfiguration()
         newConfig.width = Int((newFilter.contentRect.width * scale).rounded())
@@ -323,7 +327,7 @@ final class ScrollingHUDWindow: NSPanel {
         hasShadow = true
         level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        sharingType = .none
+        sharingType = .readOnly
         isMovableByWindowBackground = true
 
         let container = NSView(frame: NSRect(origin: .zero, size: size))
@@ -417,7 +421,7 @@ final class ScrollingPreviewWindow: NSWindow {
         hasShadow = true
         level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        sharingType = .none
+        sharingType = .readOnly
         ignoresMouseEvents = true
         imageView.frame = NSRect(origin: .zero, size: NSSize(width: width, height: maxHeight))
         imageView.autoresizingMask = [.width, .height]

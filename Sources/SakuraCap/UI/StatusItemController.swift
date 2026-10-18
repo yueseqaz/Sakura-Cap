@@ -147,7 +147,6 @@ final class StatusItemController: NSObject {
     @objc private func recordWindow() { startWindowRecording() }
 
     func startWindowRecording() {
-        settingsWindow?.orderOut(nil)
         Task { @MainActor in
             guard #available(macOS 14.0, *) else {
                 let alert = NSAlert()
@@ -166,8 +165,6 @@ final class StatusItemController: NSObject {
     }
 
     private func beginSelection(_ intent: SelectionIntent, purpose: SelectionPurpose = .record) {
-        // Activating the app for selection must not bring an old settings window forward.
-        settingsWindow?.orderOut(nil)
         Task { @MainActor in
             guard PermissionCenter.screenCaptureGranted() else {
                 PermissionCenter.openScreenCaptureSettings()
@@ -235,7 +232,7 @@ final class StatusItemController: NSObject {
         // every other app while the menu-bar utility remains running.
         window.level = .normal
         window.isReleasedWhenClosed = false
-        window.sharingType = .none // 设置窗口永不进入录制画面
+        window.sharingType = .readOnly
         window.contentView = NSHostingView(rootView: PanelView(viewModel: viewModel))
         window.center()
         settingsWindow = window

@@ -219,7 +219,7 @@ final class ScreenAnnotationController: NSObject {
         panel.hasShadow = true
         panel.level = .screenSaver + 1
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        panel.sharingType = .none
+        panel.sharingType = .readOnly
         panel.isMovableByWindowBackground = true
         let background: NSView
         if #available(macOS 26.0, *) {

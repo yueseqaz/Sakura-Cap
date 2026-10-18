@@ -21,7 +21,7 @@ final class OnboardingWindowController {
                                   backing: .buffered, defer: false)
             window.title = L("欢迎使用 Sakura-Cap")
             window.isReleasedWhenClosed = false
-            window.sharingType = .none // 永不进入录制
+            window.sharingType = .readOnly
             window.contentView = NSHostingView(rootView: OnboardingView(model: model))
             model.onFinish = { [weak self] in self?.window?.close() }
             window.center()

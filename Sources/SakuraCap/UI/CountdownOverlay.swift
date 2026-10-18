@@ -41,7 +41,8 @@ final class CountdownWindow: NSWindow {
         level = .screenSaver
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        sharingType = .none // 双保险：倒计时层永不进入录制（writer 未 arm 之外再排除）
+        // The writer is armed only after the countdown is dismissed.
+        sharingType = .readOnly
         hasShadow = false
     }
 

@@ -52,7 +52,7 @@ final class CompareWindowController {
                           backing: .buffered, defer: false)
         window.title = L("截图对比")
         window.isReleasedWhenClosed = false
-        window.sharingType = .none // 永不进入录制/截图
+        window.sharingType = .readOnly
         window.minSize = NSSize(width: 480, height: 360)
 
         compareView.imageA = original

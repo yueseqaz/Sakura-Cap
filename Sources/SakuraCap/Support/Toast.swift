@@ -87,7 +87,7 @@ final class Toast {
         window.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 5)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         window.ignoresMouseEvents = !hasAction
-        window.sharingType = .none
+        window.sharingType = .readOnly
         container.frame = NSRect(origin: .zero, size: size)
         window.contentView = container
         if let screen = NSScreen.main ?? NSScreen.screens.first {

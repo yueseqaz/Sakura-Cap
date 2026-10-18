@@ -132,7 +132,7 @@ final class RegionFrameOverlay {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         window.ignoresMouseEvents = true
         window.hasShadow = false
-        window.sharingType = .none
+        window.sharingType = .readOnly
         window.contentView = RegionFrameView(frame: NSRect(origin: .zero, size: frame.size))
         window.orderFrontRegardless()
         self.window = window
@@ -167,7 +167,7 @@ final class SelectionOverlayWindow: NSWindow {
         backgroundColor = .clear
         level = .screenSaver + 1
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        sharingType = .none // 选择界面永不进入录制
+        sharingType = .readOnly
         hasShadow = false
         ignoresMouseEvents = false
         acceptsMouseMovedEvents = true

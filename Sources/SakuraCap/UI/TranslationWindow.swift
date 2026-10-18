@@ -27,7 +27,7 @@ final class TranslationPresenter {
                               backing: .buffered, defer: false)
         window.title = L("翻译")
         window.isReleasedWhenClosed = false
-        window.sharingType = .none
+        window.sharingType = .readOnly
         window.minSize = NSSize(width: 360, height: 340)
         window.contentView = NSHostingView(rootView: TranslationView(model: model))
         model.onClose = { [weak window] in window?.close() }

@@ -95,7 +95,7 @@ final class AnnotationEditorWindow: NSWindow {
                    styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         title = L("标注图片")
         isReleasedWhenClosed = false
-        sharingType = .none
+        sharingType = .readOnly
         canvas.baseImage = image
         canvas.onChange = { [weak self] in self?.refresh() }
         canvas.onRecognitionSelection = { [weak self] action, rect in

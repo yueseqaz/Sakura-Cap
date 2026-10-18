@@ -85,7 +85,7 @@ atos -o build/Sakura-Cap.app/Contents/MacOS/SakuraCap -arch arm64 -l <loadAddres
 5. **Retina / 混合 DPI**：输出缓冲用「像素」，按每屏 `pointPixelScale` 独立推导。
 6. **音画同步**：SCK 的视频与音频样本同源于 hostTimeClock，天然同轴；writer `startSession(atSourceTime:)` 锚在最早样本，起点之前的样本丢弃。
 7. **暂停/继续的时间轴**：暂停期间丢帧，续录时按视频 PTS 间隔累加偏移，并用 `CMSampleBufferCreateCopyWithNewTiming` 重定时，把暂停时段从时间轴剔除。
-8. **覆盖层与录制**：`sharingType = .none` 的窗口不进录制（面板 / 选区 / 倒计时 / HUD）；点击标记、按键显示、摄像头画中画保持 `.readOnly`（会被录进画面）。倒计时「不入视频」另由「writer 未 arm 前全部丢帧」保证。
+8. **覆盖层与录制**：只有录制 HUD 使用 `sharingType = .none`，不进入录屏、截图或远程共享；其余可见窗口使用 `.readOnly`。截图选择层在采集前撤下，倒计时在 writer arm 前结束；长截图的控制条与预览仅从自身的拼接采样中排除，远程共享仍可见。
 9. **崩溃时 MP4 未 finalize 不可播放**：处理了应用正常退出（`willTerminateNotification` 同步尽力收尾，最多等 2s）；硬崩溃仍会丢文件，属已知限制。
 10. **AVAssetWriter 轨道必须预建**：`startWriting()` 之后再 `addInput` 会抛 NSException 闪退；音轨在创建 `FileWriter` 时全部建好，麦克风先 `start()` 拿到实测格式再建 writer。
 11. **长录制内存**：`queueDepth` + `isReadyForMoreMediaData` 背压（过载直接丢帧，绝不排队堆积）；`SCFrameStatus != .complete` 的 idle 帧跳过。
