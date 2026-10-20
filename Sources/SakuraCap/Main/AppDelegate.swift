@@ -33,6 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         applyHotKeys()
 
+        // Vision 首次识别会加载模型；后台预热，不延迟菜单栏和窗口启动。
+        Task.detached(priority: .utility) { OCR.prewarm() }
+
         // 首次启动：弹出欢迎 / 引导页；之后启动静默检查更新
         if AppSettings.shared.hasCompletedOnboarding {
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { UpdateChecker.check(manual: false) }
