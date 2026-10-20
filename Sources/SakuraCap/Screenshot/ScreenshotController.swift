@@ -153,14 +153,14 @@ final class ScreenshotController {
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
             throw ScreenshotError.displayMissing
         }
-        if let region, CameraPiP.shared.previewWindowNumber == nil,
-           let image = Self.nativeDisplayImage(displayID: displayID, region: region) {
-            Log.app.debug("区域截图原生像素: \(image.width)x\(image.height, privacy: .public)")
+        // Full-screen and region screenshots should use the display's native pixel
+        // path. SCK can fall back to logical-point sampling on some Retina setups,
+        // which makes downloaded builds appear soft even though the editor scales
+        // the image correctly. Camera Preview is intentionally excluded from stills.
+        if let image = Self.nativeDisplayImage(displayID: displayID, region: region) {
+            Log.app.debug("原生像素截图: \(image.width)x\(image.height, privacy: .public)")
             return image
         }
-        // Keep Camera Preview in the captured composition when it is visible.
-        // The native CGDisplay path above cannot reliably include app windows,
-        // so the ScreenCaptureKit path is used whenever the preview is active.
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let scale = CGFloat(filter.pointPixelScale)
         let config = SCStreamConfiguration()
@@ -194,6 +194,12 @@ final class ScreenshotController {
                           width: region.sckRect.width * scaleX,
                           height: region.sckRect.height * scaleY).integral
         return CGDisplayCreateImage(displayID, rect: rect)
+    }
+
+    private static func nativeDisplayImage(displayID: CGDirectDisplayID,
+                                           region: RegionSelection?) -> CGImage? {
+        if let region { return nativeDisplayImage(displayID: displayID, region: region) }
+        return CGDisplayCreateImage(displayID)
     }
 
     private func showError(_ error: Error) {

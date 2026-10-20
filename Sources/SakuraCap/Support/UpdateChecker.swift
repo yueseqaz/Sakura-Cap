@@ -110,58 +110,20 @@ enum UpdateChecker {
         return 0
     }
 
-    // MARK: - 弹窗
+    // MARK: - 更新页面
 
     private static func presentAvailable(_ release: Release) {
-        let alert = NSAlert()
-        alert.messageText = String(format: L("发现新版本 v%@"), release.version)
-        alert.informativeText = String(format: L("当前版本 v%@，已发布新版本。"), AppInfo.version)
-        let notes = release.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !notes.isEmpty {
-            alert.accessoryView = notesView(notes)
-        } else {
-            alert.informativeText += "\n" + L("暂时无法获取更新说明，可在发布页查看。")
-        }
-        alert.addButton(withTitle: L("下载并安装"))
-        alert.addButton(withTitle: L("查看发布页"))
-        alert.addButton(withTitle: L("稍后"))
-        switch runModalAlert(alert) {
-        case .alertFirstButtonReturn:
-            guard let assetURL = release.assetURL else { break }
+        UpdateReleaseWindow.show(version: release.version, notes: release.notes, isNewer: true,
+                                 pageURL: release.pageURL) {
+            guard let assetURL = release.assetURL else { return }
             UpdateInstaller.install(from: assetURL, version: release.version, digest: release.digest,
                                     pageURL: release.pageURL)
-        case .alertSecondButtonReturn:
-            guard let url = release.pageURL else { break }
-            NSWorkspace.shared.open(url)
-        default: break
         }
     }
 
     private static func presentUpToDate(_ release: Release) {
-        let alert = NSAlert()
-        alert.messageText = L("已是最新版本")
-        alert.informativeText = String(format: L("当前版本 v%@。"), AppInfo.version)
-        let notes = release.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !notes.isEmpty { alert.accessoryView = notesView(notes) }
-        alert.addButton(withTitle: L("好"))
-        runModalAlert(alert)
-    }
-
-    private static func notesView(_ notes: String) -> NSScrollView {
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 480, height: 220))
-        scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
-        let view = NSTextView(frame: scroll.bounds)
-        view.isEditable = false
-        view.isSelectable = true
-        view.font = .systemFont(ofSize: 13)
-        view.textColor = .labelColor
-        view.backgroundColor = .textBackgroundColor
-        view.isHorizontallyResizable = false
-        view.textContainer?.widthTracksTextView = true
-        view.string = notes
-        scroll.documentView = view
-        return scroll
+        UpdateReleaseWindow.show(version: release.version, notes: release.notes, isNewer: false,
+                                 pageURL: release.pageURL, onInstall: {})
     }
 
     private static func presentError(_ error: Error) {

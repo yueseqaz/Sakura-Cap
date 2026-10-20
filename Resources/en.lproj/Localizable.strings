@@ -323,6 +323,10 @@
 "可以从发布页手动下载。" = "You can download it manually from the release page.";
 "更新包下载或校验失败" = "The update package could not be downloaded or verified.";
 "无法在当前安装位置自动更新" = "Cannot update from the current installation location.";
+"Sakura-Cap 更新" = "Sakura-Cap Update";
+"发现新版本" = "New Version Available";
+"看看这个版本有哪些变化。" = "See what's changed in this release.";
+"版本更新内容" = "What's New";
 
 /* 首次引导 / 欢迎页 */
 

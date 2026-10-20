@@ -17,7 +17,7 @@ final class ScrollingCapture {
     private var capturing = false
     private var filter: SCContentFilter?
     private var config: SCStreamConfiguration?
-    private var pixelScale: CGFloat = 2
+    private var pixelScale: (x: CGFloat, y: CGFloat) = (2, 2)
     private var lastPreviewTime: Date = .distantPast
     private var segments: [(image: CGImage, rect: CGRect)] = []
     private var stitchedHeight = 0
@@ -142,15 +142,17 @@ final class ScrollingCapture {
         let controlIDs = Set([hud?.windowNumber, preview?.windowNumber].compactMap { $0 })
         let controls = content.windows.filter { controlIDs.contains(Int($0.windowID)) }
         let newFilter = SCContentFilter(display: display, excludingWindows: controls)
-        let scale = CGFloat(newFilter.pointPixelScale)
+        let screen = NSScreen.screens.first { $0.displayID == region.displayID }
+        let scaleX = screen.map { CGFloat(CGDisplayPixelsWide(region.displayID)) / max($0.frame.width, 1) } ?? 2
+        let scaleY = screen.map { CGFloat(CGDisplayPixelsHigh(region.displayID)) / max($0.frame.height, 1) } ?? 2
         let newConfig = SCStreamConfiguration()
-        newConfig.width = Int((newFilter.contentRect.width * scale).rounded())
-        newConfig.height = Int((newFilter.contentRect.height * scale).rounded())
+        newConfig.width = CGDisplayPixelsWide(region.displayID)
+        newConfig.height = CGDisplayPixelsHigh(region.displayID)
         newConfig.showsCursor = false
         newConfig.captureResolution = .best
         filter = newFilter
         config = newConfig
-        pixelScale = scale
+        pixelScale = (scaleX, scaleY)
     }
 
     @discardableResult
@@ -161,8 +163,8 @@ final class ScrollingCapture {
         guard #available(macOS 14.0, *), let filter, let config else { return false }
         guard let full = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) else { return false }
         let scale = pixelScale
-        let rect = CGRect(x: region.sckRect.minX * scale, y: region.sckRect.minY * scale,
-                          width: region.sckRect.width * scale, height: region.sckRect.height * scale).integral
+        let rect = CGRect(x: region.sckRect.minX * scale.x, y: region.sckRect.minY * scale.y,
+                          width: region.sckRect.width * scale.x, height: region.sckRect.height * scale.y).integral
         return append(full.cropping(to: rect) ?? full)
     }
 

@@ -52,7 +52,11 @@ enum StreamPlanner {
             for info in chosen {
                 guard let display = catalog.scDisplay(for: info.id) else { continue }
                 let filter = SCContentFilter(display: display, excludingWindows: [])
-                let native = pixelSize(filter: filter, fallback: (info.widthPx, info.heightPx))
+                // SCContentFilter.pointPixelScale can describe logical scaling on
+                // scaled external displays. DisplayCatalog already has the actual
+                // ScreenCaptureKit pixel dimensions, so use those as the source of
+                // truth for the recording buffer.
+                let native = evenDimensions(info.widthPx, info.heightPx)
                 // 输出分辨率：需要缩小就直接让 SCK 输出目标尺寸（原生采样、无中间缩放）
                 let (w, h) = outputSize(native, resolution: settings.outputResolution)
                 // 全屏过滤器已经限定了显示器范围；不传 sourceRect，避免不同 macOS 版本
@@ -81,17 +85,17 @@ enum StreamPlanner {
             let filter = SCContentFilter(display: display, excludingWindows: [])
             // 用过滤器真实的「像素/点」比例换算选区；缩放分辨率下 backingScaleFactor
             // 未必等于真实比例，直接用它会造成尺寸/位置偏差。
-            let scale = pointScale(filter: filter, fallback: info.scaleFactor)
-            let native = evenDimensions(Int((region.sckRect.width * scale).rounded()),
-                                        Int((region.sckRect.height * scale).rounded()))
-            let crop = CGRect(x: region.sckRect.minX * scale,
-                              y: region.sckRect.minY * scale,
+            let (scaleX, scaleY) = displayPixelScale(info)
+            let native = evenDimensions(Int((region.sckRect.width * scaleX).rounded()),
+                                        Int((region.sckRect.height * scaleY).rounded()))
+            let crop = CGRect(x: region.sckRect.minX * scaleX,
+                              y: region.sckRect.minY * scaleY,
                               width: CGFloat(native.0),
                               height: CGFloat(native.1))
             // 区域：先采集整屏（原生像素）作裁剪源，再在 StreamSession 中裁剪到选区、
             // 并按输出分辨率缩小。
             let (w, h) = outputSize(native, resolution: settings.outputResolution)
-            let (fullWidth, fullHeight) = pixelSize(filter: filter, fallback: (info.widthPx, info.heightPx))
+            let (fullWidth, fullHeight) = evenDimensions(info.widthPx, info.heightPx)
             specs.append(StreamSpec(displayID: region.displayID,
                                     filter: filter,
                                     config: baseConfig(settings: settings, width: fullWidth, height: fullHeight, source: .zero,
@@ -108,12 +112,14 @@ enum StreamPlanner {
         return specs
     }
 
-    private static func pointScale(filter: SCContentFilter, fallback: CGFloat) -> CGFloat {
-        if #available(macOS 14.0, *) {
-            let scale = CGFloat(filter.pointPixelScale)
-            if scale > 0 { return scale }
+    private static func displayPixelScale(_ info: DisplayInfo) -> (CGFloat, CGFloat) {
+        guard let screen = NSScreen.screens.first(where: { $0.displayID == info.id }),
+              screen.frame.width > 0, screen.frame.height > 0 else {
+            let scale = info.scaleFactor > 0 ? info.scaleFactor : 1
+            return (scale, scale)
         }
-        return fallback > 0 ? fallback : 2
+        return (CGFloat(CGDisplayPixelsWide(info.id)) / screen.frame.width,
+                CGFloat(CGDisplayPixelsHigh(info.id)) / screen.frame.height)
     }
 
     /// 该过滤器内容的真实像素尺寸（点 × 像素/点），保证与采样缓冲区一致。
