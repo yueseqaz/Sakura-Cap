@@ -311,6 +311,18 @@
 "已是最新版本" = "You’re up to date";
 "当前版本 v%@。" = "Current version v%@.";
 "检查更新失败" = "Update check failed";
+"下载并安装" = "Download and Install";
+"查看发布页" = "View Release";
+"暂时无法获取更新说明，可在发布页查看。" = "Release notes are unavailable; view them on the release page.";
+"正在更新 Sakura-Cap" = "Updating Sakura-Cap";
+"正在下载并验证更新，请稍候…" = "Downloading and verifying the update…";
+"更新已准备好" = "Update Ready";
+"退出并重启 Sakura-Cap 以完成安装？" = "Quit and restart Sakura-Cap to finish installing?";
+"重启并安装" = "Restart and Install";
+"自动更新失败" = "Automatic Update Failed";
+"可以从发布页手动下载。" = "You can download it manually from the release page.";
+"更新包下载或校验失败" = "The update package could not be downloaded or verified.";
+"无法在当前安装位置自动更新" = "Cannot update from the current installation location.";
 
 /* 首次引导 / 欢迎页 */
 
