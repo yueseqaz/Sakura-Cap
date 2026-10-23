@@ -729,6 +729,12 @@ final class TrimViewModel: ObservableObject {
 struct TrimView: View {
     @ObservedObject var model: TrimViewModel
 
+    private var trimDetailsHeight: CGFloat {
+        let audioHeight = CGFloat(model.audioOptions.count) * 54
+        let focusHeight: CGFloat = model.editingFocusID == nil ? 82 : 112
+        return min(150, max(112, audioHeight + focusHeight))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Picker(L("编辑模式"), selection: Binding(get: { model.mode }, set: { model.switchMode($0) })) {
@@ -867,7 +873,7 @@ struct TrimView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, 5)
                 }
-                .frame(height: 170)
+                .frame(height: trimDetailsHeight)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {

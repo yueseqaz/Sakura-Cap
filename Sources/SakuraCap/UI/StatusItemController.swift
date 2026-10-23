@@ -35,7 +35,7 @@ final class StatusItemController: NSObject {
         self.viewModel = viewModel
 
         if let button = item.button {
-            button.image = baseIcon(tint: .systemPink)
+            button.image = baseIcon(tint: .systemYellow)
             button.imageScaling = .scaleProportionallyDown
             button.imagePosition = .imageOnly
             button.target = self
@@ -246,7 +246,7 @@ final class StatusItemController: NSObject {
         case .idle:
             RegionFrameOverlay.shared.hide()
             button.contentTintColor = nil
-            button.image = baseIcon(tint: .systemPink)
+            button.image = baseIcon(tint: .systemYellow)
             button.title = ""
         case .ready:
             // 已选定范围、待用户确认开始

@@ -83,8 +83,8 @@ enum VideoQuality: String, CaseIterable, Identifiable {
         let bpp: Double
         switch self {
         case .high:
-            // 系统录屏级别的码率，优先保留文字、细线和浏览器图片细节。
-            bpp = isHEVC ? 0.22 : 0.35
+            // 录屏内容需要更高码率保留文字边缘和细线，尤其是全屏预览时。
+            bpp = isHEVC ? 0.30 : 0.50
         case .medium:
             bpp = isHEVC ? 0.13 : 0.20
         case .low:
