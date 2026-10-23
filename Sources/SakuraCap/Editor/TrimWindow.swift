@@ -737,11 +737,12 @@ struct TrimView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(width: 220)
+            .tint(SettingsAppearance.color(SettingsAppearance.accent))
 
             PlayerView(player: model.player)
                 .frame(maxWidth: .infinity, minHeight: 280, maxHeight: .infinity)
                 .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay {
                     if let id = model.editingFocusID,
                        let segment = model.focusSegments.first(where: { $0.id == id }) {
@@ -795,7 +796,7 @@ struct TrimView: View {
                 Spacer()
 
                 Text(String(format: L("截取 %@ – %@　共 %@"), CompletionNotifier.format(model.start), CompletionNotifier.format(model.end), CompletionNotifier.format(model.trimmedDuration)))
-                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    .font(SettingsAppearance.detailFont).foregroundStyle(.secondary).monospacedDigit()
             }
 
             if model.mode == .trim {
@@ -811,7 +812,7 @@ struct TrimView: View {
                                             model.setVolume(volume == 0 ? 1 : 0, for: option.id)
                                         } label: {
                                             Image(systemName: volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                        }.buttonStyle(.plain).help(L("整轨静音 / 恢复"))
+                                        }.buttonStyle(.plain).help(L("整轨静音或恢复声音"))
                                         Slider(value: Binding(get: { model.trackVolumes[option.id] ?? 1 },
                                                               set: { model.setVolume($0, for: option.id) }), in: 0...1)
                                             .frame(width: 100)
@@ -822,7 +823,7 @@ struct TrimView: View {
                                             .help(L("从播放头开始添加 3 秒静音段，可编辑起止时间与音量"))
                                         Spacer()
                                     }
-                                    .font(.caption)
+                                    .font(SettingsAppearance.detailFont)
                                     AudioLane(duration: model.duration, playhead: model.currentTime,
                                               segments: model.audioSegments.filter { $0.trackID == option.id },
                                               onSelect: { model.seek(to: $0) })
@@ -837,7 +838,7 @@ struct TrimView: View {
                         }
 
                         HStack {
-                            Text(L("画面聚焦")).font(.caption).foregroundStyle(.secondary)
+                            Text(L("画面聚焦")).font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
                             Button(L("添加聚焦")) { model.addFocusSegment() }
                                 .buttonStyle(.bordered)
                                 .help(L("在播放头创建聚焦段，然后在画面中拖动框调整位置和范围"))
@@ -854,9 +855,9 @@ struct TrimView: View {
                         if let id = model.editingFocusID,
                            let segment = model.focusSegments.first(where: { $0.id == id }) {
                             HStack {
-                                Text(String(format: L("聚焦 %@–%@ · %.1f×"),
+                                Text(String(format: L("聚焦 %@–%@，%.1f 倍"),
                                             CompletionNotifier.format(segment.start), CompletionNotifier.format(segment.end), segment.scale))
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
                                 Spacer()
                                 Button(L("删除聚焦")) { model.removeFocus(id) }.buttonStyle(.plain)
                                 Button(L("完成")) { model.finishFocusSelection() }.buttonStyle(.bordered)
@@ -870,7 +871,6 @@ struct TrimView: View {
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text(L("视频标注")).font(.caption).foregroundStyle(.secondary)
                         Button(L("添加标注段")) { model.addAnnotationSegment() }
                             .buttonStyle(.bordered)
                             .help(L("在播放头创建标注段，然后直接在预览画面绘制"))
@@ -890,7 +890,7 @@ struct TrimView: View {
                                 Image(systemName: tool.symbol).frame(width: 20)
                             }
                             .buttonStyle(.bordered)
-                            .tint(model.annotationTool == tool ? .accentColor : nil)
+                            .tint(model.annotationTool == tool ? SettingsAppearance.color(SettingsAppearance.accent) : nil)
                             .help(tool.label)
                             .disabled(model.editingAnnotationID == nil)
                         }
@@ -908,7 +908,7 @@ struct TrimView: View {
                                 .buttonStyle(.borderedProminent)
                         }
                     }
-                    .font(.caption)
+                    .font(SettingsAppearance.detailFont)
                     HStack(spacing: 10) {
                         if model.annotationTool == .mosaic {
                             Text(L("马赛克"))
@@ -932,10 +932,8 @@ struct TrimView: View {
                                 .frame(width: 105)
                         }
                         Spacer()
-                        Text(model.editingAnnotationID == nil ? L("先添加标注段") : L("在画面上绘制"))
-                            .foregroundStyle(.secondary)
                     }
-                    .font(.caption)
+                    .font(SettingsAppearance.detailFont)
                     .disabled(model.editingAnnotationID == nil)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -943,7 +941,7 @@ struct TrimView: View {
 
             HStack {
                 if let status = model.status {
-                    Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Text(status).font(SettingsAppearance.detailFont).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Spacer()
                 if model.isExporting { ProgressView().controlSize(.small) }
@@ -962,6 +960,8 @@ struct TrimView: View {
             }
         }
         .padding(16)
+        .background(SettingsAppearance.color(SettingsAppearance.canvas))
+        .tint(SettingsAppearance.color(SettingsAppearance.accent))
         .frame(minWidth: 700, minHeight: 540)
         .task { await model.load() }
         .onDisappear { model.player.pause() }
@@ -1021,14 +1021,14 @@ final class TimelineView: NSView {
         let track = NSBezierPath(roundedRect: NSRect(x: inset, y: midY - trackHeight / 2,
                                                      width: trackWidth, height: trackHeight),
                                  xRadius: trackHeight / 2, yRadius: trackHeight / 2)
-        NSColor.quaternaryLabelColor.setFill()
+        SettingsAppearance.separator.setFill()
         track.fill()
 
         // 选中区间
         let selected = NSBezierPath(roundedRect: NSRect(x: sx, y: midY - trackHeight / 2,
                                                         width: max(trackHeight, ex - sx), height: trackHeight),
                                     xRadius: trackHeight / 2, yRadius: trackHeight / 2)
-        NSColor.controlAccentColor.withAlphaComponent(0.28).setFill()
+        SettingsAppearance.focus.withAlphaComponent(0.35).setFill()
         selected.fill()
 
         // 播放头
@@ -1050,10 +1050,10 @@ final class TimelineView: NSView {
         let rect = NSRect(x: cx - handleWidth / 2, y: midY - handleHeight / 2,
                           width: handleWidth, height: handleHeight)
         let path = NSBezierPath(roundedRect: rect, xRadius: handleWidth / 2, yRadius: handleWidth / 2)
-        NSColor.controlAccentColor.setFill()
+        SettingsAppearance.accent.setFill()
         path.fill()
-        NSColor.white.setStroke()
-        path.lineWidth = 1.5
+        SettingsAppearance.canvas.setStroke()
+        path.lineWidth = SettingsAppearance.borderWidth
         path.stroke()
     }
 
@@ -1196,7 +1196,7 @@ private struct AudioSegmentRow: View {
             Button(action: onDelete) { Image(systemName: "xmark.circle.fill") }
                 .buttonStyle(.plain).help(L("移除音量段"))
         }
-        .font(.caption)
+        .font(SettingsAppearance.detailFont)
     }
 }
 
@@ -1221,7 +1221,7 @@ private struct FocusCanvas: View {
                                  y: imageRect.minY + height * segment.y)
 
             ZStack(alignment: .topTrailing) {
-                Color.black.opacity(0.08).contentShape(Rectangle())
+                SettingsAppearance.color(SettingsAppearance.canvas).opacity(0.08).contentShape(Rectangle())
                     .onTapGesture { point in
                         guard imageRect.contains(point) else { return }
                         onPoint(Double((point.x - imageRect.minX) / width),
@@ -1232,7 +1232,7 @@ private struct FocusCanvas: View {
                     .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.08)))
                     .shadow(color: .black.opacity(0.65), radius: 3)
                     .overlay {
-                        Image(systemName: "plus").font(.caption).foregroundStyle(.white)
+                        Image(systemName: "plus").font(SettingsAppearance.detailFont).foregroundStyle(.white)
                     }
                     .frame(width: frameWidth, height: frameHeight)
                     .contentShape(Rectangle())
@@ -1279,7 +1279,10 @@ private struct FocusLane: View {
         GeometryReader { geometry in
             let width = geometry.size.width
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.13))
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(SettingsAppearance.color(SettingsAppearance.control))
+                    .overlay(RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(SettingsAppearance.color(SettingsAppearance.separator), lineWidth: SettingsAppearance.borderWidth))
                     .onTapGesture { point in onSeek(Double(point.x / max(width, 1)) * duration) }
                 ForEach(segments) { segment in
                     FocusBlock(segment: segment, selected: selectedID == segment.id,
@@ -1334,7 +1337,7 @@ private struct FocusBlock: View {
             Capsule().fill(.white.opacity(0.85)).frame(width: 7).padding(.horizontal, 3)
                 .contentShape(Rectangle()).gesture(drag(.left))
             Spacer(minLength: 0)
-            Image(systemName: symbol).font(.caption2)
+            Image(systemName: symbol).font(SettingsAppearance.detailFont)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
@@ -1344,7 +1347,10 @@ private struct FocusBlock: View {
                 .contentShape(Rectangle()).gesture(drag(.right))
         }
         .frame(height: 32)
-        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.accentColor : Color.accentColor.opacity(0.7)))
+        .background(RoundedRectangle(cornerRadius: 5)
+            .fill(SettingsAppearance.color(selected ? SettingsAppearance.accent : SettingsAppearance.focus)))
+        .overlay(RoundedRectangle(cornerRadius: 5)
+            .strokeBorder(SettingsAppearance.color(SettingsAppearance.accentText), lineWidth: SettingsAppearance.borderWidth))
     }
 }
 

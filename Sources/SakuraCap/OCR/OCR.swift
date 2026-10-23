@@ -4,6 +4,14 @@ import Vision
 
 /// 用系统 Vision 做离线文字识别（截图 OCR）。
 enum OCR {
+    /// 识别结果：区分「没识别到字」和「识别引擎出错」，
+    /// 否则 macOS 的 TextRecognition/ANE 异常会伪装成「未识别到文字」，很难排查。
+    enum Outcome {
+        case text(String)
+        case empty
+        case failed(Error)
+    }
+
     static func preparedImage(_ image: CGImage) -> CGImage {
         let shortest = min(image.width, image.height)
         guard shortest > 0 else { return image }
@@ -18,20 +26,44 @@ enum OCR {
         return context.makeImage() ?? image
     }
 
-    static func recognize(_ image: CGImage) async -> String? {
+    static func recognize(_ image: CGImage) async -> Outcome {
+        let prepared = preparedImage(image)
+        switch await attempt(prepared) {
+        case .success(let text):
+            return text.isEmpty ? .empty : .text(text)
+        case .failure(let error):
+            Log.app.error("OCR 失败(第 1 次): \(describe(error), privacy: .public) image=\(image.width)x\(image.height, privacy: .public)")
+        }
+        // macOS 26/27 的 TextRecognition 走 ANE（E5RT），偶发 E5RT Code 13 等错误；
+        // 稍等重试一次通常能恢复，失败时再如实报错。
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        switch await attempt(prepared) {
+        case .success(let text):
+            Log.app.notice("OCR 重试成功")
+            return text.isEmpty ? .empty : .text(text)
+        case .failure(let error):
+            Log.app.error("OCR 失败(第 2 次): \(describe(error), privacy: .public)")
+            return .failed(error)
+        }
+    }
+
+    private static func attempt(_ image: CGImage) async -> Result<String, Error> {
         await Task.detached(priority: .userInitiated) {
             let request = makeRequest()
-            let handler = VNImageRequestHandler(cgImage: preparedImage(image), options: [:])
+            let handler = VNImageRequestHandler(cgImage: image, options: [:])
             do {
                 try handler.perform([request])
                 let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-                let text = lines.joined(separator: "\n")
-                return text.isEmpty ? nil : text
+                return .success(lines.joined(separator: "\n"))
             } catch {
-                Log.app.error("OCR 失败: \(error.localizedDescription, privacy: .public)")
-                return nil
+                return .failure(error)
             }
         }.value
+    }
+
+    private static func describe(_ error: Error) -> String {
+        let ns = error as NSError
+        return "\(ns.domain) code=\(ns.code): \(ns.localizedDescription)"
     }
 
     static func prewarm() {
@@ -50,8 +82,10 @@ enum OCR {
         guard let image = context.makeImage() else { return }
         do {
             try VNImageRequestHandler(cgImage: image, options: [:]).perform([makeRequest()])
+            Log.app.debug("OCR 预热完成")
         } catch {
-            Log.app.debug("OCR 预热失败: \(error.localizedDescription, privacy: .public)")
+            // 预热失败意味着后续 OCR 大概率也会失败，用 error 级别便于排查（ANE/E5RT 故障）。
+            Log.app.error("OCR 预热失败: \(describe(error), privacy: .public)")
         }
     }
 

@@ -30,6 +30,22 @@ enum SettingsAppearance {
 
     static func color(_ color: NSColor) -> Color { Color(nsColor: color) }
 
+    static func applySurface(to view: NSView, fill: NSColor = canvas, border: NSColor = separator,
+                             radius: CGFloat = 0) {
+        view.wantsLayer = true
+        view.layer?.backgroundColor = fill.cgColor
+        view.layer?.borderColor = border.cgColor
+        view.layer?.borderWidth = borderWidth
+        view.layer?.cornerRadius = radius
+        view.layer?.masksToBounds = radius > 0
+    }
+
+    static func styleToolbarButton(_ button: NSButton) {
+        button.contentTintColor = text
+        button.font = NSFont.systemFont(ofSize: 13)
+        button.controlSize = .regular
+    }
+
     private static func adaptive(_ light: UInt32, _ dark: UInt32) -> NSColor {
         NSColor(name: nil) { appearance in
             let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light

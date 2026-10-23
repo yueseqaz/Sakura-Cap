@@ -56,8 +56,15 @@ final class ScreenshotController {
         guard #available(macOS 14.0, *) else { showError(ScreenshotError.unsupported); return }
         do {
             let image = try await captureImage(displayID: displayID, region: region)
-            guard let original = await OCR.recognize(image) else {
+            let original: String
+            switch await OCR.recognize(image) {
+            case .text(let text):
+                original = text
+            case .empty:
                 showMessage(L("未识别到文字"))
+                return
+            case .failed(let error):
+                showOCRFailureAlert(error)
                 return
             }
             let model = TranslationPresenter.shared.present(original: original)
@@ -89,15 +96,18 @@ final class ScreenshotController {
         guard #available(macOS 14.0, *) else { showError(ScreenshotError.unsupported); return }
         do {
             let image = try await captureImage(displayID: displayID, region: region)
-            guard let text = await OCR.recognize(image) else {
+            switch await OCR.recognize(image) {
+            case .empty:
                 showMessage(L("未识别到文字"))
-                return
+            case .failed(let error):
+                showOCRFailureAlert(error)
+            case .text(let text):
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                CompletionNotifier.shared.postCopiedText(count: text.count)
+                let preview = text.count > 15 ? String(text.prefix(15)) + "…" : text
+                Toast.show(title: L("识别成功，已复制到剪贴板"), detail: preview)
             }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            CompletionNotifier.shared.postCopiedText(count: text.count)
-            let preview = text.count > 15 ? String(text.prefix(15)) + "…" : text
-            Toast.show(title: L("识别成功，已复制到剪贴板"), detail: preview)
         } catch {
             showError(error)
         }

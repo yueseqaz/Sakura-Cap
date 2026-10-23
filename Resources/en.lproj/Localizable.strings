@@ -160,8 +160,8 @@
 "未能生成任何录制任务" = "No recording tasks were created";
 
 /* 选区覆盖层 */
-"点击要录制的屏幕 · Esc 取消" = "Click the screen to record · Esc to cancel";
-"拖拽框选录制区域（区域不跨屏）· Esc 取消" = "Drag to select a region (single screen) · Esc to cancel";
+"点击要录制的屏幕，按 Esc 取消" = "Click the screen to record, then press Esc to cancel";
+"拖拽框选录制区域（区域不跨屏），按 Esc 取消" = "Drag to select a region (single screen), then press Esc to cancel";
 "显示器" = "Display";
 
 /* 输出目录面板 */
@@ -176,6 +176,10 @@
 "全屏截图" = "Full Screen";
 "区域截图" = "Select Region";
 "识别文字（OCR）" = "Recognize Text (OCR)";
+"选择并移动" = "Select and move";
+"未识别到二维码或条形码" = "No QR code or barcode recognized";
+"聚焦 %@–%@，%.1f 倍" = "Focus %@–%@, %.1fx";
+"整轨静音或恢复声音" = "Mute or restore the track";
 "滚动截屏…" = "Scrolling Capture…";
 "滚动到需要的位置，完成后点「完成」" = "Scroll to where you need, then click Finish";
 "已拼接 %d px" = "Stitched %d px";
@@ -274,7 +278,7 @@
 /* 鼠标跟随放大 */
 
 "裁剪 — %@" = "Trim — %@";
-"截取 %@ – %@　共 %@" = "Trim %@ – %@ · %@";
+"截取 %@ – %@　共 %@" = "Trim %@ – %@, total %@";
 "导出" = "Export";
 "删除" = "Delete";
 "删除截图" = "Delete Screenshot";

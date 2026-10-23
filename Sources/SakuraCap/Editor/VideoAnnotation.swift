@@ -21,7 +21,7 @@ enum VideoMarkTool: String, CaseIterable, Identifiable {
     }
     var label: String {
         switch self {
-        case .select: return L("选择 / 移动")
+        case .select: return L("选择并移动")
         case .pen: return L("画笔")
         case .arrow: return L("箭头")
         case .oval: return L("圆圈")
@@ -204,7 +204,7 @@ final class VideoAnnotationCanvas: NSView, NSTextFieldDelegate {
             let path = NSBezierPath(rect: box)
             path.lineWidth = 1
             path.setLineDash([4, 3], count: 2, phase: 0)
-            NSColor.controlAccentColor.setStroke()
+            SettingsAppearance.focus.setStroke()
             path.stroke()
         }
     }

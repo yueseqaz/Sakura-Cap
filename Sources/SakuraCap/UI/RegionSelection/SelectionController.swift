@@ -300,11 +300,11 @@ final class SelectionOverlayView: NSView {
             if hoveredDisplayID == screen.displayID {
                 drawBorder(bounds.insetBy(dx: 4, dy: 4), color: accent, lineWidth: 8)
             }
-            drawPill(L("点击要录制的屏幕 · Esc 取消"),
+            drawPill(L("点击要录制的屏幕，按 Esc 取消"),
                      center: NSPoint(x: bounds.midX, y: bounds.height - 48))
         case .regionOnly:
             fillDim(cutout: nil)
-            drawPill(L("拖拽框选录制区域（区域不跨屏）· Esc 取消"),
+            drawPill(L("拖拽框选录制区域（区域不跨屏），按 Esc 取消"),
                      center: NSPoint(x: bounds.midX, y: bounds.height - 48))
         }
     }

@@ -33,8 +33,8 @@ final class AnnotationColorPicker: NSButton {
             let path = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
             color.setFill()
             path.fill()
-            NSColor.separatorColor.setStroke()
-            path.lineWidth = 1
+            SettingsAppearance.border.setStroke()
+            path.lineWidth = SettingsAppearance.borderWidth
             path.stroke()
             return true
         }

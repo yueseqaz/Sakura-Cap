@@ -158,6 +158,8 @@ final class AnnotationEditorWindow: NSWindow {
         let bar = NSVisualEffectView()
         bar.material = .windowBackground
         bar.blendingMode = .withinWindow
+        SettingsAppearance.applySurface(to: bar, fill: SettingsAppearance.sidebar,
+                                        border: SettingsAppearance.separator)
 
         toolSegment.segmentCount = allTools.count
         toolSegment.trackingMode = .selectOne
@@ -204,17 +206,23 @@ final class AnnotationEditorWindow: NSWindow {
 
         let copyButton = NSButton(title: L("拷贝"), target: self, action: #selector(copyTapped))
         copyButton.bezelStyle = .rounded
+        SettingsAppearance.styleToolbarButton(copyButton)
         let clearButton = NSButton(title: L("清空"), target: self, action: #selector(clearTapped))
         clearButton.bezelStyle = .rounded
+        SettingsAppearance.styleToolbarButton(clearButton)
 
         let zoomOutButton = NSButton(title: "−", target: self, action: #selector(zoomOutTapped))
         zoomOutButton.bezelStyle = .rounded
+        SettingsAppearance.styleToolbarButton(zoomOutButton)
         let zoomInButton = NSButton(title: "+", target: self, action: #selector(zoomInTapped))
         zoomInButton.bezelStyle = .rounded
+        SettingsAppearance.styleToolbarButton(zoomInButton)
         let fitButton = NSButton(title: L("适应"), target: self, action: #selector(fitTapped))
         fitButton.bezelStyle = .rounded
+        SettingsAppearance.styleToolbarButton(fitButton)
         let pinButton = NSButton(title: L("定住"), target: self, action: #selector(pinTapped))
         pinButton.bezelStyle = .rounded
+        SettingsAppearance.styleToolbarButton(pinButton)
         let compareButton = NSButton()
         configure(compareButton, symbol: "rectangle.split.2x1", action: #selector(compareTapped))
         compareButton.toolTip = L("截图对比：再截一张并排对比")
@@ -230,6 +238,7 @@ final class AnnotationEditorWindow: NSWindow {
         zoomLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
         let saveButton = NSButton(title: L("保存"), target: self, action: #selector(saveTapped))
         saveButton.bezelStyle = .rounded
+        SettingsAppearance.styleToolbarButton(saveButton)
         saveButton.keyEquivalent = "\r"
         switch source {
         case .newCapture:
@@ -240,6 +249,7 @@ final class AnnotationEditorWindow: NSWindow {
             discardImageButton.toolTip = L("关闭标注窗口，不保存本次修改；原文件不会被删除")
         }
         discardImageButton.bezelStyle = .rounded
+        SettingsAppearance.styleToolbarButton(discardImageButton)
         discardImageButton.target = self
         discardImageButton.action = #selector(discardImageTapped)
 
@@ -270,6 +280,8 @@ final class AnnotationEditorWindow: NSWindow {
         let panel = NSVisualEffectView()
         panel.material = .windowBackground
         panel.blendingMode = .withinWindow
+        SettingsAppearance.applySurface(to: panel, fill: SettingsAppearance.sidebar,
+                                        border: SettingsAppearance.separator)
 
         for (button, symbol, label, action) in [
             (ocrButton, "text.viewfinder", L("取字"), #selector(ocrTapped)),
@@ -280,7 +292,7 @@ final class AnnotationEditorWindow: NSWindow {
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular))
             button.imagePosition = .imageOnly
             button.bezelStyle = .rounded
-            button.contentTintColor = .labelColor
+            SettingsAppearance.styleToolbarButton(button)
             button.toolTip = label
             button.setAccessibilityLabel(label)
             button.target = self
@@ -309,7 +321,7 @@ final class AnnotationEditorWindow: NSWindow {
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         button.bezelStyle = .rounded
         button.imagePosition = .imageOnly
-        button.contentTintColor = .labelColor
+        SettingsAppearance.styleToolbarButton(button)
         button.target = self
         button.action = action
         button.widthAnchor.constraint(equalToConstant: 28).isActive = true
@@ -424,17 +436,20 @@ final class AnnotationEditorWindow: NSWindow {
                 isOCRBusy = false
                 ocrButton.isEnabled = true
             }
-            guard let text = await OCR.recognize(image) else {
+            switch await OCR.recognize(image) {
+            case .empty:
                 let alert = NSAlert()
                 alert.messageText = L("未识别到文字")
                 alert.addButton(withTitle: L("好"))
                 runModalAlert(alert)
-                return
+            case .failed(let error):
+                showOCRFailureAlert(error)
+            case .text(let text):
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                let preview = text.count > 15 ? String(text.prefix(15)) + "…" : text
+                Toast.show(title: L("识别成功，已复制到剪贴板"), detail: preview)
             }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            let preview = text.count > 15 ? String(text.prefix(15)) + "…" : text
-            Toast.show(title: L("识别成功，已复制到剪贴板"), detail: preview)
         }
     }
 
@@ -450,7 +465,7 @@ final class AnnotationEditorWindow: NSWindow {
             let codes = await Barcode.detect(image)
             guard !codes.isEmpty else {
                 let alert = NSAlert()
-                alert.messageText = L("未识别到二维码 / 条形码")
+                alert.messageText = L("未识别到二维码或条形码")
                 alert.addButton(withTitle: L("好"))
                 runModalAlert(alert)
                 return
@@ -470,21 +485,26 @@ final class AnnotationEditorWindow: NSWindow {
                 isTranslationBusy = false
                 translateButton.isEnabled = true
             }
-            guard let original = await OCR.recognize(image) else {
+            switch await OCR.recognize(image) {
+            case .empty:
                 let alert = NSAlert()
                 alert.messageText = L("未识别到文字")
                 alert.addButton(withTitle: L("好"))
                 runModalAlert(alert)
                 return
+            case .failed(let error):
+                showOCRFailureAlert(error)
+                return
+            case .text(let original):
+                let model = TranslationPresenter.shared.present(original: original)
+                model.isLoading = true
+                do {
+                    model.translation = try await TranslationService.translate(original, config: AppSettings.shared.translationConfig)
+                } catch {
+                    model.error = error.localizedDescription
+                }
+                model.isLoading = false
             }
-            let model = TranslationPresenter.shared.present(original: original)
-            model.isLoading = true
-            do {
-                model.translation = try await TranslationService.translate(original, config: AppSettings.shared.translationConfig)
-            } catch {
-                model.error = error.localizedDescription
-            }
-            model.isLoading = false
         }
     }
 
