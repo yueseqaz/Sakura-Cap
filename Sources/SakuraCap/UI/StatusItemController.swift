@@ -51,10 +51,9 @@ final class StatusItemController: NSObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshIcon() }
             .store(in: &cancellables)
-        controller.$elapsed
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refreshTimerTitle() }
-            .store(in: &cancellables)
+        // The recording HUD already shows elapsed time. Keep the status item icon-only
+        // so its title never collides with the icon in the menu bar.
+        item.length = NSStatusItem.squareLength
         refreshIcon()
     }
 
@@ -264,11 +263,7 @@ final class StatusItemController: NSObject {
             button.contentTintColor = nil
             button.image = baseIcon(tint: controller.isPaused ? .systemOrange : .systemRed)
         }
-        refreshTimerTitle()
-    }
-
-    private func refreshTimerTitle() {
-        item.button?.title = controller.state == .recording ? " " + Self.mmss(controller.elapsed) : ""
+        item.button?.title = ""
     }
 
     static func mmss(_ interval: TimeInterval) -> String {
