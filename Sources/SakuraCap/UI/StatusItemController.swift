@@ -121,16 +121,21 @@ final class StatusItemController: NSObject {
             menu.addItem(ai)
         }
         menu.addItem(.separator())
+        // 工具合集：避免一级菜单过长
+        let tools = NSMenuItem(title: L("工具"), action: nil, keyEquivalent: "")
+        let toolsMenu = NSMenu()
         let annotation = makeItem(ScreenAnnotationController.shared.isActive
             ? L("结束屏幕标注") : L("屏幕标注"), #selector(menuScreenAnnotation))
         annotation.state = ScreenAnnotationController.shared.isActive ? .on : .off
-        menu.addItem(annotation)
+        toolsMenu.addItem(annotation)
         let preview = makeItem(L("镜头预览"), #selector(menuCameraPreview))
         preview.state = CameraPiP.shared.previewEnabled ? .on : .off
-        menu.addItem(preview)
-        menu.addItem(makeItem(L("标注图片…"), #selector(annotateImage)))
-        menu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
-        menu.addItem(makeItem(L("编辑音频…"), #selector(menuEditAudio)))
+        toolsMenu.addItem(preview)
+        toolsMenu.addItem(makeItem(L("标注图片…"), #selector(annotateImage)))
+        toolsMenu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
+        toolsMenu.addItem(makeItem(L("编辑音频…"), #selector(menuEditAudio)))
+        tools.submenu = toolsMenu
+        menu.addItem(tools)
         menu.addItem(makeItem(L("设置…"), #selector(menuSettings)))
         menu.addItem(makeItem(L("退出"), #selector(menuQuit)))
         return menu
