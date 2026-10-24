@@ -272,13 +272,33 @@ struct ChatPane: View {
         }
     }
 
+    @ObservedObject private var settings = AppSettings.shared
+
+    /// 左侧显示当前生效的模型（翻译与 AI 共用这套服务配置）
+    private var modelLabel: String {
+        if settings.translateProvider == .deepSeek {
+            return "DeepSeek · \(settings.activeTranslateModel)"
+        }
+        let format = CustomAPIFormat(rawValue: settings.translateCustomFormat) ?? .openAIChat
+        return "自定义 · \(format.label) · \(settings.activeTranslateModel)"
+    }
+
     private var topBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles")
                 .foregroundStyle(SettingsAppearance.color(SettingsAppearance.accent))
-            Text(model.session.title.isEmpty ? L("新对话") : model.session.title)
+            Text(modelLabel)
                 .lineLimit(1)
+                .truncationMode(.middle)
                 .font(SettingsAppearance.bodyFont)
+                .help(modelLabel)
+            if !model.session.title.isEmpty {
+                Text(model.session.title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .font(SettingsAppearance.detailFont)
+                    .foregroundStyle(.tertiary)
+            }
             Spacer()
             if model.session.summary != nil {
                 Image(systemName: "brain")
