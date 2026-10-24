@@ -23,7 +23,7 @@ struct PanelView: View {
             case .record: return L("录制")
             case .assist: return L("辅助")
             case .hotkeys: return L("快捷键")
-            case .translate: return L("翻译")
+            case .translate: return L("翻译与 AI")
             case .permissions: return L("权限")
             case .general: return L("通用")
             case .about: return L("关于")
@@ -318,7 +318,7 @@ struct PanelView: View {
 
     private var translateSection: some View {
         VStack(alignment: .leading, spacing: 24) {
-            group("翻译服务") {
+            group("翻译与 AI 服务") {
                 settingRow("服务商") {
                     Picker("服务商", selection: $settings.translateProvider) {
                         ForEach(TranslateProvider.allCases) { p in Text(p.label).tag(p) }

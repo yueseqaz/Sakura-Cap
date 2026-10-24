@@ -105,6 +105,15 @@ final class StatusItemController: NSObject {
             translateMenu.addItem(makeItem(L("识别屏幕翻译"), #selector(translateRegion)))
             translate.submenu = translateMenu
             menu.addItem(translate)
+
+            let ai = NSMenuItem(title: L("AI"), action: nil, keyEquivalent: "")
+            let aiMenu = NSMenu()
+            aiMenu.addItem(makeItem(L("AI 聊天…"), #selector(openAIChat)))
+            aiMenu.addItem(makeItem(L("截屏问 AI（图片）"), #selector(askAIImage)))
+            aiMenu.addItem(makeItem(L("截屏问 AI（OCR）"), #selector(askAIOCR)))
+            aiMenu.addItem(makeItem(L("聊天记录"), #selector(openAIHistory)))
+            ai.submenu = aiMenu
+            menu.addItem(ai)
         }
         menu.addItem(.separator())
         let annotation = makeItem(ScreenAnnotationController.shared.isActive
@@ -149,6 +158,10 @@ final class StatusItemController: NSObject {
     @objc private func qrRegion() { beginSelection(.regionOnly, purpose: .qr) }
     @objc private func translateRegion() { beginSelection(.regionOnly, purpose: .translate) }
     @objc private func openTranslateWindow() { TranslationPresenter.shared.present() }
+    @objc private func openAIChat() { AIChatPresenter.shared.open() }
+    @objc private func askAIImage() { beginSelection(.regionOnly, purpose: .aiImage) }
+    @objc private func askAIOCR() { beginSelection(.regionOnly, purpose: .aiOCR) }
+    @objc private func openAIHistory() { AIHistoryPresenter.shared.open() }
     @objc private func scrollingCapture() { scrollingScreenshot() }
     @objc private func recordWindow() { startWindowRecording() }
 
