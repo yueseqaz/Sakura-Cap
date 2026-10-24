@@ -24,6 +24,8 @@ final class CameraPiP: ObservableObject {
 
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "com.sakura.sakuracap.camera")
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let frameStore = CameraFrameStore()
     private var window: CameraPiPWindow?
     private var cancellables = Set<AnyCancellable>()
     private weak var controller: RecordingController?
@@ -181,13 +183,36 @@ final class CameraPiP: ObservableObject {
         guard configuredDeviceID != id else { return }
         configuredDeviceID = id
         let device = devices.first { $0.uniqueID == id } ?? AVCaptureDevice.default(for: .video)
-        sessionQueue.async { [session] in
+        sessionQueue.async { [session, videoOutput, frameStore] in
             session.beginConfiguration()
             for input in session.inputs { session.removeInput(input) }
             if let device, let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
                 session.addInput(input)
             }
+            // 抓帧输出：剪刀按钮按下时取最近一帧进标注页（幂等，重复配置设备不重复添加）
+            if !session.outputs.contains(videoOutput), session.canAddOutput(videoOutput) {
+                videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+                videoOutput.alwaysDiscardsLateVideoFrames = true
+                videoOutput.setSampleBufferDelegate(frameStore, queue: DispatchQueue(label: "com.sakura.sakuracap.camera.frames"))
+                session.addOutput(videoOutput)
+            }
             session.commitConfiguration()
+        }
+    }
+
+    /// 画中画上的剪刀按钮：把摄像头当前帧送进标注编辑器
+    func captureSnapshot() {
+        guard running else { return }
+        frameStore.requestFrame { image in
+            Task { @MainActor in
+                guard let image else {
+                    Toast.show(title: L("摄像头还没有画面"), detail: L("请稍候再试"))
+                    return
+                }
+                AnnotationEditorController.shared.open(image: image,
+                                                       suggestedName: FileName.make(ext: "png"),
+                                                       source: .newCapture)
+            }
         }
     }
 
@@ -212,7 +237,7 @@ final class CameraPiP: ObservableObject {
 
     private func showWindow() {
         if window == nil {
-            let created = CameraPiPWindow(session: session)
+            let created = CameraPiPWindow(session: session, videoOutput: videoOutput)
             created.onClose = { [weak self] in self?.disable() }
             window = created
         }
@@ -265,10 +290,12 @@ final class CameraPiP: ObservableObject {
     }
 }
 
-/// 画中画窗口内容：视频预览 + 悬停时显示的关闭按钮
+/// 画中画窗口内容：视频预览 + 悬停时显示的关闭 / 截取按钮
 private final class CameraPiPContentView: NSView {
     var onClose: (() -> Void)?
+    var onCapture: (() -> Void)?
     private let closeButton = NSButton()
+    private let captureButton = NSButton()
     private var trackingArea: NSTrackingArea?
 
     override init(frame frameRect: NSRect) {
@@ -293,6 +320,23 @@ private final class CameraPiPContentView: NSView {
         closeButton.autoresizingMask = [.minXMargin, .minYMargin]
         closeButton.frame = NSRect(x: bounds.width - 8 - 24, y: bounds.height - 8 - 24, width: 24, height: 24)
         addSubview(closeButton)
+
+        captureButton.isBordered = false
+        captureButton.bezelStyle = .regularSquare
+        captureButton.wantsLayer = true
+        captureButton.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        captureButton.layer?.cornerRadius = 12
+        let cutSymbol = NSImage(systemSymbolName: "scissors", accessibilityDescription: L("截取摄像头画面"))
+        captureButton.image = cutSymbol?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .bold))
+        captureButton.contentTintColor = .white
+        captureButton.imagePosition = .imageOnly
+        captureButton.toolTip = L("截取摄像头画面")
+        captureButton.target = self
+        captureButton.action = #selector(handleCapture)
+        captureButton.isHidden = true
+        captureButton.autoresizingMask = [.minXMargin, .minYMargin]
+        captureButton.frame = NSRect(x: bounds.width - 8 - 24 - 6 - 24, y: bounds.height - 8 - 24, width: 24, height: 24)
+        addSubview(captureButton)
     }
 
     required init?(coder: NSCoder) {
@@ -300,6 +344,7 @@ private final class CameraPiPContentView: NSView {
     }
 
     @objc private func handleClose() { onClose?() }
+    @objc private func handleCapture() { onCapture?() }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -311,8 +356,14 @@ private final class CameraPiPContentView: NSView {
         trackingArea = area
     }
 
-    override func mouseEntered(with event: NSEvent) { closeButton.isHidden = false }
-    override func mouseExited(with event: NSEvent) { closeButton.isHidden = true }
+    override func mouseEntered(with event: NSEvent) {
+        closeButton.isHidden = false
+        captureButton.isHidden = false
+    }
+    override func mouseExited(with event: NSEvent) {
+        closeButton.isHidden = true
+        captureButton.isHidden = true
+    }
 }
 
 /// 把 AVCaptureVideoPreviewLayer 作为 backing layer 的视图（保证关闭按钮渲染在其之上）
@@ -335,7 +386,14 @@ private final class CameraPiPWindow: NSWindow {
         didSet { content.onClose = onClose }
     }
 
-    init(session: AVCaptureSession) {
+    var onCapture: (() -> Void)? {
+        didSet { content.onCapture = onCapture }
+    }
+
+    private let videoOutput: AVCaptureVideoDataOutput
+
+    init(session: AVCaptureSession, videoOutput: AVCaptureVideoDataOutput) {
+        self.videoOutput = videoOutput
         super.init(contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
                    styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
         isOpaque = false
@@ -358,8 +416,13 @@ private final class CameraPiPWindow: NSWindow {
     }
 
     func setMirrored(_ mirrored: Bool) {
-        guard let connection = preview.previewLayer.connection else { return }
-        if connection.isVideoMirroringSupported {
+        if let connection = preview.previewLayer.connection,
+           connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = mirrored
+        }
+        if let connection = videoOutput.connection(with: .video),
+           connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = mirrored
         }
@@ -367,4 +430,35 @@ private final class CameraPiPWindow: NSWindow {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+}
+
+
+/// 摄像头最近一帧的缓存：剪刀按下时标记，下一帧到达即转换回调（不做逐帧转换，省 CPU）
+private final class CameraFrameStore: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    private let lock = NSLock()
+    private var pending: [(CGImage?) -> Void] = []
+    private let ciContext = CIContext(options: [.cacheIntermediates: false])
+
+    func requestFrame(completion: @escaping (CGImage?) -> Void) {
+        lock.lock()
+        pending.append(completion)
+        lock.unlock()
+    }
+
+    func captureOutput(_ output: AVCaptureVideoDataOutput,
+                       didOutput sampleBuffer: CMSampleBuffer,
+                       from connection: AVCaptureConnection) {
+        lock.lock()
+        let waiters = pending
+        pending.removeAll()
+        lock.unlock()
+        guard !waiters.isEmpty else { return }
+        guard let pixel = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            waiters.forEach { $0(nil) }
+            return
+        }
+        let ciImage = CIImage(cvPixelBuffer: pixel)
+        let image = ciContext.createCGImage(ciImage, from: ciImage.extent)
+        waiters.forEach { $0(image) }
+    }
 }

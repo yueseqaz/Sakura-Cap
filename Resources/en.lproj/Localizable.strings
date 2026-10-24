@@ -557,3 +557,6 @@
 "框选的是聚焦的区域；放大几倍在这里拖滑杆决定。" = "The rectangle selects the focus region; set zoom here with the slider.";
 "声音淡入" = "Audio Fade In";
 "声音淡出" = "Audio Fade Out";
+"截取摄像头画面" = "Snap Camera Frame";
+"摄像头还没有画面" = "No camera frame yet";
+"请稍候再试" = "Try again in a moment";
