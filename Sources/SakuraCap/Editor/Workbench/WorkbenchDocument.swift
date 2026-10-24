@@ -27,16 +27,16 @@ struct WorkbenchLane: Equatable {
 }
 
 /// 画面聚焦段：锚定在【源时间】上，裁剪后跟随画面内容而非时间轴位置。
-/// rect 是用户在画面上框选的区域（归一化 0–1，左上原点），放大倍数由矩形短边推导。
+/// rect 是用户框选的聚焦区域（归一化 0–1，左上原点，只决定「聚焦哪里」）；
+/// zoom 是独立的放大倍数，由用户在面板滑杆上自选，与框的大小无关。
 struct WorkbenchFocus: Identifiable, Equatable {
     let id: UUID
     var sourceIn: Double
     var sourceOut: Double
     var rect: CGRect = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+    var zoom: Double = 2
 
-    /// 框住区域铺满画面所需的放大倍数（短边决定）
-    var derivedZoom: Double { 1.0 / max(WorkbenchFocus.minSide, min(rect.width, rect.height)) }
-    static let minSide: CGFloat = 0.12
+    static let minSide: CGFloat = 0.06
 }
 
 /// 标注段：同上，源时间锚定；marks 归一化坐标基于视频画面尺寸。
@@ -209,7 +209,7 @@ enum WorkbenchEngine {
             if let focus = focuses.last(where: { sourceSeconds >= $0.sourceIn && sourceSeconds < $0.sourceOut }) {
                 let fade = min(1, max(0, min(sourceSeconds - focus.sourceIn, focus.sourceOut - sourceSeconds) / 0.3))
                 let smooth = fade * fade * (3 - 2 * fade)
-                magnification = 1 + (focus.derivedZoom - 1) * smooth
+                magnification = 1 + (focus.zoom - 1) * smooth
                 // rect 左上原点 → CIImage 左下原点
                 point = CGPoint(x: focus.rect.midX, y: 1 - focus.rect.midY)
             }

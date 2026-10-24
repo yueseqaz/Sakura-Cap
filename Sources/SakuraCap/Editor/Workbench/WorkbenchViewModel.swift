@@ -387,6 +387,13 @@ final class WorkbenchViewModel: ObservableObject {
         refreshOverlays()
     }
 
+    /// 放大倍数（滑杆连续调节，不压撤销；创建段时已压过一次）
+    func setFocusZoom(_ value: Double, id: UUID) {
+        guard let index = document.focuses.firstIndex(where: { $0.id == id }) else { return }
+        document.focuses[index].zoom = max(1, min(6, value))
+        refreshOverlays()
+    }
+
     /// 预览画面上自由框选的矩形（归一化，左上原点），拖动中实时生效
     func updateFocusRect(_ rect: CGRect) {
         guard let editingFocusID,

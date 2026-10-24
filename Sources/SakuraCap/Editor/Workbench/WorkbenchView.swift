@@ -246,8 +246,16 @@ struct WorkbenchView: View {
             if let focus = model.document.focuses.first(where: { $0.id == id }) {
                 LabeledRow(label: L("范围"),
                            value: "\(CompletionNotifier.format(focus.sourceIn)) – \(CompletionNotifier.format(focus.sourceOut))")
-                LabeledRow(label: L("放大倍数"), value: String(format: "%.1f×", focus.derivedZoom))
-                Text(L("在画面上直接拖拽矩形框选，拖四角改大小、拖中间移动。"))
+                HStack {
+                    Text(L("放大倍数")).font(SettingsAppearance.detailFont)
+                    Spacer()
+                    Text(String(format: "%.1f×", focus.zoom))
+                        .font(SettingsAppearance.detailFont).monospacedDigit()
+                }
+                Slider(value: Binding(get: { focus.zoom },
+                                      set: { model.setFocusZoom($0, id: id) }), in: 1...6)
+                    .controlSize(.small)
+                Text(L("框选的是聚焦的区域；放大几倍在这里拖滑杆决定。"))
                     .font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
                 if model.editingFocusID == id {
                     Button(L("完成聚焦")) { model.finishFocusEdit() }
