@@ -34,13 +34,19 @@ enum VideoMarkTool: String, CaseIterable, Identifiable {
 }
 
 /// Coordinates are normalized to the visible video frame, not to the editor window.
-struct VideoMark {
+struct VideoMark: Equatable {
     var tool: VideoMarkTool
     var points: [CGPoint]
     var text: String = ""
     var color: NSColor = .systemRed
     var lineWidth: CGFloat = 4
     var mosaicStyle: MosaicStyle = .pixelate
+
+    static func == (lhs: VideoMark, rhs: VideoMark) -> Bool {
+        lhs.tool == rhs.tool && lhs.points == rhs.points && lhs.text == rhs.text
+            && lhs.lineWidth == rhs.lineWidth && lhs.mosaicStyle == rhs.mosaicStyle
+            && lhs.color.isEqual(rhs.color)
+    }
 }
 
 final class VideoAnnotationCanvas: NSView, NSTextFieldDelegate {

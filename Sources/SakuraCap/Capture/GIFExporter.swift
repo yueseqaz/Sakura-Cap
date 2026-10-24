@@ -41,14 +41,15 @@ enum GIFExporter {
         }
     }
 
+    /// - asset：可以是源文件，也可以是剪辑合成（AVMutableComposition）
     /// - fps：GIF 帧率，默认 12（越大越流畅也越大）
-    static func export(source: URL,
+    static func export(asset: AVAsset,
                        timeRange: CMTimeRange,
                        size: GIFSize,
                        videoComposition: AVVideoComposition? = nil,
                        fps: Int = 12,
                        to outputURL: URL) async throws {
-        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: source))
+        let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.videoComposition = videoComposition
         // 允许半帧误差，提升部分编码/可变帧率视频的解码成功率
