@@ -90,6 +90,8 @@ atos -o build/Sakura-Cap.app/Contents/MacOS/SakuraCap -arch arm64 -l <loadAddres
 10. **AVAssetWriter 轨道必须预建**：`startWriting()` 之后再 `addInput` 会抛 NSException 闪退；音轨在创建 `FileWriter` 时全部建好，麦克风先 `start()` 拿到实测格式再建 writer。
 11. **长录制内存**：`queueDepth` + `isReadyForMoreMediaData` 背压（过载直接丢帧，绝不排队堆积）；`SCFrameStatus != .complete` 的 idle 帧跳过。
 12. **CLT 工具链限制**：见上文「构建与运行」的注意点。
+13. **API Key 走 Keychain，ad-hoc 重编译可能弹授权框**：翻译/AI 的 API Key 存 Keychain（`Support/KeychainStore.swift`，`kSecClassGenericPassword`，服务名 `<bundleID>.secrets`，仅本机不同步）。老版本升级时自动从 UserDefaults 明文迁入并删除旧值。ad-hoc 签名每次构建都变，新构建首次读取上次构建创建的条目时 macOS 可能弹一次「允许」框——选「始终允许」即可；发布版同理，升级后首次启动可能弹一次。开发调试可用 `security delete-generic-password -s com.sakura.sakuracap.secrets` 清掉重来。
+14. **更新器强制 sha256**：自动更新要求 Release 资产带 `sha256:` 摘要（GitHub API 的 `digest` 字段）。被限流走的重定向回退路径拿不到摘要时会拒绝自动安装、引导手动下载——这是有意为之（ad-hoc 签名无法 pin 开发者身份，摘要是唯一强校验）。
 
 ## 本地化
 
