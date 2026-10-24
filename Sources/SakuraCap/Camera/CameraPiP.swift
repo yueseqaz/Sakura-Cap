@@ -26,6 +26,8 @@ final class CameraPiP: ObservableObject {
     private let sessionQueue = DispatchQueue(label: "com.sakura.sakuracap.camera")
     private let videoOutput = AVCaptureVideoDataOutput()
     private let frameStore = CameraFrameStore()
+    /// delegate 队列必须持久持有（输出对 queue 的持有行为未文档化，内联创建有被释放的风险）
+    private let frameQueue = DispatchQueue(label: "com.sakura.sakuracap.camera.frames")
     private var window: CameraPiPWindow?
     private var cancellables = Set<AnyCancellable>()
     private weak var controller: RecordingController?
@@ -183,7 +185,7 @@ final class CameraPiP: ObservableObject {
         guard configuredDeviceID != id else { return }
         configuredDeviceID = id
         let device = devices.first { $0.uniqueID == id } ?? AVCaptureDevice.default(for: .video)
-        sessionQueue.async { [session, videoOutput, frameStore] in
+        sessionQueue.async { [session, videoOutput, frameStore, frameQueue] in
             session.beginConfiguration()
             for input in session.inputs { session.removeInput(input) }
             if let device, let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) {
@@ -193,7 +195,7 @@ final class CameraPiP: ObservableObject {
             if !session.outputs.contains(videoOutput), session.canAddOutput(videoOutput) {
                 videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
                 videoOutput.alwaysDiscardsLateVideoFrames = true
-                videoOutput.setSampleBufferDelegate(frameStore, queue: DispatchQueue(label: "com.sakura.sakuracap.camera.frames"))
+                videoOutput.setSampleBufferDelegate(frameStore, queue: frameQueue)
                 session.addOutput(videoOutput)
             }
             session.commitConfiguration()
@@ -203,6 +205,7 @@ final class CameraPiP: ObservableObject {
     /// 画中画上的剪刀按钮：把摄像头当前帧送进标注编辑器
     func captureSnapshot() {
         guard running else { return }
+        window?.playCaptureFlash()
         frameStore.requestFrame { image in
             Task { @MainActor in
                 guard let image else {
@@ -346,6 +349,23 @@ private final class CameraPiPContentView: NSView {
     @objc private func handleClose() { onClose?() }
     @objc private func handleCapture() { onCapture?() }
 
+    /// 截取时的白色闪光反馈（拍照效果）
+    func playCaptureFlash() {
+        guard let container = layer else { return }
+        let flash = CALayer()
+        flash.backgroundColor = NSColor.white.cgColor
+        flash.frame = bounds
+        flash.opacity = 0
+        container.addSublayer(flash)
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 0.85
+        animation.toValue = 0
+        animation.duration = 0.35
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        flash.add(animation, forKey: "captureFlash")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { flash.removeFromSuperlayer() }
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
@@ -389,6 +409,8 @@ private final class CameraPiPWindow: NSWindow {
     var onCapture: (() -> Void)? {
         didSet { content.onCapture = onCapture }
     }
+
+    func playCaptureFlash() { content.playCaptureFlash() }
 
     private let videoOutput: AVCaptureVideoDataOutput
 
@@ -438,14 +460,13 @@ private final class CameraFrameStore: NSObject, AVCaptureVideoDataOutputSampleBu
     private let lock = NSLock()
     private var pending: [(CGImage?) -> Void] = []
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
-
     func requestFrame(completion: @escaping (CGImage?) -> Void) {
         lock.lock()
         pending.append(completion)
         lock.unlock()
     }
 
-    func captureOutput(_ output: AVCaptureVideoDataOutput,
+    func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         lock.lock()

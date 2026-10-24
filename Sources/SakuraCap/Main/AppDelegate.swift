@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+
         // Vision 首次识别会加载模型；后台预热，不延迟菜单栏和窗口启动。
         Task.detached(priority: .utility) { OCR.prewarm() }
 
