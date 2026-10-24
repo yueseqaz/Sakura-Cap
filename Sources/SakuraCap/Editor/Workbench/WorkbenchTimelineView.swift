@@ -784,7 +784,8 @@ final class WorkbenchTimelineCanvas: NSView {
                 let drawX = slotX + (slotWidth - drawWidth) / 2
                 NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
                     .draw(in: NSRect(x: drawX, y: rect.minY, width: drawWidth, height: drawHeight),
-                          from: .zero, operation: .sourceOver, fraction: 0.9)
+                          from: .zero, operation: .sourceOver, fraction: 0.9,
+                          respectFlipped: true, hints: nil)
             }
         }
 
@@ -1582,8 +1583,10 @@ final class HoverPreviewView: NSView {
             }
             drawRect.origin.x = imageRect.midX - drawRect.width / 2
             drawRect.origin.y = imageRect.midY - drawRect.height / 2
+            // flipped 视图里必须 respectFlipped，否则画面垂直颠倒
             NSImage(cgImage: frameImage, size: NSSize(width: frameImage.width, height: frameImage.height))
-                .draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
+                .draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1,
+                      respectFlipped: true, hints: nil)
         } else {
             NSColor.quaternaryLabelColor.setFill()
             imageRect.fill()

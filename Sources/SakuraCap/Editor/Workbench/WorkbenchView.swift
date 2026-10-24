@@ -104,14 +104,9 @@ struct WorkbenchView: View {
             .overlay {
                 if let id = model.editingFocusID,
                    let focus = model.document.focuses.first(where: { $0.id == id }) {
-                    FocusCanvas(focus: focus, aspect: model.videoAspect,
-                                onPoint: { model.setFocusPoint(x: $0, y: $1) },
-                                onScale: { value in
-                                    var updated = focus
-                                    updated.scale = value
-                                    model.updateFocus(updated)
-                                },
-                                onDone: { model.finishFocusEdit() })
+                    FocusRectEditor(rect: focus.rect, videoAspect: model.videoAspect,
+                                    onChange: { model.updateFocusRect($0) },
+                                    onDone: { model.finishFocusEdit() })
                 }
             }
             .overlay {
@@ -251,17 +246,9 @@ struct WorkbenchView: View {
             if let focus = model.document.focuses.first(where: { $0.id == id }) {
                 LabeledRow(label: L("范围"),
                            value: "\(CompletionNotifier.format(focus.sourceIn)) – \(CompletionNotifier.format(focus.sourceOut))")
-                HStack {
-                    Text(L("放大倍数")).font(SettingsAppearance.detailFont)
-                    Spacer()
-                    Text(String(format: "%.1f×", focus.scale))
-                        .font(SettingsAppearance.detailFont).monospacedDigit()
-                }
-                Slider(value: Binding(get: { focus.scale }, set: { value in
-                    var updated = focus
-                    updated.scale = max(1, min(3, value))
-                    model.updateFocus(updated)
-                }), in: 1...3)
+                LabeledRow(label: L("放大倍数"), value: String(format: "%.1f×", focus.derivedZoom))
+                Text(L("在画面上直接拖拽矩形框选，拖四角改大小、拖中间移动。"))
+                    .font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
                 if model.editingFocusID == id {
                     Button(L("完成聚焦")) { model.finishFocusEdit() }
                         .buttonStyle(.borderedProminent)
@@ -359,75 +346,196 @@ struct PlayerView: NSViewRepresentable {
     }
 }
 
-// MARK: - 聚焦编辑浮层（移植自旧裁剪页，坐标语义不变）
+// MARK: - 聚焦自由框选编辑（NSView：拖拽画框 / 移动 / 四角缩放）
 
-private struct FocusCanvas: View {
-    let focus: WorkbenchFocus
-    let aspect: CGFloat
-    let onPoint: (Double, Double) -> Void
-    let onScale: (Double) -> Void
-    let onDone: () -> Void
+/// 像框选录屏区域一样，直接在画面上拖出聚焦范围。
+private final class FocusRectEditorView: NSView {
+    var videoAspect: CGFloat = 16 / 9
+    var normalizedRect: CGRect = CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5)
+    var onChange: ((CGRect) -> Void)?
+    var onDone: (() -> Void)?
 
-    @ObservedObject private var dragState = FocusDragStateBox()
+    override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    var body: some View {
-        GeometryReader { geometry in
-            let width = min(geometry.size.width, geometry.size.height * max(aspect, 0.1))
-            let height = width / max(aspect, 0.1)
-            let imageRect = CGRect(x: (geometry.size.width - width) / 2,
-                                   y: (geometry.size.height - height) / 2,
-                                   width: width, height: height)
-            let frameWidth = width / focus.scale
-            let frameHeight = height / focus.scale
-            let center = CGPoint(x: imageRect.minX + width * focus.x,
-                                 y: imageRect.minY + height * focus.y)
+    private enum Mode { case none, move, resize(corner: Int), draw }
+    private var mode: Mode = .none
+    private var dragStartRect = CGRect.zero
+    private var dragStartPoint = CGPoint.zero
+    private let handleSize: CGFloat = 11
+    private lazy var doneButton: NSButton = {
+        let button = NSButton(title: L("完成聚焦"), target: self, action: #selector(doneTapped))
+        button.bezelStyle = .recessed
+        button.controlSize = .regular
+        button.keyEquivalent = "\r"
+        return button
+    }()
 
-            ZStack(alignment: .topTrailing) {
-                SettingsAppearance.color(SettingsAppearance.canvas).opacity(0.08).contentShape(Rectangle())
-                    .onTapGesture { point in
-                        guard imageRect.contains(point) else { return }
-                        onPoint(Double((point.x - imageRect.minX) / width),
-                                Double((point.y - imageRect.minY) / height))
-                    }
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(.white, lineWidth: 2)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.08)))
-                    .shadow(color: .black.opacity(0.65), radius: 3)
-                    .overlay {
-                        Image(systemName: "plus").font(SettingsAppearance.detailFont).foregroundStyle(.white)
-                    }
-                    .frame(width: frameWidth, height: frameHeight)
-                    .contentShape(Rectangle())
-                    .position(center)
-                    .gesture(DragGesture(minimumDistance: 2)
-                        .onChanged { value in
-                            if dragState.point == nil { dragState.point = CGPoint(x: focus.x, y: focus.y) }
-                            guard let origin = dragState.point else { return }
-                            let margin = 0.5 / focus.scale
-                            onPoint(min(1 - margin, max(margin, origin.x + value.translation.width / width)),
-                                    min(1 - margin, max(margin, origin.y + value.translation.height / height)))
-                        }.onEnded { _ in dragState.point = nil })
-                Circle().fill(.white)
-                    .overlay { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 9)).foregroundStyle(.black) }
-                    .frame(width: 24, height: 24)
-                    .position(x: center.x + frameWidth / 2, y: center.y + frameHeight / 2)
-                    .gesture(DragGesture(minimumDistance: 2)
-                        .onChanged { value in
-                            if dragState.scale == nil { dragState.scale = focus.scale }
-                            guard let origin = dragState.scale else { return }
-                            onScale(min(3, max(1, origin / max(0.3, 1 + Double(value.translation.width / width) * origin * 2))))
-                        }.onEnded { _ in dragState.scale = nil })
-                Button(L("完成聚焦"), action: onDone)
-                    .buttonStyle(.borderedProminent).padding(10)
-            }
+    private var videoRect: CGRect {
+        let aspect = max(0.1, videoAspect)
+        var size = bounds.size
+        if size.width / aspect <= size.height {
+            size.height = size.width / aspect
+        } else {
+            size.width = size.height * aspect
         }
+        return CGRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2,
+                      width: size.width, height: size.height)
+    }
+
+    private func viewRect(for normalized: CGRect) -> CGRect {
+        let v = videoRect
+        return CGRect(x: v.minX + normalized.minX * v.width,
+                      y: v.minY + normalized.minY * v.height,
+                      width: normalized.width * v.width,
+                      height: normalized.height * v.height)
+    }
+
+    private func normalizedRect(forView view: CGRect) -> CGRect {
+        let v = videoRect
+        guard v.width > 1, v.height > 1 else { return normalizedRect }
+        return CGRect(x: (view.minX - v.minX) / v.width,
+                      y: (view.minY - v.minY) / v.height,
+                      width: view.width / v.width,
+                      height: view.height / v.height)
+    }
+
+    private func corners(of rect: CGRect) -> [CGPoint] {
+        [rect.origin, CGPoint(x: rect.maxX, y: rect.minY),
+         CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY)]
+    }
+
+    // MARK: 鼠标
+
+    override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        let rect = viewRect(for: normalizedRect)
+        let corners = corners(of: rect)
+        if let index = corners.firstIndex(where: { abs(p.x - $0.x) <= handleSize && abs(p.y - $0.y) <= handleSize }) {
+            mode = .resize(corner: index)
+        } else if rect.contains(p) {
+            mode = .move
+        } else if videoRect.contains(p) {
+            mode = .draw
+        } else {
+            mode = .none
+            return
+        }
+        dragStartRect = normalizedRect
+        dragStartPoint = p
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        let v = videoRect
+        // 钳制在画面内
+        let clamped = CGPoint(x: max(v.minX, min(v.maxX, p.x)), y: max(v.minY, min(v.maxY, p.y)))
+        let normalized = CGPoint(x: (clamped.x - v.minX) / max(v.width, 1),
+                                 y: (clamped.y - v.minY) / max(v.height, 1))
+        switch mode {
+        case .move:
+            let dx = (p.x - dragStartPoint.x) / max(v.width, 1)
+            let dy = (p.y - dragStartPoint.y) / max(v.height, 1)
+            var r = dragStartRect
+            r.origin.x = max(0, min(1 - r.width, dragStartRect.minX + dx))
+            r.origin.y = max(0, min(1 - r.height, dragStartRect.minY + dy))
+            onChange?(r)
+        case .resize(let corner):
+            let anchor: CGPoint
+            switch corner {
+            case 0: anchor = CGPoint(x: dragStartRect.maxX, y: dragStartRect.maxY)      // 左上角手柄 → 右下锚点
+            case 1: anchor = CGPoint(x: dragStartRect.minX, y: dragStartRect.maxY)
+            case 2: anchor = CGPoint(x: dragStartRect.maxX, y: dragStartRect.minY)
+            default: anchor = CGPoint(x: dragStartRect.minX, y: dragStartRect.minY)
+            }
+            var r = CGRect(x: min(anchor.x, normalized.x), y: min(anchor.y, normalized.y),
+                           width: abs(normalized.x - anchor.x), height: abs(normalized.y - anchor.y))
+            // 最小边长钳制（保持锚点）
+            if r.width < WorkbenchFocus.minSide {
+                r.size.width = WorkbenchFocus.minSide
+                r.origin.x = corner == 0 || corner == 2 ? anchor.x - WorkbenchFocus.minSide : anchor.x
+            }
+            if r.height < WorkbenchFocus.minSide {
+                r.size.height = WorkbenchFocus.minSide
+                r.origin.y = corner == 0 || corner == 1 ? anchor.y - WorkbenchFocus.minSide : anchor.y
+            }
+            onChange?(r)
+        case .draw:
+            var r = CGRect(x: min(dragStartPoint.x, clamped.x), y: min(dragStartPoint.y, clamped.y),
+                           width: abs(clamped.x - dragStartPoint.x), height: abs(clamped.y - dragStartPoint.y))
+            r = normalizedRect(forView: r.intersection(videoRect))
+            if r.width >= WorkbenchFocus.minSide * 0.5, r.height >= WorkbenchFocus.minSide * 0.5 {
+                onChange?(r)
+            }
+        case .none:
+            break
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) { mode = .none }
+
+    @objc private func doneTapped() { onDone?() }
+
+    // MARK: 绘制
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = viewRect(for: normalizedRect)
+        // 聚焦框外明显压暗、框内轻微压暗，突出框住的内容
+        let hole = NSBezierPath(rect: bounds)
+        hole.append(NSBezierPath(rect: rect))
+        hole.windingRule = .evenOdd
+        NSColor.black.withAlphaComponent(0.35).setFill()
+        hole.fill()
+        NSColor.black.withAlphaComponent(0.10).setFill()
+        rect.fill()
+
+        let border = NSBezierPath(rect: rect)
+        border.lineWidth = 2
+        NSColor.white.setStroke()
+        border.stroke()
+
+        for corner in corners(of: rect) {
+            let handle = NSRect(x: corner.x - handleSize / 2, y: corner.y - handleSize / 2,
+                                width: handleSize, height: handleSize)
+            let handlePath = NSBezierPath(rect: handle)
+            NSColor.white.setFill()
+            handlePath.fill()
+            NSColor.black.withAlphaComponent(0.35).setStroke()
+            handlePath.lineWidth = 1
+            handlePath.stroke()
+        }
+
+        if doneButton.superview == nil {
+            addSubview(doneButton)
+        }
+        doneButton.sizeToFit()
+        doneButton.frame.origin = CGPoint(x: bounds.maxX - doneButton.frame.width - 12, y: 12)
     }
 }
 
-/// 无 @State 环境下的拖拽临时状态盒（CLT 工具链不支持 SwiftUI 宏）
-final class FocusDragStateBox: ObservableObject {
-    @Published var point: CGPoint?
-    @Published var scale: Double?
+/// SwiftUI 桥接（值字段驱动刷新，见 WorkbenchTimeline 的说明）
+private struct FocusRectEditor: NSViewRepresentable {
+    let rect: CGRect
+    let videoAspect: CGFloat
+    let onChange: (CGRect) -> Void
+    let onDone: () -> Void
+
+    func makeNSView(context: Context) -> FocusRectEditorView {
+        let view = FocusRectEditorView()
+        view.normalizedRect = rect
+        view.videoAspect = videoAspect
+        view.onChange = onChange
+        view.onDone = onDone
+        return view
+    }
+
+    func updateNSView(_ view: FocusRectEditorView, context: Context) {
+        if view.normalizedRect != rect { view.normalizedRect = rect }
+        view.videoAspect = videoAspect
+        view.onChange = onChange
+        view.onDone = onDone
+        view.needsDisplay = true
+    }
 }
 
 /// 标注编辑时悬浮在预览画面下方的工具栏：工具 / 颜色粗细 / 马赛克样式 / 撤回 / 完成

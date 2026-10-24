@@ -387,12 +387,16 @@ final class WorkbenchViewModel: ObservableObject {
         refreshOverlays()
     }
 
-    func setFocusPoint(x: Double, y: Double) {
+    /// 预览画面上自由框选的矩形（归一化，左上原点），拖动中实时生效
+    func updateFocusRect(_ rect: CGRect) {
         guard let editingFocusID,
               let index = document.focuses.firstIndex(where: { $0.id == editingFocusID }) else { return }
-        let margin = 0.5 / document.focuses[index].scale
-        document.focuses[index].x = min(1 - margin, max(margin, x))
-        document.focuses[index].y = min(1 - margin, max(margin, y))
+        var r = rect
+        r.size.width = max(WorkbenchFocus.minSide, min(1, r.size.width))
+        r.size.height = max(WorkbenchFocus.minSide, min(1, r.size.height))
+        r.origin.x = max(0, min(1 - r.size.width, r.origin.x))
+        r.origin.y = max(0, min(1 - r.size.height, r.origin.y))
+        document.focuses[index].rect = r
     }
 
     func finishFocusEdit() {
