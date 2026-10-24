@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             demo.messages = [
                 AIChatMessage(role: .user, text: "给我看看 Markdown 效果"),
                 AIChatMessage(role: .assistant, text: md),
+                AIChatMessage(role: .user, text: "再来一段长一点的，测试滚动"),
+                AIChatMessage(role: .assistant, text: md + "\n\n" + md),
             ]
             AIChatPresenter.shared.open(session: demo)
         }

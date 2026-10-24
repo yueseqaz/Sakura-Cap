@@ -324,13 +324,9 @@ private struct MessageBubble: View {
                 }
                 if !message.text.isEmpty {
                     if message.role == .assistant {
-                        GeometryReader { geometry in
-                            let attributed = Markdown.attributed(message.text)
-                            let height = Markdown.height(of: attributed, width: geometry.size.width - 24)
-                            MarkdownTextView(attributed: attributed)
-                                .frame(height: height + 10)
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
+                        // 内在高度驱动布局：NSTextView 报告真实内容高度，避免外部量算
+                        MarkdownTextView(attributed: Markdown.attributed(message.text))
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
                         Text(message.text)
                             .textSelection(.enabled)
@@ -355,24 +351,39 @@ private struct MessageBubble: View {
     }
 }
 
-/// 只读 Markdown 文本视图（可选中、链接可点）
+/// 只读 Markdown 文本视图（可选中、链接可点）。
+/// 高度由视图自身报告（intrinsicContentSize 随内容自适应），
+/// SwiftUI 按内在高度布局——外部量算在流式更新时不可靠，会导致气泡重叠。
 struct MarkdownTextView: NSViewRepresentable {
     let attributed: NSAttributedString
 
-    func makeNSView(context: Context) -> NSTextView {
-        let view = NSTextView()
+    final class AutoHeightTextView: NSTextView {
+        override var intrinsicContentSize: NSSize {
+            guard let container = textContainer, let manager = layoutManager else {
+                return super.intrinsicContentSize
+            }
+            manager.ensureLayout(for: container)
+            let height = manager.usedRect(for: container).height + textContainerInset.height * 2 + 6
+            return NSSize(width: NSView.noIntrinsicMetric, height: height)
+        }
+    }
+
+    func makeNSView(context: Context) -> AutoHeightTextView {
+        let view = AutoHeightTextView()
         view.isEditable = false
         view.isSelectable = true
         view.drawsBackground = false
         view.isVerticallyResizable = false
         view.isHorizontallyResizable = false
         view.textContainer?.widthTracksTextView = true
-        view.textContainer?.heightTracksTextView = true
+        view.textContainer?.heightTracksTextView = false
         view.textContainerInset = NSSize(width: 10, height: 5)
+        view.textStorage?.setAttributedString(attributed)
         return view
     }
 
-    func updateNSView(_ view: NSTextView, context: Context) {
+    func updateNSView(_ view: AutoHeightTextView, context: Context) {
         view.textStorage?.setAttributedString(attributed)
+        view.invalidateIntrinsicContentSize()
     }
 }
