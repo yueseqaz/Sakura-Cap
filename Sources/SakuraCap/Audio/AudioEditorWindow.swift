@@ -35,8 +35,8 @@ final class AudioEditorPresenter: NSObject, NSWindowDelegate {
         model.origin = origin
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 900)
         let window = AudioEditorWindow(contentRect: NSRect(x: 0, y: 0,
-                                                           width: min(880, screen.width * 0.6),
-                                                           height: min(620, screen.height * 0.78)),
+                                                           width: min(640, screen.width * 0.46),
+                                                           height: min(460, screen.height * 0.56)),
                                        styleMask: [.titled, .closable, .resizable],
                                        backing: .buffered, defer: false)
         window.title = String(format: L("音频编辑 — %@"), url.lastPathComponent)
@@ -44,7 +44,7 @@ final class AudioEditorPresenter: NSObject, NSWindowDelegate {
         window.sharingType = .readOnly
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.minSize = NSSize(width: 640, height: 480)
+        window.minSize = NSSize(width: 540, height: 400)
         window.contentView = NSHostingView(rootView: AudioEditorView(model: model))
         window.delegate = self
         model.requestClose = { [weak window] in window?.close() }
@@ -123,7 +123,7 @@ struct AudioEditorView: View {
             Divider()
             AudioWaveform(model: model)
                 .frame(maxWidth: .infinity)
-                .frame(minHeight: 150, maxHeight: 220)
+                .frame(minHeight: 110, maxHeight: 160)
             Divider()
             AudioTimeline(model: model)
                 .frame(maxWidth: .infinity, minHeight: timelineMinHeight)
@@ -132,7 +132,7 @@ struct AudioEditorView: View {
         }
         .background(SettingsAppearance.color(SettingsAppearance.canvas))
         .tint(SettingsAppearance.color(SettingsAppearance.accent))
-        .frame(minWidth: 640, minHeight: 480)
+        .frame(minWidth: 540, minHeight: 400)
         .task { await model.load() }
         .onDisappear { model.player.pause() }
     }
@@ -180,6 +180,12 @@ struct AudioEditorView: View {
                         Text(L("音频片段")).font(SettingsAppearance.detailFont.weight(.semibold)).foregroundStyle(.secondary)
                         fadeSlider(label: L("声音淡入"), value: clip.fadeIn) { model.setClipFade(.in, $0, forClip: id) }
                         fadeSlider(label: L("声音淡出"), value: clip.fadeOut) { model.setClipFade(.out, $0, forClip: id) }
+                        Text(L("音量")).font(SettingsAppearance.detailFont)
+                        Slider(value: Binding(get: { clip.volume },
+                                              set: { model.setClipVolume($0, forClip: id) }), in: 0...2)
+                            .controlSize(.small).frame(width: 90)
+                        Text("\(Int(clip.volume * 100))%").monospacedDigit()
+                            .font(SettingsAppearance.detailFont).frame(width: 40)
                         Toggle(L("片段静音"), isOn: Binding(get: { clip.muted }, set: { _ in model.toggleClipMute(id) }))
                             .font(SettingsAppearance.detailFont)
                         Spacer()

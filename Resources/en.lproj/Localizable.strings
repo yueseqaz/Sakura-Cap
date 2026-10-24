@@ -630,3 +630,7 @@
 "音量 · " = "Gain · ";
 "在时间轴上：拖边缘裁剪片段，拖动排序；音量轨上拖拽创建音量段。" = "Timeline: drag clip edges to trim, drag to reorder; drag on a gain lane to create a volume segment.";
 "在播放头添加音量段" = "Add Volume Segment at Playhead";
+"导出编辑后的音频" = "Export Edited Audio";
+"确定放弃编辑吗？" = "Discard edits?";
+"删除录音原文件" = "Delete original recording";
+"删除录音文件" = "Delete recording file";

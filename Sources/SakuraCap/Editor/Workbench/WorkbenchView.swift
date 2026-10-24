@@ -206,6 +206,14 @@ struct WorkbenchView: View {
                 LabeledRow(label: L("时长"), value: CompletionNotifier.format(clip.duration))
                 LabeledRow(label: L("源区间"),
                            value: "\(CompletionNotifier.format(clip.sourceIn)) – \(CompletionNotifier.format(clip.sourceOut))")
+                HStack {
+                    Text(L("音量")).font(SettingsAppearance.detailFont)
+                    Slider(value: Binding(get: { clip.volume },
+                                          set: { model.setClipVolume($0, forClip: id) }), in: 0...2)
+                        .controlSize(.small)
+                    Text("\(Int(clip.volume * 100))%").monospacedDigit()
+                        .font(SettingsAppearance.detailFont)
+                }
                 Toggle(L("片段静音"), isOn: Binding(
                     get: { clip.muted },
                     set: { _ in model.toggleClipMute(id) }))

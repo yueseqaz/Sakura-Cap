@@ -36,6 +36,8 @@ final class WorkbenchViewModel: ObservableObject {
     @Published var isExporting = false
     @Published var status: String?
     @Published var isFullscreen = false
+    /// 上次播放已到结尾（再次播放从头开始）
+    private(set) var playbackEnded = false
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     @Published var pixelsPerSecond: Double = 60
@@ -84,6 +86,7 @@ final class WorkbenchViewModel: ObservableObject {
                 if self.isPlaying, self.duration > 0, t >= self.duration - 0.05 {
                     self.player.pause()
                     self.isPlaying = false
+                    self.playbackEnded = true
                 }
             }
         }
@@ -333,6 +336,13 @@ final class WorkbenchViewModel: ObservableObject {
         rebuildTimeline()
     }
 
+    /// 片段整体音量（连续调节不压撤销；创建/分割时已压过）
+    func setClipVolume(_ value: Double, forClip id: UUID) {
+        guard let index = document.clips.firstIndex(where: { $0.id == id }) else { return }
+        document.clips[index].volume = max(0, min(2, value))
+        refreshOverlays()
+    }
+
     func toggleClipMute(_ id: UUID) {
         guard let index = document.clips.firstIndex(where: { $0.id == id }) else { return }
         pushUndo()
@@ -558,7 +568,9 @@ final class WorkbenchViewModel: ObservableObject {
         } else {
             if editingAnnotationID != nil { finishAnnotationSelection(commit: true) }
             if editingFocusID != nil { finishFocusEdit() }
-            if currentTime >= duration - 0.05 { seek(to: 0, updateTimeline: true) }
+            if playbackEnded || duration <= 0 || currentTime >= duration - 0.15 {
+                seek(to: 0, updateTimeline: true)
+            }
             player.play()
             isPlaying = true
         }
@@ -573,6 +585,7 @@ final class WorkbenchViewModel: ObservableObject {
             if t < s - 0.01 || t > e + 0.01 { finishAnnotationSelection(commit: true) }
         }
         currentTime = t
+        playbackEnded = false
         player.seek(to: CMTime(seconds: t, preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero)
     }
@@ -595,7 +608,7 @@ final class WorkbenchViewModel: ObservableObject {
         if document.clips.count > 1 { return true }
         if let first = document.clips.first, duration > 0,
            abs(first.sourceIn) > 0.01 || abs(first.sourceOut - duration) > 0.01 { return true }
-        if document.clips.contains(where: { $0.muted || $0.fadeIn > 0 || $0.fadeOut > 0 }) { return true }
+        if document.clips.contains(where: { $0.muted || $0.volume != 1 || $0.fadeIn > 0 || $0.fadeOut > 0 }) { return true }
         if document.lanes.contains(where: { $0.muted || $0.volume != 1 }) { return true }
         if !document.focuses.isEmpty { return true }
         if document.annotations.contains(where: { !$0.marks.isEmpty }) { return true }
@@ -768,7 +781,7 @@ final class WorkbenchViewModel: ObservableObject {
     /// 删除原始录像文件
     func deleteTapped() {
         let alert = NSAlert()
-        alert.messageText = L("删除录像文件")
+        alert.messageText = isAudioOnly ? L("删除录音文件") : L("删除录像文件")
         alert.informativeText = String(format: L("确定要删除「%@」吗？此操作不可撤销。"), sourceURL.lastPathComponent)
         alert.alertStyle = .warning
         alert.addButton(withTitle: L("取消"))
@@ -795,10 +808,11 @@ final class WorkbenchViewModel: ObservableObject {
     /// 关窗确认；返回 true 允许关闭
     func confirmDiscard() -> Bool {
         let alert = NSAlert()
-        alert.messageText = L("确定放弃剪辑吗？")
+        alert.messageText = isAudioOnly ? L("确定放弃编辑吗？") : L("确定放弃剪辑吗？")
         var deleteCheckbox: NSButton?
         if origin == .recording {
-            let box = NSButton(checkboxWithTitle: L("删除录屏原文件"), target: nil, action: nil)
+            let box = NSButton(checkboxWithTitle: isAudioOnly ? L("删除录音原文件") : L("删除录屏原文件"),
+                               target: nil, action: nil)
             box.state = .off
             box.sizeToFit()
             alert.accessoryView = box

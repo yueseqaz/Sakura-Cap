@@ -11,6 +11,7 @@ struct WorkbenchClip: Identifiable, Equatable {
     var fadeIn: Double = 0       // 音频淡入（秒）
     var fadeOut: Double = 0      // 音频淡出（秒）
     var muted: Bool = false      // 片段整体静音（所有音轨）
+    var volume: Double = 1       // 片段整体音量（0–2，1 = 原音量）
     var duration: Double { max(0, sourceOut - sourceIn) }
 
     init(id: UUID = UUID(), sourceIn: Double, sourceOut: Double) {
@@ -277,6 +278,7 @@ enum WorkbenchEngine {
             let (clip, _, clipStart) = hit
             let local = t - clipStart
             if clip.muted { return 0 }
+            v *= clip.volume
             if clip.fadeIn > 0, local < clip.fadeIn { v *= local / clip.fadeIn }
             if clip.fadeOut > 0, local > clip.duration - clip.fadeOut {
                 v *= max(0, (clip.duration - local) / clip.fadeOut)
