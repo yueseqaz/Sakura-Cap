@@ -43,7 +43,9 @@ final class WorkbenchWindowController: NSObject, NSWindowDelegate {
         window.title = String(format: L("剪辑 — %@"), url.lastPathComponent)
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
-        window.collectionBehavior.insert(.moveToActiveSpace)
+        // 菜单栏应用：悬浮于其他应用之上、跟随所有空间，点别处不会被压到后面
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         // 远程桌面与录屏里不可见（同旧裁剪窗）
         window.sharingType = .readOnly
         window.contentView = NSHostingView(rootView: WorkbenchView(model: model))
