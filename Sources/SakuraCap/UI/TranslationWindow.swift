@@ -130,7 +130,7 @@ struct TranslationView: View {
                 // AppKit 文本视图：键入 / 粘贴 / ⌘A 全选（SwiftUI TextEditor 在
                 // CLT 工具链下行为不稳，且 NSTextView 换行与选中行为更可靠）
                 EditableText(text: $model.original, font: NSFont.systemFont(ofSize: 13))
-                    .frame(minHeight: 110)
+                    .frame(height: 120)
             }
 
             Text(L("译文")).font(.caption).fontWeight(.semibold).foregroundStyle(.secondary)
@@ -182,7 +182,8 @@ struct TranslationView: View {
     }
 }
 
-/// NSTextView 包装（可编辑、多行、无内嵌滚动条，随内容自适应）
+/// NSTextView 包装（可编辑、多行）。用 NSTextView.scrollableTextView() 工厂：
+/// 手工 new 出的 NSTextView 初始尺寸为零，点不中也无法输入。
 struct EditableText: NSViewRepresentable {
     @Binding var text: String
     var font: NSFont = .systemFont(ofSize: 13)
@@ -199,24 +200,23 @@ struct EditableText: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NSTextView()
-        textView.isRichText = false
-        textView.allowsUndo = true
-        textView.drawsBackground = false
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
-        textView.font = font
-        textView.textColor = .labelColor
-        textView.delegate = context.coordinator
-        textView.string = text
-
-        let scroll = NSScrollView()
-        scroll.documentView = textView
+        let scroll = NSTextView.scrollableTextView()
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
+        if let textView = scroll.documentView as? NSTextView {
+            textView.isRichText = false
+            textView.allowsUndo = true
+            textView.drawsBackground = false
+            textView.isAutomaticQuoteSubstitutionEnabled = false
+            textView.isAutomaticDashSubstitutionEnabled = false
+            textView.isAutomaticTextReplacementEnabled = false
+            textView.font = font
+            textView.textColor = .labelColor
+            textView.delegate = context.coordinator
+            textView.string = text
+        }
         return scroll
     }
 
@@ -226,6 +226,11 @@ struct EditableText: NSViewRepresentable {
             let selectedRanges = textView.selectedRanges
             textView.string = text
             textView.selectedRanges = selectedRanges
+        }
+        // 空内容时文本视图高度会被压到 0，点不中输入框；撑到可视高度
+        let visibleHeight = scroll.contentView.bounds.height
+        if textView.frame.height < visibleHeight {
+            textView.frame.size.height = visibleHeight
         }
     }
 }
