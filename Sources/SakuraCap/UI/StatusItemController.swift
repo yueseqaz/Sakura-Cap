@@ -89,13 +89,19 @@ final class StatusItemController: NSObject {
             record.submenu = submenu
             menu.addItem(record)
 
+            let translate = NSMenuItem(title: L("翻译"), action: nil, keyEquivalent: "")
+            let translateMenu = NSMenu()
+            translateMenu.addItem(makeItem(L("翻译窗口…"), #selector(openTranslateWindow)))
+            translateMenu.addItem(makeItem(L("识别屏幕文字并翻译"), #selector(translateRegion)))
+            translate.submenu = translateMenu
+            menu.addItem(translate)
+
             let shot = NSMenuItem(title: L("截图"), action: nil, keyEquivalent: "")
             let shotMenu = NSMenu()
             shotMenu.addItem(makeItem(L("全屏截图"), #selector(screenshotDisplay)))
             shotMenu.addItem(makeItem(L("区域截图"), #selector(screenshotRegion)))
             shotMenu.addItem(makeItem(L("识别文字（OCR）"), #selector(ocrRegion)))
             shotMenu.addItem(makeItem(L("识别二维码"), #selector(qrRegion)))
-            shotMenu.addItem(makeItem(L("翻译"), #selector(translateRegion)))
             shotMenu.addItem(makeItem(L("滚动截屏…"), #selector(scrollingCapture)))
             shot.submenu = shotMenu
             menu.addItem(shot)
@@ -142,6 +148,7 @@ final class StatusItemController: NSObject {
     @objc private func ocrRegion() { recognizeText() }
     @objc private func qrRegion() { beginSelection(.regionOnly, purpose: .qr) }
     @objc private func translateRegion() { beginSelection(.regionOnly, purpose: .translate) }
+    @objc private func openTranslateWindow() { TranslationPresenter.shared.present() }
     @objc private func scrollingCapture() { scrollingScreenshot() }
     @objc private func recordWindow() { startWindowRecording() }
 

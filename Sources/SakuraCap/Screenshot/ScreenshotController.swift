@@ -52,29 +52,18 @@ final class ScreenshotController {
         Task { await translate(displayID: region.displayID, region: region) }
     }
 
+    /// OCR 翻译：识别 → 交给统一的翻译窗口（执行逻辑在 TranslationViewModel）
     private func translate(displayID: CGDirectDisplayID, region: RegionSelection?) async {
         guard #available(macOS 14.0, *) else { showError(ScreenshotError.unsupported); return }
         do {
             let image = try await captureImage(displayID: displayID, region: region)
-            let original: String
             switch await OCR.recognize(image) {
             case .text(let text):
-                original = text
+                TranslationPresenter.shared.present(original: text, autoTranslate: true)
             case .empty:
                 showMessage(L("未识别到文字"))
-                return
             case .failed(let error):
                 showOCRFailureAlert(error)
-                return
-            }
-            let model = TranslationPresenter.shared.present(original: original)
-            model.isLoading = true
-            do {
-                model.translation = try await TranslationService.translate(original, config: AppSettings.shared.translationConfig)
-                model.isLoading = false
-            } catch {
-                model.error = error.localizedDescription
-                model.isLoading = false
             }
         } catch {
             showError(error)
