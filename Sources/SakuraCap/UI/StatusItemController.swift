@@ -170,7 +170,7 @@ final class StatusItemController: NSObject {
         panel.allowsMultipleSelection = false
         panel.message = L("选择要编辑的音频")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        WorkbenchWindowController.shared.show(url: url, origin: .manual)
+        AudioEditorPresenter.shared.show(url: url, origin: .manual)
     }
 
     @objc private func audioPause() { AudioRecorderController.shared.togglePause() }

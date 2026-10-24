@@ -625,3 +625,8 @@
 "音频编辑中" = "Editing audio";
 "音频与画面轨都缺失，无法编辑" = "No audio or video tracks to edit";
 "音频片段" = "Audio Clip";
+"音频编辑 — %@" = "Audio Edit — %@";
+"片段" = "Clips";
+"音量 · " = "Gain · ";
+"在时间轴上：拖边缘裁剪片段，拖动排序；音量轨上拖拽创建音量段。" = "Timeline: drag clip edges to trim, drag to reorder; drag on a gain lane to create a volume segment.";
+"在播放头添加音量段" = "Add Volume Segment at Playhead";

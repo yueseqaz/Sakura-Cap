@@ -59,12 +59,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AIChatPresenter.shared.open(session: demo)
         }
 
-        // 调试入口：`SakuraCap -workbench <视频路径>` 直接打开后期工作台
+        // 调试入口：`SakuraCap -workbench <媒体路径>` 按类型打开视频工作台 / 音频编辑器
         if let index = CommandLine.arguments.firstIndex(of: "-workbench"),
            index + 1 < CommandLine.arguments.count {
             let path = CommandLine.arguments[index + 1]
             if FileManager.default.fileExists(atPath: path) {
-                WorkbenchWindowController.shared.show(url: URL(fileURLWithPath: path), origin: .manual)
+                let url = URL(fileURLWithPath: path)
+                let audioExts = ["m4a", "mp3", "wav", "aac", "flac"]
+                if audioExts.contains(url.pathExtension.lowercased()) {
+                    AudioEditorPresenter.shared.show(url: url, origin: .manual)
+                } else {
+                    WorkbenchWindowController.shared.show(url: url, origin: .manual)
+                }
             }
         }
 
