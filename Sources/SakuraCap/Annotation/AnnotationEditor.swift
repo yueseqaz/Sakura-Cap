@@ -46,6 +46,7 @@ final class AnnotationEditorWindow: NSWindow {
     private let ocrButton = NSButton()
     private let barcodeButton = NSButton()
     private let translateButton = NSButton()
+    private let askAIButton = NSButton()
     private var isOCRBusy = false
     private var isBarcodeBusy = false
     private var isTranslationBusy = false
@@ -290,6 +291,7 @@ final class AnnotationEditorWindow: NSWindow {
             (ocrButton, "text.viewfinder", L("取字"), #selector(ocrTapped)),
             (barcodeButton, "qrcode.viewfinder", L("二维码"), #selector(barcodeTapped)),
             (translateButton, "character.bubble", L("翻译"), #selector(translateTapped)),
+            (askAIButton, "sparkles", L("问 AI"), #selector(askAITapped)),
         ] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular))
@@ -307,7 +309,8 @@ final class AnnotationEditorWindow: NSWindow {
         ocrButton.toolTip = L("拖拽框选图片中的文字并复制到剪贴板")
         barcodeButton.toolTip = L("拖拽框选要识别的二维码")
         translateButton.toolTip = L("拖拽框选要翻译的文字")
-        let stack = NSStackView(views: [ocrButton, barcodeButton, translateButton])
+        askAIButton.toolTip = L("把这张图片发给 AI（或先 OCR）")
+        let stack = NSStackView(views: [ocrButton, barcodeButton, translateButton, askAIButton])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 8
@@ -404,6 +407,37 @@ final class AnnotationEditorWindow: NSWindow {
     @objc private func compareTapped() {
         guard let image = canvas.baseImage else { return }
         CompareController.shared.open(original: image)
+    }
+
+    @objc private func askAITapped() {
+        let menu = NSMenu()
+        let imageItem = NSMenuItem(title: L("图片提问"), action: #selector(askAIWithImage), keyEquivalent: "")
+        imageItem.target = self
+        let ocrItem = NSMenuItem(title: L("OCR 文字提问"), action: #selector(askAIWithOCR), keyEquivalent: "")
+        ocrItem.target = self
+        menu.addItem(imageItem)
+        menu.addItem(ocrItem)
+        if let event = NSApp.currentEvent {
+            NSMenu.popUpContextMenu(menu, with: event, for: askAIButton)
+        }
+    }
+
+    /// 整图（含标注）发给 AI 聊天窗口
+    @objc private func askAIWithImage() {
+        guard let cg = canvas.renderedImage() else { return }
+        AIChatPresenter.shared.openWithImage(cg)
+    }
+
+    /// 先 OCR 整图，识别出的文字带进 AI 聊天窗口（适配不支持图片的模型）
+    @objc private func askAIWithOCR() {
+        guard let cg = canvas.renderedImage() else { return }
+        Task { @MainActor in
+            switch await OCR.recognize(cg) {
+            case .text(let text): AIChatPresenter.shared.openWithText(text)
+            case .empty: Toast.show(title: L("未识别到文字"), detail: nil)
+            case .failed(let error): Toast.show(title: L("识别失败"), detail: error.localizedDescription)
+            }
+        }
     }
 
     @objc private func ocrTapped() { beginRecognition(.ocr, prompt: L("拖拽框选要识别的文字")) }

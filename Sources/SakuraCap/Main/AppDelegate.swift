@@ -33,6 +33,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         applyHotKeys()
 
+        // 调试入口：`-aichat` 打开 AI 聊天窗口（带样例 Markdown 消息）
+        if CommandLine.arguments.contains("-aichat") {
+            var demo = AIChatSession()
+            let md = "# 效果展示\n支持 **加粗**、*斜体*、`代码`、[链接](https://github.com)。\n\n- 列表一\n- 列表二\n\n```swift\nlet answer = 42\n```\n\n> 流式输出时内容会逐段出现。"
+            demo.messages = [
+                AIChatMessage(role: .user, text: "给我看看 Markdown 效果"),
+                AIChatMessage(role: .assistant, text: md),
+            ]
+            AIChatPresenter.shared.open(session: demo)
+        }
+
         // 调试入口：`SakuraCap -workbench <视频路径>` 直接打开后期工作台
         if let index = CommandLine.arguments.firstIndex(of: "-workbench"),
            index + 1 < CommandLine.arguments.count {
@@ -91,6 +102,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 滚动截屏：框选后进入长截图
             if SelectionController.shared.currentPurpose == .scrolling {
                 if case .region(let region) = result { ScrollingCapture.shared.start(region: region) }
+                return
+            }
+            // 截屏问 AI：直接给图（视觉模型）
+            if SelectionController.shared.currentPurpose == .aiImage {
+                Task { @MainActor in
+                    guard #available(macOS 14.0, *) else { return }
+                    let image: CGImage?
+                    switch result {
+                    case .display(let id): image = try? await ScreenshotController.shared.captureImage(displayID: id, region: nil)
+                    case .region(let region): image = try? await ScreenshotController.shared.captureImage(displayID: region.displayID, region: region)
+                    }
+                    if let image {
+                        AIChatPresenter.shared.openWithImage(image)
+                    } else {
+                        Toast.show(title: L("截屏失败"), detail: nil)
+                    }
+                }
+                return
+            }
+            // 截屏问 AI：先 OCR 再带文字（不支持图片的模型）
+            if SelectionController.shared.currentPurpose == .aiOCR {
+                Task { @MainActor in
+                    guard #available(macOS 14.0, *) else { return }
+                    var image: CGImage?
+                    switch result {
+                    case .display(let id): image = try? await ScreenshotController.shared.captureImage(displayID: id, region: nil)
+                    case .region(let region): image = try? await ScreenshotController.shared.captureImage(displayID: region.displayID, region: region)
+                    }
+                    guard let image else {
+                        Toast.show(title: L("截屏失败"), detail: nil)
+                        return
+                    }
+                    switch await OCR.recognize(image) {
+                    case .text(let text): AIChatPresenter.shared.openWithText(text)
+                    case .empty: Toast.show(title: L("未识别到文字"), detail: nil)
+                    case .failed(let error): Toast.show(title: L("识别失败"), detail: error.localizedDescription)
+                    }
+                }
                 return
             }
             let settings = AppSettings.shared

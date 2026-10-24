@@ -571,3 +571,26 @@
 "风格" = "Style";
 "当前使用：DeepSeek（%@）" = "Using: DeepSeek (%@)";
 "当前使用：自定义 · %@（%@）" = "Using: Custom · %@ (%@)";
+
+/* AI 助手 */
+"AI 助手" = "AI Assistant";
+"AI" = "AI";
+"新对话" = "New Chat";
+"停止" = "Stop";
+"停止生成" = "Stop Generating";
+"发送 ⌘↩" = "Send ⌘↩";
+"问点什么，或从标注页 / 截屏把内容带进来" = "Ask anything, or bring content in from the annotator or a screenshot";
+"AI 聊天…" = "AI Chat…";
+"截屏问 AI（图片）" = "Ask AI about Screen (Image)";
+"截屏问 AI（OCR）" = "Ask AI about Screen (OCR)";
+"聊天记录" = "Chat History";
+"暂无聊天记录" = "No chats yet";
+"问 AI" = "Ask AI";
+"图片提问" = "Ask with Image";
+"OCR 文字提问" = "Ask with OCR Text";
+"把这张图片发给 AI（或先 OCR）" = "Send this image to AI (or OCR first)";
+"AI 返回为空" = "Empty AI response";
+"AI 请求失败（%d）：%@" = "AI request failed (%d): %@";
+"AI 接口地址无效" = "Invalid AI endpoint";
+"截屏失败" = "Screenshot failed";
+"识别失败" = "Recognition failed";

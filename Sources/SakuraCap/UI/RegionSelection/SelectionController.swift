@@ -18,6 +18,8 @@ enum SelectionPurpose {
     case qr
     case compare
     case translate
+    case aiImage   // 截屏问 AI：直接给图（视觉模型）
+    case aiOCR     // 截屏问 AI：先 OCR 再带文字
 }
 
 enum SelectionResult {
