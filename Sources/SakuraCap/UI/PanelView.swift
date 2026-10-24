@@ -242,9 +242,6 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 24) {
             group("鼠标点击标记") {
                 Toggle("显示点击标记", isOn: $settings.clickIndicatorEnabled)
-                    .onChange(of: settings.clickIndicatorEnabled) { enabled in
-                        if enabled { IndicatorEngine.shared.start() } else { IndicatorEngine.shared.stop() }
-                    }
                 if settings.clickIndicatorEnabled {
                     settingRow("颜色") {
                         ColorPicker("颜色", selection: Binding(
@@ -261,9 +258,6 @@ struct PanelView: View {
             group("键盘按键显示") {
                 Toggle("显示按键", isOn: $settings.keyDisplayEnabled)
                     .help(L("在画面左下角显示按键，约 1 秒后淡出。"))
-                    .onChange(of: settings.keyDisplayEnabled) { enabled in
-                        if enabled { KeyDisplay.shared.start() } else { KeyDisplay.shared.stop() }
-                    }
             }
             group("摄像头画中画") {
                 Toggle("显示摄像头", isOn: $settings.cameraPiPEnabled)

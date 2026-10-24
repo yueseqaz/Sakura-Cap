@@ -184,9 +184,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 CompareController.shared.cancelPendingCapture()
             }
         }
-        // 若开启了需要「输入监控」的功能，启动时即请求授权（首次会弹系统框）
-        if AppSettings.shared.clickIndicatorEnabled { IndicatorEngine.shared.start() }
-        if AppSettings.shared.keyDisplayEnabled { KeyDisplay.shared.start() }
+        // 引擎自订阅设置开关（订阅时即按当前值启停）；开启需要「输入监控」的功能时，
+        // 订阅即触发 start() → 首次会弹系统授权框
+        IndicatorEngine.shared.startObservingSettings()
+        KeyDisplay.shared.startObservingSettings()
         AppSettings.shared.$hotKeys
             .dropFirst().receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.applyHotKeys() }.store(in: &cancellables)

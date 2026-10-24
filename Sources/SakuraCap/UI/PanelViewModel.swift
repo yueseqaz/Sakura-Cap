@@ -21,12 +21,6 @@ final class PanelViewModel: ObservableObject {
         if AppSettings.shared.recordMicrophone {
             ensureMicrophonePermission()
         }
-        if AppSettings.shared.clickIndicatorEnabled {
-            IndicatorEngine.shared.start()
-        }
-        if AppSettings.shared.keyDisplayEnabled {
-            KeyDisplay.shared.start()
-        }
     }
 
     func refreshPermissions() {

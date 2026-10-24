@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// 按键显示引擎：录制期间收到按键 → 在「录制区域左下角」浮出按键文本，约 1 秒后淡出。
@@ -14,9 +15,22 @@ final class KeyDisplay: ObservableObject {
     private var window: KeyDisplayWindow?
     private var fadeTimer: Timer?
     private var capturing = false
+    private var settingsCancellable: AnyCancellable?
 
     private init() {
         monitor.onKey = { [weak self] label in self?.handle(label) }
+    }
+
+    /// 订阅设置：开关打开即监听、关闭即停止（订阅时先按当前值执行一次）。
+    /// 启动时调用一次；之后 UI 只改设置，引擎自己跟进。
+    func startObservingSettings() {
+        guard settingsCancellable == nil else { return }
+        settingsCancellable = AppSettings.shared.$keyDisplayEnabled
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                if enabled { self.start() } else { self.stop() }
+            }
     }
 
     /// 启动监听（面板打开开关或开始录制时调用）。返回 false = 缺输入监控权限。

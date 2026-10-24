@@ -201,11 +201,9 @@ private struct RecordingHUDView: View {
             .help("摄像头画中画")
             inputToggle("cursorarrow.click", on: settings.clickIndicatorEnabled, help: "鼠标点击标记") {
                 settings.clickIndicatorEnabled.toggle()
-                if settings.clickIndicatorEnabled { IndicatorEngine.shared.start() } else { IndicatorEngine.shared.stop() }
             }
             inputToggle("keyboard", on: settings.keyDisplayEnabled, help: "键盘按键显示") {
                 settings.keyDisplayEnabled.toggle()
-                if settings.keyDisplayEnabled { KeyDisplay.shared.start() } else { KeyDisplay.shared.stop() }
             }
         }
     }

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// 点击指示引擎：录制期间收到点击 → 在对应屏幕弹出覆盖层窗口。
@@ -13,6 +14,7 @@ final class IndicatorEngine: ObservableObject {
     private let monitor = ClickMonitor()
     private var windows: [IndicatorWindow] = []
     private var capturing = false
+    private var settingsCancellable: AnyCancellable?
 
     private init() {
         monitor.onLeftClick = { [weak self] point in self?.spawn(at: point, isRight: false) }
@@ -20,6 +22,18 @@ final class IndicatorEngine: ObservableObject {
             guard let self, AppSettings.shared.indicatorIncludeRightClick else { return }
             self.spawn(at: point, isRight: true)
         }
+    }
+
+    /// 订阅设置：开关打开即监听、关闭即停止（订阅时先按当前值执行一次）。
+    /// 启动时调用一次；之后 UI 只改设置，引擎自己跟进——不再依赖调用方记得「改设置 + 启停引擎」两步。
+    func startObservingSettings() {
+        guard settingsCancellable == nil else { return }
+        settingsCancellable = AppSettings.shared.$clickIndicatorEnabled
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                if enabled { self.start() } else { self.stop() }
+            }
     }
 
     /// 启动监听（面板打开开关或开始录制时调用）。返回 false = 缺输入监控权限。
