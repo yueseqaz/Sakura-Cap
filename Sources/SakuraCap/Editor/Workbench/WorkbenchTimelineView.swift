@@ -120,14 +120,88 @@ final class WorkbenchTimelineContainer: NSView {
         addSubview(zoomStack)
         self.zoomStack = zoomStack
 
-        // 滚动偏移变化时重绘播放头浮层（它按视口坐标画线）
+        // 滚动偏移变化时重绘播放头浮层（它按视口坐标画线）；滚动时收起悬停预览
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification,
                                                object: scrollView.contentView, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.playhead.needsDisplay = true
+                self?.hideHoverPreview()
             }
         }
+
+        // 视频轨悬停帧预览（在画布回调驱动下更新）
+        addSubview(hoverPreview)
+        hoverPreview.isHidden = true
+        canvas.onHoverFrame = { [weak self] timelineTime, sourceTime, point in
+            self?.handleHoverFrame(timelineTime: timelineTime, sourceTime: sourceTime, at: point)
+        }
+        canvas.onHideHoverFrame = { [weak self] in self?.hideHoverPreview() }
+    }
+
+    // MARK: 悬停帧预览
+
+    private let hoverPreview = HoverPreviewView()
+    private var hoverState: (timelineTime: Double, point: NSPoint)?
+    private var hoverImage: CGImage?
+    private var hoverBucket: Int?
+    private var hoverRevealWork: DispatchWorkItem?
+
+    func handleHoverFrame(timelineTime: Double, sourceTime: Double, at point: NSPoint) {
+        guard let media = model?.media else { return }
+        hoverState = (timelineTime, point)
+
+        let bucket = Int((sourceTime * WorkbenchMedia.frameBucket).rounded())
+        if hoverBucket != bucket {
+            hoverBucket = bucket
+            hoverImage = media.cachedHoverFrame(sourceSeconds: sourceTime)
+            Task { [weak self] in
+                guard let self else { return }
+                let image = await media.loadHoverFrame(sourceSeconds: sourceTime)
+                guard self.hoverBucket == bucket, let image else { return }
+                self.hoverImage = image
+                if self.hoverState != nil { self.refreshHoverPreview() }
+            }
+        }
+
+        if hoverPreview.isHidden {
+            // 首次出现延迟一点，避免掠过时闪烁
+            hoverRevealWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.hoverState != nil else { return }
+                self.hoverPreview.isHidden = false
+                self.refreshHoverPreview()
+            }
+            hoverRevealWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+        } else {
+            refreshHoverPreview()
+        }
+    }
+
+    func hideHoverPreview() {
+        hoverRevealWork?.cancel()
+        hoverRevealWork = nil
+        hoverState = nil
+        hoverPreview.isHidden = true
+    }
+
+    private func refreshHoverPreview() {
+        guard let state = hoverState else { return }
+        hoverPreview.timeText = WorkbenchTimelineCanvas.rulerLabel(state.timelineTime)
+            + String(format: ".%d", Int(state.timelineTime.truncatingRemainder(dividingBy: 1) * 10))
+        hoverPreview.frameImage = hoverImage
+        hoverPreview.videoAspect = model?.videoAspect ?? 16 / 9
+        hoverPreview.needsDisplay = true
+
+        let size = hoverPreview.preferredSize
+        var origin = NSPoint(x: state.point.x - size.width / 2, y: state.point.y - size.height - 14)
+        origin.x = max(4, min(bounds.width - size.width - 4, origin.x))
+        if origin.y < 4 {
+            // 上方放不下（贴着轨道顶部）就弹在光标下方
+            origin.y = state.point.y + 14
+        }
+        hoverPreview.frame = NSRect(origin: origin, size: size)
     }
 
     private var zoomStack: NSStackView?
@@ -466,6 +540,9 @@ final class WorkbenchTimelineCanvas: NSView {
     var pps: Double = 60 {
         didSet { waveCacheSignature = nil; needsDisplay = true }
     }
+    /// 视频轨悬停 → 通知容器显示帧预览（timelineTime、sourceTime、容器坐标点）
+    var onHoverFrame: ((Double, Double, NSPoint) -> Void)?
+    var onHideHoverFrame: (() -> Void)?
 
     // 拖拽状态
     private enum DragMode {
@@ -923,6 +1000,7 @@ final class WorkbenchTimelineCanvas: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let model else { return }
+        onHideHoverFrame?()
         let p = convert(event.locationInWindow, from: nil)
         dragLastX = p.x
         guard let row = row(atY: p.y) else { return }
@@ -1310,6 +1388,20 @@ final class WorkbenchTimelineCanvas: NSView {
             hoverEdge = edge
             needsDisplay = true
         }
+
+        // 视频轨悬停帧预览
+        if newHover != nil, !edge,
+           let container = enclosingScrollView?.superview as? WorkbenchTimelineContainer {
+            let t = time(forX: p.x)
+            if let hit = model.document.clip(atTimeline: t) {
+                let clipStart = model.document.timelineStart(ofClip: hit.clip.id)
+                let sourceT = hit.clip.sourceIn + max(0, min(hit.clip.duration, t - clipStart))
+                let point = container.convert(event.locationInWindow, from: nil)
+                onHoverFrame?(t, sourceT, point)
+            }
+        } else {
+            onHideHoverFrame?()
+        }
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -1318,6 +1410,7 @@ final class WorkbenchTimelineCanvas: NSView {
             hoverEdge = false
             needsDisplay = true
         }
+        onHideHoverFrame?()
     }
 
     override func cursorUpdate(with event: NSEvent) {
@@ -1446,6 +1539,64 @@ final class WorkbenchTimelineCanvas: NSView {
     @objc private func menuDeleteGain(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UUID else { return }
         model?.removeGain(id)
+    }
+}
+
+// MARK: - 悬停帧预览浮层
+
+/// 视频轨划过时显示对应帧 + 时间码的小浮层（容器坐标定位，自绘）
+final class HoverPreviewView: NSView {
+    var frameImage: CGImage?
+    var timeText: String = ""
+    var videoAspect: CGFloat = 16 / 9
+
+    override var isFlipped: Bool { true }
+
+    private let imageHeight: CGFloat = 132
+    private let labelHeight: CGFloat = 18
+    private let padding: CGFloat = 5
+
+    var preferredSize: NSSize {
+        let width = max(120, imageHeight * max(videoAspect, 0.3)) + padding * 2
+        return NSSize(width: width, height: imageHeight + labelHeight + padding * 2)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let background = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                                      xRadius: 8, yRadius: 8)
+        NSColor.windowBackgroundColor.withAlphaComponent(0.97).setFill()
+        background.fill()
+        NSColor.separatorColor.setStroke()
+        background.lineWidth = 1
+        background.stroke()
+
+        let imageRect = NSRect(x: padding, y: padding,
+                               width: bounds.width - padding * 2, height: imageHeight)
+        if let frameImage {
+            let aspect = max(0.1, CGFloat(frameImage.width) / CGFloat(frameImage.height))
+            var drawRect = imageRect
+            if drawRect.width / aspect <= imageRect.height {
+                drawRect.size.height = drawRect.width / aspect
+            } else {
+                drawRect.size.width = drawRect.height * aspect
+            }
+            drawRect.origin.x = imageRect.midX - drawRect.width / 2
+            drawRect.origin.y = imageRect.midY - drawRect.height / 2
+            NSImage(cgImage: frameImage, size: NSSize(width: frameImage.width, height: frameImage.height))
+                .draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
+        } else {
+            NSColor.quaternaryLabelColor.setFill()
+            imageRect.fill()
+        }
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
+        let size = (timeText as NSString).size(withAttributes: attrs)
+        (timeText as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2,
+                                                y: padding + imageHeight + (labelHeight - size.height) / 2),
+                                    withAttributes: attrs)
     }
 }
 

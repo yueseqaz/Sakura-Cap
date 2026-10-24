@@ -298,6 +298,16 @@ enum WorkbenchEngine {
                 boundaries.insert(gain.end)
             }
             for t in boundaries.sorted() {
+                // setVolume 在相邻时间点之间是线性插值：拐点若只设单个值，
+                // 整个音量段会变成「起点音量 → 终点音量」的斜坡（静音段听起来
+                // 只静一瞬间）。因此每个拐点拆成 [t-1/600, t] 两个点，
+                // 跳变压缩到一个采样内，段内保持恒定值。
+                let eps = 1.0 / 600.0
+                if t > eps {
+                    let before = t - eps
+                    parameters.setVolume(effectiveVolume(lane: lane, laneIndex: index, at: before),
+                                         at: CMTime(seconds: before, preferredTimescale: 600))
+                }
                 parameters.setVolume(effectiveVolume(lane: lane, laneIndex: index, at: t),
                                      at: CMTime(seconds: t, preferredTimescale: 600))
             }

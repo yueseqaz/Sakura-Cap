@@ -78,6 +78,42 @@ final class WorkbenchMedia {
         return context.makeImage()!
     }
 
+    // MARK: 悬停帧预览（视频轨划过时显示对应帧）
+
+    private var hoverGenerator: AVAssetImageGenerator?
+    private var frameCache: [Int: CGImage] = [:]
+    private var frameCacheOrder: [Int] = []
+    /// 悬停帧按 1/20 秒分桶缓存（键 = Int(秒 × 20)），上限 100 张、先进先出
+    static let frameBucket: Double = 20
+
+    func cachedHoverFrame(sourceSeconds: Double) -> CGImage? {
+        frameCache[Int((sourceSeconds * Self.frameBucket).rounded())]
+    }
+
+    /// 异步取一帧（带缓存）；时间按桶心对齐，避免同一桶反复解码
+    func loadHoverFrame(sourceSeconds: Double) async -> CGImage? {
+        let key = Int((sourceSeconds * Self.frameBucket).rounded())
+        if let hit = frameCache[key] { return hit }
+        if hoverGenerator == nil {
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 480, height: 270)
+            generator.requestedTimeToleranceBefore = CMTime(seconds: 0.05, preferredTimescale: 600)
+            generator.requestedTimeToleranceAfter = CMTime(seconds: 0.05, preferredTimescale: 600)
+            hoverGenerator = generator
+        }
+        guard let generator = hoverGenerator else { return nil }
+        let t = CMTime(seconds: (Double(key) + 0.5) / Self.frameBucket, preferredTimescale: 600)
+        guard let image = try? await generator.image(at: t).image else { return nil }
+        frameCache[key] = image
+        frameCacheOrder.append(key)
+        if frameCacheOrder.count > 100 {
+            let oldest = frameCacheOrder.removeFirst()
+            if oldest != key { frameCache.removeValue(forKey: oldest) }
+        }
+        return image
+    }
+
     // MARK: 波形（后台解码，每轨一次）
 
     func generateWaveforms() async {
