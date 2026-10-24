@@ -23,7 +23,8 @@ final class WorkbenchViewModel: ObservableObject {
     var requestClose: (() -> Void)?
 
     let player: AVPlayer
-    private(set) var media: WorkbenchMedia!
+    /// 加载成功才有值（load 失败时为 nil，调用方须判空——IUO 曾是崩溃隐患）
+    private(set) var media: WorkbenchMedia?
     private var videoTrack: AVAssetTrack?
     private var audioSourceTracks: [AVAssetTrack] = []
     private var appliedTimeline: WorkbenchEngine.BuiltTimeline?
@@ -136,9 +137,10 @@ final class WorkbenchViewModel: ObservableObject {
         }
         audioSourceTracks = sourceTracks
 
-        media = WorkbenchMedia(asset: asset, duration: duration, videoSize: size,
-                               videoAspect: aspect, audioTracks: tracks)
+        let media = WorkbenchMedia(asset: asset, duration: duration, videoSize: size,
+                                   videoAspect: aspect, audioTracks: tracks)
         media.onChange = { [weak self] in self?.mediaStamp += 1 }
+        self.media = media
 
         document = WorkbenchDocument(
             clips: [WorkbenchClip(sourceIn: 0, sourceOut: duration)],
@@ -150,9 +152,9 @@ final class WorkbenchViewModel: ObservableObject {
 
         await withTaskGroup(of: Void.self) { group in
             if !isAudioOnly {
-                group.addTask { await self.media.generateThumbnails() }
+                group.addTask { await media.generateThumbnails() }
             }
-            group.addTask { await self.media.generateWaveforms() }
+            group.addTask { await media.generateWaveforms() }
             await group.waitForAll()
         }
         rebuildTimeline()
@@ -514,7 +516,8 @@ final class WorkbenchViewModel: ObservableObject {
     }
 
     private func loadAnnotationFrame(for id: UUID, at timelineSeconds: Double) async {
-        guard let segment = document.annotations.first(where: { $0.id == id }) else { return }
+        guard let media,
+              let segment = document.annotations.first(where: { $0.id == id }) else { return }
         let generator = AVAssetImageGenerator(asset: media.asset)
         generator.appliesPreferredTrackTransform = true
         if let comp = WorkbenchEngine.videoComposition(document: document, base: media.asset,
@@ -636,6 +639,7 @@ final class WorkbenchViewModel: ObservableObject {
 
     func export(deleteOriginal: Bool, to outURL: URL) async {
         guard duration > 0.05 else { status = L("裁剪区间太短"); return }
+        guard let media else { status = L("无法读取视频时长"); return }
         isExporting = true
         status = nil
         player.pause()
@@ -723,6 +727,7 @@ final class WorkbenchViewModel: ObservableObject {
 
     func exportGIF(size: GIFSize, to outURL: URL) async {
         guard duration > 0.05 else { status = L("裁剪区间太短"); return }
+        guard let media else { status = L("无法读取视频时长"); return }
         isExporting = true
         status = nil
         player.pause()

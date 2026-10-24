@@ -637,3 +637,4 @@
 "聊天记录保存失败" = "Failed to save chat history";
 "部分聊天记录无法读取" = "Some chat history could not be read";
 "%d 个聊天记录文件无法读取，已跳过（文件保留在原处）" = "%d chat history file(s) were unreadable and skipped (files kept in place)";
+"更新包缺少 sha256 校验值，为安全起见已取消自动安装" = "The update package is missing its sha256 checksum; automatic installation was cancelled for safety";

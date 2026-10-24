@@ -23,6 +23,8 @@ final class AudioEditorPresenter: NSObject, NSWindowDelegate {
     static let shared = AudioEditorPresenter()
 
     private var entries: [(window: AudioEditorWindow, model: WorkbenchViewModel)] = []
+    /// 每扇窗口的 willClose token，关窗时一并移除，避免 NotificationCenter 累积注册
+    private var closeObservers: [NSWindow: NSObjectProtocol] = [:]
 
     func show(url: URL, origin: TrimOrigin) {
         if let existing = entries.first(where: { $0.model.sourceURL.standardizedFileURL == url.standardizedFileURL }) {
@@ -57,12 +59,21 @@ final class AudioEditorPresenter: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
-                                               object: window, queue: .main) { [weak self] note in
+        let token = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
+                                                           object: window, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let closed = note.object as? NSWindow else { return }
-                self?.entries.removeAll { $0.window === closed }
+                self?.removeEntry(for: closed)
             }
+        }
+        closeObservers[window] = token
+    }
+
+    private func removeEntry(for closed: NSWindow) {
+        entries.removeAll { $0.window === closed }
+        if let token = closeObservers[closed] {
+            NotificationCenter.default.removeObserver(token)
+            closeObservers[closed] = nil
         }
     }
 

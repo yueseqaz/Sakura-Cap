@@ -26,6 +26,9 @@ final class ScrollingCapture {
     private var autoScrolling = false
 
     func start(region: RegionSelection) {
+        // 防重入：已有会话进行中时忽略再次进入。
+        // 否则下面的覆盖赋值会让旧 timer / 滚动事件 monitor / HUD 永远失去引用、无法清理。
+        guard hud == nil else { return }
         stopAutoScroll()
         self.region = region
         segments.removeAll()
@@ -56,6 +59,7 @@ final class ScrollingCapture {
     }
 
     private func startTimer() {
+        timer?.invalidate()
         let timer = Timer(timeInterval: 0.35, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.captureOnce() }
         }

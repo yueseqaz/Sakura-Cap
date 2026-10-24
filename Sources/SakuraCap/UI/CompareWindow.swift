@@ -45,6 +45,7 @@ final class CompareWindowController {
     private let saveButton = NSButton()
     private let orientationSegment = NSSegmentedControl()
     private let hintLabel = NSTextField(labelWithString: "")
+    private var closeToken: NSObjectProtocol?
 
     init(original: CGImage) {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 580),
@@ -111,10 +112,15 @@ final class CompareWindowController {
         ])
         window.contentView = container
 
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
-                                               object: window, queue: .main) { [weak self] _ in
+        closeToken = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
+                                                            object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.onClose?() }
         }
+    }
+
+    deinit {
+        // NotificationCenter 持有 block，必须凭 token 显式移除，否则反复开关窗口会累积注册
+        if let closeToken { NotificationCenter.default.removeObserver(closeToken) }
     }
 
     func show() {

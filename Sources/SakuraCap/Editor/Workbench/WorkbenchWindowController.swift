@@ -23,7 +23,9 @@ final class WorkbenchWindowController: NSObject, NSWindowDelegate {
     static let shared = WorkbenchWindowController()
 
     private var entries: [(window: WorkbenchWindow, model: WorkbenchViewModel)] = []
-    private var fullscreenObservers: [NSObjectProtocol] = []
+    /// 每扇窗口的观察者 token（全屏联动 + willClose），关窗时一并移除，
+    /// 否则 NotificationCenter 会无限累积 block 注册。
+    private var observers: [NSWindow: [NSObjectProtocol]] = [:]
 
     func show(url: URL, origin: TrimOrigin) {
         if let existing = entries.first(where: { $0.model.sourceURL.standardizedFileURL == url.standardizedFileURL }) {
@@ -61,31 +63,40 @@ final class WorkbenchWindowController: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
 
-        let enterObserver = NotificationCenter.default.addObserver(forName: NSWindow.didEnterFullScreenNotification,
-                                                                   object: window, queue: .main) { note in
-            MainActor.assumeIsolated {
-                if let entry = self.entries.first(where: { $0.window === note.object as? NSWindow }) {
-                    entry.model.isFullscreen = true
-                }
-            }
-        }
-        let exitObserver = NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification,
-                                                                  object: window, queue: .main) { note in
-            MainActor.assumeIsolated {
-                if let entry = self.entries.first(where: { $0.window === note.object as? NSWindow }) {
-                    entry.model.isFullscreen = false
-                }
-            }
-        }
-        fullscreenObservers.append(contentsOf: [enterObserver, exitObserver])
+        observe(window: window)
+    }
 
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
-                                               object: window, queue: .main) { [weak self] note in
+    private func observe(window: NSWindow) {
+        let center = NotificationCenter.default
+        var tokens: [NSObjectProtocol] = []
+        tokens.append(center.addObserver(forName: NSWindow.didEnterFullScreenNotification,
+                                         object: window, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated { self?.syncFullscreen(note, isFullscreen: true) }
+        })
+        tokens.append(center.addObserver(forName: NSWindow.didExitFullScreenNotification,
+                                         object: window, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated { self?.syncFullscreen(note, isFullscreen: false) }
+        })
+        tokens.append(center.addObserver(forName: NSWindow.willCloseNotification,
+                                         object: window, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let closed = note.object as? NSWindow else { return }
-                self?.entries.removeAll { $0.window === closed }
+                self?.removeEntry(for: closed)
             }
-        }
+        })
+        observers[window] = tokens
+    }
+
+    private func syncFullscreen(_ note: Notification, isFullscreen: Bool) {
+        guard let window = note.object as? NSWindow,
+              let entry = entries.first(where: { $0.window === window }) else { return }
+        entry.model.isFullscreen = isFullscreen
+    }
+
+    private func removeEntry(for closed: NSWindow) {
+        entries.removeAll { $0.window === closed }
+        observers[closed]?.forEach(NotificationCenter.default.removeObserver)
+        observers[closed] = nil
     }
 
     func toggleFullscreen(of model: WorkbenchViewModel) {

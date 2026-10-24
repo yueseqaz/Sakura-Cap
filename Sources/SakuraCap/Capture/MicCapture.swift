@@ -7,10 +7,18 @@ final class MicCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     private let session = AVCaptureSession()
     private let output = AVCaptureAudioDataOutput()
     private let queue = DispatchQueue(label: "com.sakura.sakuracap.mic", qos: .userInitiated)
-    private var onBuffer: ((CMSampleBuffer) -> Void)?
+
+    // onBuffer：主线程写、采集队列读；audioFormat：采集队列写、任意线程轮询读。
+    // 两者都跨线程，统一用锁保护（高频路径只做一次加锁取引用）。
+    private let lock = NSLock()
+    private var _onBuffer: ((CMSampleBuffer) -> Void)?
+    private var _audioFormat: (sampleRate: Double, channels: Int)?
 
     /// 首个样本实测的设备格式（写入在采集队列，主线程轮询读取，一次性写入）
-    private(set) var audioFormat: (sampleRate: Double, channels: Int)?
+    var audioFormat: (sampleRate: Double, channels: Int)? {
+        lock.lock(); defer { lock.unlock() }
+        return _audioFormat
+    }
 
     func start() throws {
         let selectedID = AppSettings.shared.microphoneDeviceID
@@ -46,22 +54,31 @@ final class MicCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     }
 
     func setOnBuffer(_ handler: ((CMSampleBuffer) -> Void)?) {
-        onBuffer = handler
+        lock.lock(); defer { lock.unlock() }
+        _onBuffer = handler
     }
 
     func stop() {
-        onBuffer = nil
+        lock.lock(); defer { lock.unlock() }
+        _onBuffer = nil
         session.stopRunning()
         Log.audio.info("麦克风采集已停止")
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        if audioFormat == nil,
+        var firstFormat: (sampleRate: Double, channels: Int)?
+        lock.lock()
+        if _audioFormat == nil,
            let desc = CMSampleBufferGetFormatDescription(sampleBuffer),
            let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc)?.pointee {
-            audioFormat = (asbd.mSampleRate, Int(asbd.mChannelsPerFrame))
-            Log.audio.info("麦克风格式: \(self.audioFormat!.sampleRate, format: .fixed(precision: 0)) Hz × \(self.audioFormat!.channels) ch")
+            _audioFormat = (asbd.mSampleRate, Int(asbd.mChannelsPerFrame))
+            firstFormat = _audioFormat
         }
-        onBuffer?(sampleBuffer)
+        let handler = _onBuffer
+        lock.unlock()
+        if let firstFormat {
+            Log.audio.info("麦克风格式: \(firstFormat.sampleRate, format: .fixed(precision: 0)) Hz × \(firstFormat.channels) ch")
+        }
+        handler?(sampleBuffer)
     }
 }

@@ -64,6 +64,11 @@ enum UpdateInstaller {
                                                        options: .regularExpression) != nil else {
             throw UpdateError.invalidPackage
         }
+        // 应用为 ad-hoc 签名，codesign 只能证明包完整、无法 pin 开发者身份，
+        // sha256 摘要是唯一强校验：缺失即拒绝自动安装（GitHub API 限流回退路径拿不到 digest）。
+        guard let digest, digest.hasPrefix("sha256:") else {
+            throw UpdateError.missingDigest
+        }
         let app = Bundle.main.bundleURL.resolvingSymlinksInPath()
         guard app.pathExtension == "app", app.lastPathComponent == "Sakura-Cap.app" else {
             throw UpdateError.invalidLocation
@@ -84,12 +89,9 @@ enum UpdateInstaller {
         let archive = work.appendingPathComponent("update.zip")
         try FileManager.default.moveItem(at: zip, to: archive)
         try await Task.detached(priority: .utility) {
-            if let digest {
-                guard digest.hasPrefix("sha256:"),
-                      SHA256.hash(data: try Data(contentsOf: archive, options: .mappedIfSafe))
-                        .map { String(format: "%02x", $0) }.joined() == String(digest.dropFirst(7)).lowercased() else {
-                    throw UpdateError.invalidPackage
-                }
+            guard SHA256.hash(data: try Data(contentsOf: archive, options: .mappedIfSafe))
+                .map { String(format: "%02x", $0) }.joined() == String(digest.dropFirst(7)).lowercased() else {
+                throw UpdateError.invalidPackage
             }
             let extracted = work.appendingPathComponent("extracted")
             try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
@@ -146,11 +148,12 @@ enum UpdateInstaller {
     }
 
     private enum UpdateError: LocalizedError {
-        case invalidPackage, invalidLocation
+        case invalidPackage, invalidLocation, missingDigest
         var errorDescription: String? {
             switch self {
             case .invalidPackage: return L("更新包下载或校验失败")
             case .invalidLocation: return L("无法在当前安装位置自动更新")
+            case .missingDigest: return L("更新包缺少 sha256 校验值，为安全起见已取消自动安装")
             }
         }
     }

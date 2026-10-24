@@ -54,6 +54,8 @@ final class TranslationViewModel: ObservableObject {
 final class TranslationPresenter {
     static let shared = TranslationPresenter()
     private var windows: [NSWindow] = []
+    /// 每扇窗口的 willClose token，关窗时一并移除，避免 NotificationCenter 累积注册
+    private var closeObservers: [NSWindow: NSObjectProtocol] = [:]
 
     /// 打开翻译窗口；original 非空则回填并（autoTranslate 时）立即翻译
     @discardableResult
@@ -81,13 +83,17 @@ final class TranslationPresenter {
         window.center()
         window.makeKeyAndOrderFront(nil)
         windows.append(window)
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
-                                               object: window, queue: .main) { [weak self] note in
+        let token = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
+                                                           object: window, queue: .main) { [weak self] note in
             MainActor.assumeIsolated {
                 guard let closed = note.object as? NSWindow else { return }
                 self?.windows.removeAll { $0 === closed }
+                if let token = self?.closeObservers.removeValue(forKey: closed) {
+                    NotificationCenter.default.removeObserver(token)
+                }
             }
         }
+        closeObservers[window] = token
         return model
     }
 

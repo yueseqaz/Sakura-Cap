@@ -169,8 +169,21 @@ final class AudioFileWriter {
 
 // MARK: - 录音控制器（系统声音：SCK 音频流；麦克风：MicCapture）
 
+/// SCK 音频回调的落点：只持有不可变的 writer 引用。
+/// 回调运行在 SCK 的工作队列上，绝不能读 MainActor 可变状态（如 self.writer）——
+/// 否则与主线程 cleanup() 置 nil 构成跨线程竞态（视频链路的 FileWriter 同样只碰不可变捕获）。
+private final class SystemAudioSink: NSObject, SCStreamOutput {
+    private let writer: AudioFileWriter
+    init(writer: AudioFileWriter) { self.writer = writer }
+
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .audio else { return }
+        writer.append(sampleBuffer, track: .system)
+    }
+}
+
 @MainActor
-final class AudioRecorderController: NSObject, ObservableObject, SCStreamOutput {
+final class AudioRecorderController: NSObject, ObservableObject {
     static let shared = AudioRecorderController()
 
     enum State: Equatable { case idle, recording, paused }
@@ -195,12 +208,12 @@ final class AudioRecorderController: NSObject, ObservableObject, SCStreamOutput 
 
     private(set) var source: Source = .both
     private var stream: SCStream?
+    private var systemSink: SystemAudioSink?
     private var mic: MicCapture?
     private var writer: AudioFileWriter?
     private var timer: Timer?
     private var accumulated: TimeInterval = 0
     private var segmentStart: Date?
-    private let frameQueue = DispatchQueue(label: "com.sakura.sakuracap.audioframes", qos: .userInitiated)
 
     var isBusy: Bool { state != .idle }
 
@@ -352,17 +365,16 @@ final class AudioRecorderController: NSObject, ObservableObject, SCStreamOutput 
             config.colorSpaceName = CGColorSpace.sRGB
             config.captureResolution = .best
         }
+        // writer 在调用方已建好：sink 持不可变引用，回调线程安全
+        guard let writer else { throw RecordingError.noDisplays }
+        let sink = SystemAudioSink(writer: writer)
         let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: frameQueue)
-        // SCK 要求同时挂视频输出，否则音频一个缓冲都不会送（视频帧直接丢弃）
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: frameQueue)
+        try stream.addStreamOutput(sink, type: .audio, sampleHandlerQueue: nil)
+        // SCK 要求同时挂视频输出，否则音频一个缓冲都不会送（视频帧由 sink 丢弃）
+        try stream.addStreamOutput(sink, type: .screen, sampleHandlerQueue: nil)
         try await stream.startCapture()
         self.stream = stream
-    }
-
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .audio else { return }
-        writer?.append(sampleBuffer, track: .system)
+        self.systemSink = sink
     }
 
     // MARK: 计时
@@ -388,6 +400,7 @@ final class AudioRecorderController: NSObject, ObservableObject, SCStreamOutput 
             Task { try? await stream.stopCapture() }
         }
         stream = nil
+        systemSink = nil
         mic?.stop()
         mic = nil
         writer = nil
