@@ -67,6 +67,8 @@ final class WorkbenchViewModel: ObservableObject {
 
     var videoAspect: CGFloat { media?.videoAspect ?? 16 / 9 }
     var videoSize: CGSize { media?.videoSize ?? CGSize(width: 1920, height: 1080) }
+    /// 纯音频模式（m4a 录音编辑）：无画面轨
+    private(set) var isAudioOnly = false
 
     init(url: URL) {
         sourceURL = url
@@ -99,8 +101,10 @@ final class WorkbenchViewModel: ObservableObject {
 
         var size = CGSize(width: 1920, height: 1080)
         var aspect: CGFloat = 16 / 9
+        isAudioOnly = true
         if let track = try? await asset.loadTracks(withMediaType: .video).first {
             videoTrack = track
+            isAudioOnly = false
             let natural = (try? await track.load(.naturalSize)) ?? .zero
             let transform = (try? await track.load(.preferredTransform)) ?? .identity
             let oriented = natural.applying(transform)
@@ -142,7 +146,9 @@ final class WorkbenchViewModel: ObservableObject {
         if pixelsPerSecond <= 0 { pixelsPerSecond = 60 }
 
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.media.generateThumbnails() }
+            if !isAudioOnly {
+                group.addTask { await self.media.generateThumbnails() }
+            }
             group.addTask { await self.media.generateWaveforms() }
             await group.waitForAll()
         }
@@ -626,21 +632,25 @@ final class WorkbenchViewModel: ObservableObject {
         do {
             let built = try await WorkbenchEngine.build(asset: media.asset, document: document,
                                                         videoSource: videoTrack, audioSources: audioSourceTracks)
-            let preset = hasEdits ? AVAssetExportPresetHighestQuality : AVAssetExportPresetPassthrough
+            let preset = isAudioOnly
+                ? (hasEdits ? AVAssetExportPresetAppleM4A : AVAssetExportPresetPassthrough)
+                : (hasEdits ? AVAssetExportPresetHighestQuality : AVAssetExportPresetPassthrough)
             guard let exporter = AVAssetExportSession(asset: built.composition, presetName: preset) else {
                 status = L("无法创建导出任务")
                 return
             }
-            exporter.videoComposition = WorkbenchEngine.videoComposition(document: document,
-                                                                         base: built.composition,
-                                                                         renderSize: videoSize)
+            if !isAudioOnly {
+                exporter.videoComposition = WorkbenchEngine.videoComposition(document: document,
+                                                                             base: built.composition,
+                                                                             renderSize: videoSize)
+            }
             exporter.audioMix = WorkbenchEngine.audioMix(document: document, audioTrackIDs: built.audioTrackIDs)
             exporter.shouldOptimizeForNetworkUse = true
             if #available(macOS 15.0, *) {
-                try await exporter.export(to: outURL, as: .mp4)
+                try await exporter.export(to: outURL, as: isAudioOnly ? .m4a : .mp4)
             } else {
                 exporter.outputURL = outURL
-                exporter.outputFileType = .mp4
+                exporter.outputFileType = isAudioOnly ? .m4a : .mp4
                 try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
                     exporter.exportAsynchronously {
                         if let error = exporter.error { cont.resume(throwing: error) }
@@ -812,7 +822,8 @@ final class WorkbenchViewModel: ObservableObject {
     private static func outputURL(for url: URL) -> URL {
         let dir = url.deletingLastPathComponent()
         let base = url.deletingPathExtension().lastPathComponent
-        return dir.appendingPathComponent("\(base) - \(L("剪辑")).mp4")
+        let ext = (url.pathExtension.lowercased() == "m4a" || url.pathExtension.lowercased() == "mp3") ? "m4a" : "mp4"
+        return dir.appendingPathComponent("\(base) - \(L("剪辑")).\(ext)")
     }
 
     private static func gifOutputURL(for url: URL) -> URL {

@@ -129,11 +129,11 @@ struct WorkbenchDocument: Equatable {
 @MainActor
 enum WorkbenchEngine {
     enum EngineError: LocalizedError {
-        case noVideoTrack
+        case noTracks
         case insertFailed
         var errorDescription: String? {
             switch self {
-            case .noVideoTrack: return L("视频缺少画面轨，无法编辑")
+            case .noTracks: return L("音频与画面轨都缺失，无法编辑")
             case .insertFailed: return L("构建时间线失败")
             }
         }
@@ -148,16 +148,19 @@ enum WorkbenchEngine {
     /// 按文档把片段拼成 AVMutableComposition（元数据级操作，不解码）。
     static func build(asset: AVAsset, document: WorkbenchDocument,
                       videoSource: AVAssetTrack?, audioSources: [AVAssetTrack]) async throws -> BuiltTimeline {
-        guard let videoSource else { throw EngineError.noVideoTrack }
+        guard videoSource != nil || !audioSources.isEmpty else { throw EngineError.noTracks }
         let composition = AVMutableComposition()
 
-        let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
         var cursor = CMTime.zero
-        for clip in document.clips where clip.duration > 0 {
-            let range = CMTimeRange(start: CMTime(seconds: clip.sourceIn, preferredTimescale: 600),
-                                    end: CMTime(seconds: clip.sourceOut, preferredTimescale: 600))
-            try videoTrack?.insertTimeRange(range, of: videoSource, at: cursor)
-            cursor = CMTimeAdd(cursor, range.duration)
+        if let videoSource {
+            let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+            cursor = CMTime.zero
+            for clip in document.clips where clip.duration > 0 {
+                let range = CMTimeRange(start: CMTime(seconds: clip.sourceIn, preferredTimescale: 600),
+                                        end: CMTime(seconds: clip.sourceOut, preferredTimescale: 600))
+                try videoTrack?.insertTimeRange(range, of: videoSource, at: cursor)
+                cursor = CMTimeAdd(cursor, range.duration)
+            }
         }
 
         var audioTrackIDs: [CMPersistentTrackID] = []

@@ -320,6 +320,10 @@ final class AudioRecorderController: NSObject, ObservableObject, SCStreamOutput 
                 self.lastSavedURL = url
                 CompletionNotifier.shared.postSaved(url: url, duration: duration)
                 Toast.show(title: L("已保存录音"), detail: url.lastPathComponent)
+                // 按设置自动打开剪辑（片段裁剪 / 淡入淡出 / 音量段）
+                if AppSettings.shared.autoTrimAfterRecording {
+                    WorkbenchWindowController.shared.show(url: url, origin: .recording)
+                }
             } else {
                 Toast.show(title: L("没有录到声音"), detail: nil)
             }

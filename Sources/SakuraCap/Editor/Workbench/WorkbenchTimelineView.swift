@@ -33,6 +33,7 @@ struct WorkbenchTimeline: NSViewRepresentable {
     let mediaStamp: Int
     let editingAnnotation: UUID?
     let isFullscreen: Bool
+    let audioOnly: Bool
 
     init(model: WorkbenchViewModel) {
         self.model = model
@@ -44,6 +45,7 @@ struct WorkbenchTimeline: NSViewRepresentable {
         self.mediaStamp = model.mediaStamp
         self.editingAnnotation = model.editingAnnotationID
         self.isFullscreen = model.isFullscreen
+        self.audioOnly = model.isAudioOnly
     }
 
     func makeNSView(context: Context) -> WorkbenchTimelineContainer {
@@ -67,6 +69,7 @@ final class WorkbenchTimelineContainer: NSView {
     private let zoomSlider = NSSlider(value: 0.4, minValue: 0, maxValue: 1, target: nil, action: nil)
 
     private var model: WorkbenchViewModel?
+    private var audioOnly = false
     private var didFitZoom = false
     private var lastSignature: Signature?
     private var lastPlayhead: Double = -1
@@ -309,7 +312,7 @@ final class WorkbenchTimelineContainer: NSView {
         let pps = CGFloat(model.pixelsPerSecond)
         // 画布宽度 = 视频时长 × 缩放，精确到视频结尾，不附加空白
         let width = max(scrollView.contentView.bounds.width, CGFloat(model.duration) * pps)
-        let height = WorkbenchTimelineCanvas.contentHeight(laneCount: model.document.lanes.count)
+        let height = WorkbenchTimelineCanvas.contentHeight(laneCount: model.document.lanes.count, audioOnly: audioOnly)
         canvas.model = model
         canvas.pps = model.pixelsPerSecond
         let newFrame = NSRect(x: 0, y: 0, width: width, height: height)
@@ -324,7 +327,10 @@ final class WorkbenchTimelineContainer: NSView {
 
     func sync(with model: WorkbenchViewModel) {
         self.model = model
+        audioOnly = model.isAudioOnly
         headerColumn.model = model
+        headerColumn.audioOnly = audioOnly
+        canvas.audioOnly = audioOnly
         // 时长异步加载完成后做一次自适应缩放（首帧 layout 时 duration 还是 0）：
         // 恰好铺满可视宽度，不多显示一秒空白
         if !didFitZoom, model.duration > 0 {
@@ -421,6 +427,9 @@ final class WorkbenchTimelineContainer: NSView {
 
 final class WorkbenchHeaderColumn: NSView {
     var model: WorkbenchViewModel?
+    var audioOnly = false {
+        didSet { needsDisplay = true }
+    }
     private var muteButtons: [NSButton] = []
 
     override var isFlipped: Bool { true }
@@ -440,7 +449,7 @@ final class WorkbenchHeaderColumn: NSView {
         guard let model, let superview = superview else { return }
         _ = superview
         for (index, _) in (model.media?.audioTracks ?? []).enumerated() {
-            let y = WorkbenchTimelineCanvas.rowY(for: .audio(index), laneCount: model.document.lanes.count)
+            let y = WorkbenchTimelineCanvas.rowY(for: .audio(index), laneCount: model.document.lanes.count, audioOnly: audioOnly)
             let height = TimelineMetrics.audioLaneHeight
             let button = NSButton(title: "", target: self, action: #selector(toggleMute(_:)))
             button.isBordered = false
@@ -473,7 +482,7 @@ final class WorkbenchHeaderColumn: NSView {
         guard let model else { return }
         let laneCount = model.document.lanes.count
         // 行底色与右侧对应
-        for row in WorkbenchTimelineCanvas.allRows(laneCount: laneCount) {
+        for row in WorkbenchTimelineCanvas.allRows(laneCount: laneCount, audioOnly: audioOnly) {
             let rect = NSRect(x: 0, y: row.y, width: frame.width, height: row.height)
             switch row.kind {
             case .ruler:
@@ -497,19 +506,22 @@ final class WorkbenchHeaderColumn: NSView {
             let y = row.y + (row.height - font.capHeight * 1.4) / 2
             (text as NSString).draw(at: NSPoint(x: inset, y: y), withAttributes: attrs)
         }
-        drawLabel(L("屏幕视频"), row: WorkbenchTimelineCanvas.rowYRow(for: .video, laneCount: laneCount))
+        drawLabel(audioOnly ? L("音频") : L("屏幕视频"),
+                  row: WorkbenchTimelineCanvas.rowYRow(for: .video, laneCount: laneCount, audioOnly: audioOnly))
         for (index, track) in (model.media?.audioTracks ?? []).enumerated() {
-            drawLabel(track.title, row: WorkbenchTimelineCanvas.rowYRow(for: .audio(index), laneCount: laneCount), inset: 10)
+            drawLabel(track.title, row: WorkbenchTimelineCanvas.rowYRow(for: .audio(index), laneCount: laneCount, audioOnly: audioOnly), inset: 10)
         }
-        drawLabel(L("画面聚焦"), row: WorkbenchTimelineCanvas.rowYRow(for: .focusLane, laneCount: laneCount))
-        drawLabel(L("标注"), row: WorkbenchTimelineCanvas.rowYRow(for: .annotationLane, laneCount: laneCount))
+        if !audioOnly {
+            drawLabel(L("画面聚焦"), row: WorkbenchTimelineCanvas.rowYRow(for: .focusLane, laneCount: laneCount))
+            drawLabel(L("标注"), row: WorkbenchTimelineCanvas.rowYRow(for: .annotationLane, laneCount: laneCount))
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
         guard let model else { return }
         let p = convert(event.locationInWindow, from: nil)
         let laneCount = model.document.lanes.count
-        for row in WorkbenchTimelineCanvas.allRows(laneCount: laneCount) {
+        for row in WorkbenchTimelineCanvas.allRows(laneCount: laneCount, audioOnly: audioOnly) {
             guard NSRect(x: 0, y: row.y, width: frame.width, height: row.height).contains(p) else { continue }
             switch row.kind {
             case .audio(let index): model.selection = .lane(index)
@@ -537,6 +549,10 @@ final class WorkbenchTimelineCanvas: NSView {
     }
 
     var model: WorkbenchViewModel?
+    /// 纯音频模式：视频行变成音频片段行（块/裁剪/排序，无缩略图），隐藏聚焦与标注轨
+    var audioOnly = false {
+        didSet { needsDisplay = true }
+    }
     var pps: Double = 60 {
         didSet { waveCacheSignature = nil; needsDisplay = true }
     }
@@ -574,13 +590,13 @@ final class WorkbenchTimelineCanvas: NSView {
 
     // MARK: 几何
 
-    static func contentHeight(laneCount: Int) -> CGFloat {
-        var rows = allRows(laneCount: laneCount)
+    static func contentHeight(laneCount: Int, audioOnly: Bool = false) -> CGFloat {
+        var rows = allRows(laneCount: laneCount, audioOnly: audioOnly)
         guard let last = rows.popLast() else { return 100 }
         return last.y + last.height + TimelineMetrics.bottomPadding
     }
 
-    static func allRows(laneCount: Int) -> [Row] {
+    static func allRows(laneCount: Int, audioOnly: Bool = false) -> [Row] {
         var rows: [Row] = []
         var y = TimelineMetrics.topPadding
         func push(_ kind: RowKind, _ height: CGFloat) {
@@ -588,25 +604,27 @@ final class WorkbenchTimelineCanvas: NSView {
             y += height + TimelineMetrics.rowSpacing
         }
         push(.ruler, TimelineMetrics.rulerHeight)
-        push(.video, TimelineMetrics.videoTrackHeight)
+        push(.video, audioOnly ? TimelineMetrics.audioLaneHeight : TimelineMetrics.videoTrackHeight)
         for index in 0..<max(0, laneCount) { push(.audio(index), TimelineMetrics.audioLaneHeight) }
-        push(.focusLane, TimelineMetrics.effectLaneHeight)
-        push(.annotationLane, TimelineMetrics.effectLaneHeight)
+        if !audioOnly {
+            push(.focusLane, TimelineMetrics.effectLaneHeight)
+            push(.annotationLane, TimelineMetrics.effectLaneHeight)
+        }
         return rows
     }
 
-    static func rowY(for kind: RowKind, laneCount: Int) -> CGFloat {
-        allRows(laneCount: laneCount).first(where: { $0.kind == kind })?.y ?? 0
+    static func rowY(for kind: RowKind, laneCount: Int, audioOnly: Bool = false) -> CGFloat {
+        allRows(laneCount: laneCount, audioOnly: audioOnly).first(where: { $0.kind == kind })?.y ?? 0
     }
 
-    static func rowYRow(for kind: RowKind, laneCount: Int) -> Row {
-        allRows(laneCount: laneCount).first(where: { $0.kind == kind })
+    static func rowYRow(for kind: RowKind, laneCount: Int, audioOnly: Bool = false) -> Row {
+        allRows(laneCount: laneCount, audioOnly: audioOnly).first(where: { $0.kind == kind })
             ?? Row(kind: kind, y: 0, height: 20)
     }
 
     private func row(atY y: CGFloat) -> Row? {
         guard let model else { return nil }
-        return Self.allRows(laneCount: model.document.lanes.count)
+        return Self.allRows(laneCount: model.document.lanes.count, audioOnly: audioOnly)
             .first(where: { y >= $0.y && y < $0.y + $0.height })
     }
 
@@ -621,7 +639,7 @@ final class WorkbenchTimelineCanvas: NSView {
         let laneCount = document.lanes.count
 
         // 行背景
-        for row in Self.allRows(laneCount: laneCount) where row.kind != .ruler {
+        for row in Self.allRows(laneCount: laneCount, audioOnly: audioOnly) where row.kind != .ruler {
             let rect = NSRect(x: 0, y: row.y, width: frame.width, height: row.height)
             switch row.kind {
             case .video:
@@ -647,17 +665,19 @@ final class WorkbenchTimelineCanvas: NSView {
             drawAudioLane(laneIndex: laneIndex, track: track, model: model)
         }
 
-        // 特效轨
-        drawEffectLane(kind: .focusLane, items: document.focuses.map { ($0.id, $0.sourceIn, $0.sourceOut) },
-                       symbol: "plus.magnifyingglass", model: model)
-        drawEffectLane(kind: .annotationLane, items: document.annotations.map { ($0.id, $0.sourceIn, $0.sourceOut) },
-                       symbol: "pencil.tip", model: model)
+        // 特效轨（纯音频无画面，不适用）
+        if !audioOnly {
+            drawEffectLane(kind: .focusLane, items: document.focuses.map { ($0.id, $0.sourceIn, $0.sourceOut) },
+                           symbol: "plus.magnifyingglass", model: model)
+            drawEffectLane(kind: .annotationLane, items: document.annotations.map { ($0.id, $0.sourceIn, $0.sourceOut) },
+                           symbol: "pencil.tip", model: model)
 
-        // 空轨道提示
-        drawLaneHint(L("拖拽创建聚焦"), rowKind: .focusLane, model: model,
-                     isEmpty: document.focuses.isEmpty)
-        drawLaneHint(L("拖拽创建标注"), rowKind: .annotationLane, model: model,
-                     isEmpty: document.annotations.isEmpty)
+            // 空轨道提示
+            drawLaneHint(L("拖拽创建聚焦"), rowKind: .focusLane, model: model,
+                         isEmpty: document.focuses.isEmpty)
+            drawLaneHint(L("拖拽创建标注"), rowKind: .annotationLane, model: model,
+                         isEmpty: document.annotations.isEmpty)
+        }
 
         // 拖拽创建段的预览框
         if case .createRange(let kind) = drag {
@@ -705,7 +725,7 @@ final class WorkbenchTimelineCanvas: NSView {
     }
 
     private func drawRuler(_ dirtyRect: NSRect, model: WorkbenchViewModel) {
-        guard let row = Self.allRows(laneCount: model.document.lanes.count).first(where: { $0.kind == .ruler }) else { return }
+        guard let row = Self.allRows(laneCount: model.document.lanes.count, audioOnly: audioOnly).first(where: { $0.kind == .ruler }) else { return }
         let rect = NSRect(x: 0, y: row.y, width: frame.width, height: row.height)
         SettingsAppearance.sidebar.setFill()
         rect.fill()
@@ -751,7 +771,7 @@ final class WorkbenchTimelineCanvas: NSView {
     }
 
     private func drawClip(_ clip: WorkbenchClip, timelineStart start: Double, index: Int, model: WorkbenchViewModel) {
-        let row = Self.rowYRow(for: .video, laneCount: model.document.lanes.count)
+        let row = Self.rowYRow(for: .video, laneCount: model.document.lanes.count, audioOnly: audioOnly)
         let x0 = x(for: start)
         let width = max(3, CGFloat(clip.duration) * CGFloat(pps))
         let rect = NSRect(x: x0, y: row.y + 2, width: width, height: row.height - 4)
@@ -767,8 +787,8 @@ final class WorkbenchTimelineCanvas: NSView {
         SettingsAppearance.accent.withAlphaComponent(0.10).setFill()
         rect.fill()
 
-        // 缩略图条
-        if let media = model.media, !media.thumbnails.isEmpty, media.thumbnailInterval > 0 {
+        // 缩略图条（纯音频无画面）
+        if let media = model.media, !audioOnly, !media.thumbnails.isEmpty, media.thumbnailInterval > 0 {
             let slotWidth = CGFloat(media.thumbnailInterval) * CGFloat(pps)
             let aspect = max(0.1, media.videoAspect)
             let first = max(0, Int(floor(clip.sourceIn / media.thumbnailInterval)) - 1)
@@ -838,7 +858,7 @@ final class WorkbenchTimelineCanvas: NSView {
     }
 
     private func drawAudioLane(laneIndex: Int, track: WorkbenchAudioTrack, model: WorkbenchViewModel) {
-        let row = Self.rowYRow(for: .audio(laneIndex), laneCount: model.document.lanes.count)
+        let row = Self.rowYRow(for: .audio(laneIndex), laneCount: model.document.lanes.count, audioOnly: audioOnly)
         let muted = model.document.lanes.indices.contains(laneIndex) && model.document.lanes[laneIndex].muted
         let volume = model.document.lanes.indices.contains(laneIndex) ? model.document.lanes[laneIndex].volume : 1
 
@@ -947,7 +967,7 @@ final class WorkbenchTimelineCanvas: NSView {
     private func drawEffectLane(kind: RowKind, items: [(id: UUID, startIn: Double, startOut: Double)],
                                 symbol: String, model: WorkbenchViewModel) {
         guard !items.isEmpty else { return }
-        let row = Self.rowYRow(for: kind, laneCount: model.document.lanes.count)
+        let row = Self.rowYRow(for: kind, laneCount: model.document.lanes.count, audioOnly: audioOnly)
         let editingID: UUID? = {
             switch kind {
             case .focusLane: return model.editingFocusID

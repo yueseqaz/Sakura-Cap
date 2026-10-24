@@ -619,3 +619,9 @@
 "系统声音采集同样依赖屏幕录制授权" = "System audio capture also requires screen recording permission";
 "需要麦克风权限" = "Microphone permission required";
 "请在系统设置中允许麦克风访问" = "Allow microphone access in System Settings";
+"编辑音频…" = "Edit Audio…";
+"选择要编辑的音频" = "Choose an audio file to edit";
+"音频" = "Audio";
+"音频编辑中" = "Editing audio";
+"音频与画面轨都缺失，无法编辑" = "No audio or video tracks to edit";
+"音频片段" = "Audio Clip";

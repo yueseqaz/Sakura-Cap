@@ -31,6 +31,10 @@ struct WorkbenchView: View {
     }
 
     private var timelineHeight: CGFloat {
+        if model.isAudioOnly {
+            let rows = 24 + 44 + model.document.lanes.count * 44
+            return CGFloat(rows) + 46
+        }
         let rows = 24 + 64 + model.document.lanes.count * 44 + 26 * 2
         return CGFloat(rows) + 46
     }
@@ -75,13 +79,15 @@ struct WorkbenchView: View {
             Spacer()
 
             if model.isExporting { ProgressView().controlSize(.small) }
-            Button { model.captureFrameTapped() } label: { Text(L("截帧")) }
-                .buttonStyle(.bordered)
-                .disabled(model.isExporting)
-                .help(L("把当前帧存为 PNG 并打开标注"))
-            Button { model.exportGIFTapped() } label: { Text(L("GIF")) }
-                .buttonStyle(.bordered)
-                .disabled(model.isExporting || model.duration <= 0)
+            if !model.isAudioOnly {
+                Button { model.captureFrameTapped() } label: { Text(L("截帧")) }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isExporting)
+                    .help(L("把当前帧存为 PNG 并打开标注"))
+                Button { model.exportGIFTapped() } label: { Text(L("GIF")) }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isExporting || model.duration <= 0)
+            }
             Button { model.deleteTapped() } label: {
                 Image(systemName: "trash")
             }
@@ -101,6 +107,19 @@ struct WorkbenchView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
             .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                if model.isAudioOnly {
+                VStack(spacing: 10) {
+                    Image(systemName: "waveform")
+                            .font(.system(size: 44))
+                            .foregroundStyle(.white.opacity(0.55))
+                        Text(L("音频编辑中"))
+                            .font(SettingsAppearance.detailFont)
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
             .overlay {
                 if let id = model.editingFocusID,
                    let focus = model.document.focuses.first(where: { $0.id == id }) {
@@ -182,7 +201,7 @@ struct WorkbenchView: View {
 
     private func clipProperties(_ id: UUID) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionTitle(L("视频片段"))
+            sectionTitle(model.isAudioOnly ? L("音频片段") : L("视频片段"))
             if let clip = model.document.clips.first(where: { $0.id == id }) {
                 LabeledRow(label: L("时长"), value: CompletionNotifier.format(clip.duration))
                 LabeledRow(label: L("源区间"),

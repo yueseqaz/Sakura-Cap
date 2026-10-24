@@ -130,6 +130,7 @@ final class StatusItemController: NSObject {
         menu.addItem(preview)
         menu.addItem(makeItem(L("标注图片…"), #selector(annotateImage)))
         menu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
+        menu.addItem(makeItem(L("编辑音频…"), #selector(menuEditAudio)))
         menu.addItem(makeItem(L("设置…"), #selector(menuSettings)))
         menu.addItem(makeItem(L("退出"), #selector(menuQuit)))
         return menu
@@ -161,6 +162,15 @@ final class StatusItemController: NSObject {
         guard let raw = sender.representedObject as? String,
               let source = AudioRecorderController.Source(rawValue: raw) else { return }
         AudioRecorderController.shared.start(source)
+    }
+
+    @objc private func menuEditAudio() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]
+        panel.allowsMultipleSelection = false
+        panel.message = L("选择要编辑的音频")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        WorkbenchWindowController.shared.show(url: url, origin: .manual)
     }
 
     @objc private func audioPause() { AudioRecorderController.shared.togglePause() }
