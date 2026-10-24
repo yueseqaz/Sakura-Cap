@@ -81,6 +81,16 @@ final class StatusItemController: NSObject {
         } else if controller.isBusy {
             menu.addItem(makeItem(L("取消录制"), #selector(menuToggle)))
         } else {
+            let shot = NSMenuItem(title: L("截屏"), action: nil, keyEquivalent: "")
+            let shotMenu = NSMenu()
+            shotMenu.addItem(makeItem(L("全屏截图"), #selector(screenshotDisplay)))
+            shotMenu.addItem(makeItem(L("区域截图"), #selector(screenshotRegion)))
+            shotMenu.addItem(makeItem(L("识别文字（OCR）"), #selector(ocrRegion)))
+            shotMenu.addItem(makeItem(L("识别二维码"), #selector(qrRegion)))
+            shotMenu.addItem(makeItem(L("滚动截屏…"), #selector(scrollingCapture)))
+            shot.submenu = shotMenu
+            menu.addItem(shot)
+
             let record = NSMenuItem(title: L("开始录制"), action: nil, keyEquivalent: "")
             let submenu = NSMenu()
             submenu.addItem(makeItem(L("全屏录制"), #selector(recordDisplay)))
@@ -91,20 +101,10 @@ final class StatusItemController: NSObject {
 
             let translate = NSMenuItem(title: L("翻译"), action: nil, keyEquivalent: "")
             let translateMenu = NSMenu()
-            translateMenu.addItem(makeItem(L("翻译窗口…"), #selector(openTranslateWindow)))
-            translateMenu.addItem(makeItem(L("识别屏幕文字并翻译"), #selector(translateRegion)))
+            translateMenu.addItem(makeItem(L("文本翻译…"), #selector(openTranslateWindow)))
+            translateMenu.addItem(makeItem(L("识别屏幕翻译"), #selector(translateRegion)))
             translate.submenu = translateMenu
             menu.addItem(translate)
-
-            let shot = NSMenuItem(title: L("截图"), action: nil, keyEquivalent: "")
-            let shotMenu = NSMenu()
-            shotMenu.addItem(makeItem(L("全屏截图"), #selector(screenshotDisplay)))
-            shotMenu.addItem(makeItem(L("区域截图"), #selector(screenshotRegion)))
-            shotMenu.addItem(makeItem(L("识别文字（OCR）"), #selector(ocrRegion)))
-            shotMenu.addItem(makeItem(L("识别二维码"), #selector(qrRegion)))
-            shotMenu.addItem(makeItem(L("滚动截屏…"), #selector(scrollingCapture)))
-            shot.submenu = shotMenu
-            menu.addItem(shot)
         }
         menu.addItem(.separator())
         let annotation = makeItem(ScreenAnnotationController.shared.isActive

@@ -565,5 +565,7 @@
 "全选" = "Select All";
 "编辑" = "Edit";
 "接口格式" = "API Format";
-"翻译窗口…" = "Translation Window…";
-"识别屏幕文字并翻译" = "Translate Screen Text";
+"文本翻译…" = "Translate Text…";
+"识别屏幕翻译" = "Translate Screen (OCR)";
+"译成" = "To";
+"风格" = "Style";

@@ -22,6 +22,13 @@ final class TranslationViewModel: ObservableObject {
 
     init() {}
 
+    /// 窗口内切换语言/风格后：已有原文且不在加载中时自动重译
+    func retranslateIfPossible() {
+        if !original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !isLoading {
+            translate()
+        }
+    }
+
     /// 统一的翻译执行入口：设置里的服务商 / 模型 / 语言 / 风格
     func translate() {
         let text = original.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -92,9 +99,26 @@ final class TranslationPresenter {
 
 struct TranslationView: View {
     @ObservedObject var model: TranslationViewModel
+    @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // 语言 / 风格就地可调（写入设置，OCR 翻译同样生效）；改动后自动重译
+            HStack(spacing: 12) {
+                Text(L("译成")).font(.caption).foregroundStyle(.secondary)
+                Picker(L("译成"), selection: Binding(
+                    get: { settings.translateTargetLang },
+                    set: { settings.translateTargetLang = $0; model.retranslateIfPossible() })) {
+                    ForEach(TranslateLanguage.allCases.filter { $0 != .auto }) { l in Text(l.label).tag(l.rawValue) }
+                }.pickerStyle(.menu).labelsHidden().frame(width: 120)
+                Spacer()
+                Text(L("风格")).font(.caption).foregroundStyle(.secondary)
+                Picker(L("风格"), selection: Binding(
+                    get: { settings.translateStyle },
+                    set: { settings.translateStyle = $0; model.retranslateIfPossible() })) {
+                    ForEach(TranslateStyle.allCases) { st in Text(st.label).tag(st.rawValue) }
+                }.pickerStyle(.menu).labelsHidden().frame(width: 90)
+            }
             HStack {
                 Text(L("原文")).font(.caption).fontWeight(.semibold).foregroundStyle(.secondary)
                 Spacer()
@@ -133,8 +157,6 @@ struct TranslationView: View {
             .frame(minHeight: 140)
 
             HStack {
-                Text(targetHint)
-                    .font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
                 Spacer()
                 Button { copy() } label: { Text(L("复制译文")) }
                     .disabled(model.translation.isEmpty)
@@ -144,11 +166,6 @@ struct TranslationView: View {
         }
         .padding(16)
         .frame(minWidth: 360, minHeight: 340)
-    }
-
-    private var targetHint: String {
-        let config = AppSettings.shared.translationConfig
-        return config.target.label
     }
 
     private func box<Content: View>(@ViewBuilder content: () -> Content) -> some View {
