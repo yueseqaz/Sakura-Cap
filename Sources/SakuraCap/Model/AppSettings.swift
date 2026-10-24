@@ -46,6 +46,7 @@ final class AppSettings: ObservableObject {
         static let onboarding = "hasCompletedOnboarding"
         static let fileNamePattern = "fileNamePattern"
         static let translateProvider = "translateProvider"
+        static let translateCustomFormat = "translateCustomFormat"
         static let translateBaseURL = "translateBaseURL"
         static let translateModel = "translateModel"
         static let translateModels = "translateModels"
@@ -117,6 +118,8 @@ final class AppSettings: ObservableObject {
 
     // 翻译
     @Published var translateProvider: TranslateProvider = .deepSeek { didSet { d.set(translateProvider.rawValue, forKey: Keys.translateProvider) } }
+    /// 自定义服务商的接口格式
+    @Published var translateCustomFormat: String = CustomAPIFormat.openAIChat.rawValue { didSet { d.set(translateCustomFormat, forKey: Keys.translateCustomFormat) } }
     @Published var translateBaseURL = "" { didSet { d.set(translateBaseURL, forKey: Keys.translateBaseURL) } }
     @Published var translateModel = "deepseek-chat" { didSet { d.set(translateModel, forKey: Keys.translateModel) } }
     @Published var translateModels: [String] = [] { didSet { d.set(translateModels, forKey: Keys.translateModels) } }
@@ -177,6 +180,7 @@ final class AppSettings: ObservableObject {
         hasCompletedOnboarding = d.bool(forKey: Keys.onboarding)
         if let s = d.string(forKey: Keys.fileNamePattern) { fileNamePattern = s }
         if let raw = d.string(forKey: Keys.translateProvider), let p = TranslateProvider(rawValue: raw) { translateProvider = p }
+        if let raw = d.string(forKey: Keys.translateCustomFormat), let f = CustomAPIFormat(rawValue: raw) { translateCustomFormat = raw }
         translateBaseURL = d.string(forKey: Keys.translateBaseURL) ?? ""
         translateModel = d.string(forKey: Keys.translateModel) ?? "deepseek-chat"
         translateModels = d.stringArray(forKey: Keys.translateModels) ?? []
@@ -225,7 +229,9 @@ final class AppSettings: ObservableObject {
             model: activeTranslateModel,
             source: TranslateLanguage(rawValue: translateSourceLang) ?? .auto,
             target: TranslateLanguage(rawValue: translateTargetLang) ?? .zhHans,
-            style: TranslateStyle(rawValue: translateStyle) ?? .natural
+            style: TranslateStyle(rawValue: translateStyle) ?? .natural,
+            format: translateProvider == .deepSeek ? .openAIChat
+                : (CustomAPIFormat(rawValue: translateCustomFormat) ?? .openAIChat)
         )
     }
 

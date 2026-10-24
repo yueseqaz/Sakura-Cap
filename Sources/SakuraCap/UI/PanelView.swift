@@ -329,6 +329,11 @@ struct PanelView: View {
                         TextField("https://…/v1", text: $settings.translateBaseURL)
                             .accessibilityLabel(L("API 地址"))
                     }
+                    settingRow("接口格式") {
+                        Picker("接口格式", selection: $settings.translateCustomFormat) {
+                            ForEach(CustomAPIFormat.allCases) { f in Text(f.label).tag(f.rawValue) }
+                        }.pickerStyle(.segmented).labelsHidden()
+                    }
                 }
                 fieldRow("API Key") {
                     HStack(spacing: 8) {
@@ -380,7 +385,9 @@ struct PanelView: View {
         let key = settings.activeTranslateAPIKey
         Task {
             do {
-                let models = try await TranslationService.fetchModels(baseURL: base, apiKey: key)
+                let format = provider == .deepSeek ? .openAIChat
+                    : (CustomAPIFormat(rawValue: settings.translateCustomFormat) ?? .openAIChat)
+                let models = try await TranslationService.fetchModels(baseURL: base, apiKey: key, format: format)
                 guard !models.isEmpty else {
                     Toast.show(title: L("获取模型失败"), detail: L("返回为空"))
                     return
