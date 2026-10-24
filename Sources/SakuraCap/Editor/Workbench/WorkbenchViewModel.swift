@@ -12,6 +12,7 @@ final class WorkbenchViewModel: ObservableObject {
         case lane(Int)
         case focus(UUID)
         case annotation(UUID)
+        case audioGain(UUID)
     }
 
     let sourceURL: URL
@@ -193,6 +194,8 @@ final class WorkbenchViewModel: ObservableObject {
             if !document.focuses.contains(where: { $0.id == id }) { self.selection = nil }
         case .annotation(let id):
             if !document.annotations.contains(where: { $0.id == id }) { self.selection = nil }
+        case .audioGain(let id):
+            if !document.audioGains.contains(where: { $0.id == id }) { self.selection = nil }
         case .lane(let index):
             if index >= document.lanes.count { self.selection = nil }
         }
@@ -358,18 +361,16 @@ final class WorkbenchViewModel: ObservableObject {
         refreshOverlays()
     }
 
-    // MARK: - 聚焦特效
+    // MARK: - 聚焦特效（时间轴上拖拽创建，两端夹点 = sourceIn/Out）
 
-    func addFocusEffect() {
-        guard let (clip, _, _) = document.clip(atTimeline: currentTime),
-              let s = document.sourceTime(atTimeline: currentTime) else { return }
+    func createFocusRange(timelineStart: Double, timelineEnd: Double) {
+        guard let sIn = document.sourceTime(atTimeline: timelineStart),
+              let sOut = document.sourceTime(atTimeline: timelineEnd) else { return }
         pushUndo()
-        let effect = WorkbenchFocus(id: UUID(), sourceIn: s,
-                                    sourceOut: min(clip.sourceOut, s + 3))
+        let effect = WorkbenchFocus(id: UUID(), sourceIn: sIn,
+                                    sourceOut: max(sIn + 0.2, sOut))
         document.focuses.append(effect)
-        editingFocusID = effect.id
-        selection = .focus(effect.id)
-        refreshOverlays()
+        beginFocusEdit(effect.id)
     }
 
     func updateFocus(_ focus: WorkbenchFocus) {
@@ -408,14 +409,58 @@ final class WorkbenchViewModel: ObservableObject {
         refreshOverlays()
     }
 
-    // MARK: - 标注特效
+    // MARK: - 音量段（音频轨上拖拽创建：就地静音 / 降音量）
 
-    func addAnnotationSegment() {
-        guard let (clip, _, _) = document.clip(atTimeline: currentTime),
-              let s = document.sourceTime(atTimeline: currentTime) else { return }
+    func createGainRange(laneIndex: Int, timelineStart: Double, timelineEnd: Double) {
+        guard document.lanes.indices.contains(laneIndex),
+              let sIn = document.sourceTime(atTimeline: timelineStart),
+              let sOut = document.sourceTime(atTimeline: timelineEnd) else { return }
         pushUndo()
-        let segment = WorkbenchAnnotation(id: UUID(), sourceIn: s,
-                                          sourceOut: min(clip.sourceOut, s + 3))
+        let gain = WorkbenchAudioGain(id: UUID(), laneIndex: laneIndex,
+                                      sourceIn: sIn, sourceOut: max(sIn + 0.2, sOut),
+                                      volume: 0)
+        document.audioGains.append(gain)
+        selection = .audioGain(gain.id)
+        refreshOverlays()
+    }
+
+    func updateGain(_ gain: WorkbenchAudioGain) {
+        guard let index = document.audioGains.firstIndex(where: { $0.id == gain.id }) else { return }
+        document.audioGains[index] = gain
+        refreshOverlays()
+    }
+
+    /// 音量滑杆连续拖动，不压撤销（创建时已压过一次）
+    func setGainVolume(_ volume: Double, id: UUID) {
+        guard let index = document.audioGains.firstIndex(where: { $0.id == id }) else { return }
+        document.audioGains[index].volume = max(0, min(1, volume))
+        refreshOverlays()
+    }
+
+    /// 静音 ⇄ 恢复原音量（50%）
+    func toggleGainMute(_ id: UUID) {
+        guard let index = document.audioGains.firstIndex(where: { $0.id == id }) else { return }
+        pushUndo()
+        document.audioGains[index].volume = document.audioGains[index].volume == 0 ? 0.5 : 0
+        refreshOverlays()
+    }
+
+    func removeGain(_ id: UUID) {
+        guard document.audioGains.contains(where: { $0.id == id }) else { return }
+        pushUndo()
+        document.audioGains.removeAll { $0.id == id }
+        if selection == .audioGain(id) { selection = nil }
+        refreshOverlays()
+    }
+
+    // MARK: - 标注特效（时间轴上拖拽创建）
+
+    func createAnnotationRange(timelineStart: Double, timelineEnd: Double) {
+        guard let sIn = document.sourceTime(atTimeline: timelineStart),
+              let sOut = document.sourceTime(atTimeline: timelineEnd) else { return }
+        pushUndo()
+        let segment = WorkbenchAnnotation(id: UUID(), sourceIn: sIn,
+                                          sourceOut: max(sIn + 0.2, sOut))
         document.annotations.append(segment)
         beginAnnotationSelection(segment.id)
     }
@@ -537,6 +582,7 @@ final class WorkbenchViewModel: ObservableObject {
         if document.lanes.contains(where: { $0.muted || $0.volume != 1 }) { return true }
         if !document.focuses.isEmpty { return true }
         if document.annotations.contains(where: { !$0.marks.isEmpty }) { return true }
+        if !document.audioGains.isEmpty { return true }
         return false
     }
 

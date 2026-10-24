@@ -544,3 +544,12 @@
 "至少保留一个片段" = "Keep at least one clip";
 "马赛克样式" = "Mosaic Style";
 "点击时间轴中的片段或音轨，在这里编辑它们的属性。" = "Select a clip or audio track on the timeline to edit its properties here.";
+"拖拽创建聚焦" = "Drag to create focus";
+"拖拽创建标注" = "Drag to create annotation";
+"音量段" = "Volume Segment";
+"音量" = "Volume";
+"删除音量段" = "Delete Segment";
+"静音此段" = "Mute Segment";
+"恢复音量" = "Restore Volume";
+"工具栏在预览画面下方，直接在画面上绘制。" = "The toolbar is below the preview — draw directly on the frame.";
+"在轨道上拖拽创建聚焦 / 标注 / 音量段；点击片段或音轨编辑属性。" = "Drag on a lane to create focus / annotation / volume segments; click a clip or lane to edit it.";

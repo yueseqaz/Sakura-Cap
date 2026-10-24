@@ -125,6 +125,12 @@ struct WorkbenchView: View {
                     }
                 }
             }
+            .overlay(alignment: .bottom) {
+                if model.editingAnnotationID != nil {
+                    AnnotationFloatingToolbar(model: model)
+                        .padding(.bottom, 8)
+                }
+            }
     }
 
     // MARK: 右侧属性面板
@@ -137,6 +143,7 @@ struct WorkbenchView: View {
                 case .lane(let index): laneProperties(index)
                 case .focus(let id): focusProperties(id)
                 case .annotation(let id): annotationProperties(id)
+                case .audioGain(let id): gainProperties(id)
                 case nil: documentProperties()
                 }
                 if let status = model.status {
@@ -171,7 +178,7 @@ struct WorkbenchView: View {
                     }
                 }
             }
-            Text(L("点击时间轴中的片段或音轨，在这里编辑它们的属性。"))
+            Text(L("在轨道上拖拽创建聚焦 / 标注 / 音量段；点击片段或音轨编辑属性。"))
                 .font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
         }
     }
@@ -268,6 +275,37 @@ struct WorkbenchView: View {
         }
     }
 
+    /// 音量段属性：就地调音量 / 静音 / 删除（段的两端在时间轴上直接拖）
+    private func gainProperties(_ id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle(L("音量段"))
+            if let gain = model.document.audioGains.first(where: { $0.id == id }) {
+                if let tracks = model.media?.audioTracks,
+                   tracks.indices.contains(gain.laneIndex) {
+                    Text(tracks[gain.laneIndex].title)
+                        .font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
+                }
+                LabeledRow(label: L("范围"),
+                           value: "\(CompletionNotifier.format(gain.sourceIn)) – \(CompletionNotifier.format(gain.sourceOut))")
+                HStack {
+                    Text(L("音量")).font(SettingsAppearance.detailFont)
+                    Spacer()
+                    Text("\(Int(gain.volume * 100))%")
+                        .font(SettingsAppearance.detailFont).monospacedDigit()
+                }
+                Slider(value: Binding(get: { gain.volume },
+                                      set: { model.setGainVolume($0, id: id) }), in: 0...1)
+                    .controlSize(.small)
+                HStack {
+                    Button(gain.volume == 0 ? L("恢复音量") : L("静音此段")) { model.toggleGainMute(id) }
+                        .buttonStyle(.bordered)
+                    Button(L("删除音量段"), role: .destructive) { model.removeGain(id) }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
     private func annotationProperties(_ id: UUID) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle(L("标注段"))
@@ -275,46 +313,8 @@ struct WorkbenchView: View {
                 LabeledRow(label: L("范围"),
                            value: "\(CompletionNotifier.format(segment.sourceIn)) – \(CompletionNotifier.format(segment.sourceOut))")
                 if model.editingAnnotationID == id {
-                    HStack(spacing: 6) {
-                        ForEach(VideoMarkTool.allCases) { tool in
-                            Button { model.annotationTool = tool } label: {
-                                Image(systemName: tool.symbol).frame(width: 18)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(model.annotationTool == tool ? SettingsAppearance.color(SettingsAppearance.accent) : nil)
-                            .help(tool.label)
-                        }
-                    }
-                    if model.annotationTool == .mosaic {
-                        Picker(L("马赛克样式"), selection: $model.annotationMosaicStyle) {
-                            ForEach(MosaicStyle.allCases) { style in Text(style.label).tag(style) }
-                        }
-                        .pickerStyle(.segmented).labelsHidden()
-                    } else {
-                        HStack {
-                            ForEach([NSColor.systemRed, .systemYellow, .systemBlue, .systemGreen, .white], id: \.self) { color in
-                                Button { model.annotationColor = color } label: {
-                                    Circle().fill(Color(nsColor: color))
-                                        .frame(width: 14, height: 14)
-                                        .padding(3)
-                                        .overlay(Circle().stroke(model.annotationColor == color ? Color.accentColor : .clear, lineWidth: 2))
-                                }.buttonStyle(.plain)
-                            }
-                            Spacer()
-                            Text(L("粗细")).font(SettingsAppearance.detailFont)
-                            Slider(value: Binding(get: { Double(model.annotationLineWidth) },
-                                                  set: { model.annotationLineWidth = CGFloat($0) }), in: 1...12)
-                                .frame(width: 80)
-                        }
-                    }
-                    HStack {
-                        Button(L("撤回")) { model.annotationCanvas.undo() }
-                            .disabled(model.annotationCanvas.undoStack.isEmpty)
-                        Button(L("删除选中")) { model.annotationCanvas.deleteSelected() }
-                            .disabled(model.annotationCanvas.selectedIndex == nil)
-                        Button(L("清空")) { model.annotationCanvas.clear() }
-                            .disabled(model.annotationCanvas.marks.isEmpty)
-                    }
+                    Text(L("工具栏在预览画面下方，直接在画面上绘制。"))
+                        .font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
                     Button(L("完成标注")) { model.finishAnnotationSelection(commit: true) }
                         .buttonStyle(.borderedProminent)
                 } else {
@@ -428,4 +428,60 @@ private struct FocusCanvas: View {
 final class FocusDragStateBox: ObservableObject {
     @Published var point: CGPoint?
     @Published var scale: Double?
+}
+
+/// 标注编辑时悬浮在预览画面下方的工具栏：工具 / 颜色粗细 / 马赛克样式 / 撤回 / 完成
+struct AnnotationFloatingToolbar: View {
+    @ObservedObject var model: WorkbenchViewModel
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                ForEach(VideoMarkTool.allCases) { tool in
+                    Button { model.annotationTool = tool } label: {
+                        Image(systemName: tool.symbol).frame(width: 22, height: 18)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(model.annotationTool == tool ? SettingsAppearance.color(SettingsAppearance.accent) : nil)
+                    .help(tool.label)
+                }
+                Divider().frame(height: 18)
+                Button(L("撤回")) { model.annotationCanvas.undo() }
+                    .disabled(model.annotationCanvas.undoStack.isEmpty)
+                Button(L("删除选中")) { model.annotationCanvas.deleteSelected() }
+                    .disabled(model.annotationCanvas.selectedIndex == nil)
+                Button(L("清空")) { model.annotationCanvas.clear() }
+                    .disabled(model.annotationCanvas.marks.isEmpty)
+                Divider().frame(height: 18)
+                Button(L("完成标注")) { model.finishAnnotationSelection(commit: true) }
+                    .buttonStyle(.borderedProminent)
+            }
+            HStack(spacing: 10) {
+                if model.annotationTool == .mosaic {
+                    Text(L("马赛克样式")).font(SettingsAppearance.detailFont)
+                    Picker(L("马赛克样式"), selection: $model.annotationMosaicStyle) {
+                        ForEach(MosaicStyle.allCases) { style in Text(style.label).tag(style) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 220)
+                } else {
+                    Text(L("颜色")).font(SettingsAppearance.detailFont)
+                    ForEach([NSColor.systemRed, .systemYellow, .systemBlue, .systemGreen, .white], id: \.self) { color in
+                        Button { model.annotationColor = color } label: {
+                            Circle().fill(Color(nsColor: color))
+                                .frame(width: 14, height: 14)
+                                .padding(3)
+                                .overlay(Circle().stroke(model.annotationColor == color ? Color.accentColor : .clear, lineWidth: 2))
+                        }.buttonStyle(.plain)
+                    }
+                    Text(L("粗细")).font(SettingsAppearance.detailFont)
+                    Slider(value: Binding(get: { Double(model.annotationLineWidth) },
+                                          set: { model.annotationLineWidth = CGFloat($0) }), in: 1...12)
+                        .frame(width: 90)
+                }
+            }
+            .font(SettingsAppearance.detailFont)
+        }
+        .padding(10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
 }

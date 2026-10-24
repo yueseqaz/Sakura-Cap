@@ -44,12 +44,23 @@ struct WorkbenchAnnotation: Identifiable, Equatable {
     var marks: [VideoMark] = []
 }
 
+/// 音量段：在某条音轨的源时间段内降低音量（0 = 静音）。
+/// 在时间轴音频轨上拖拽创建，两端的夹点即 sourceIn / sourceOut。
+struct WorkbenchAudioGain: Identifiable, Equatable {
+    let id: UUID
+    var laneIndex: Int
+    var sourceIn: Double
+    var sourceOut: Double
+    var volume: Double
+}
+
 /// 一份可撤销的剪辑文档。所有字段为值类型，撤销/重做直接快照整个结构体。
 struct WorkbenchDocument: Equatable {
     var clips: [WorkbenchClip] = []
     var lanes: [WorkbenchLane] = []
     var focuses: [WorkbenchFocus] = []
     var annotations: [WorkbenchAnnotation] = []
+    var audioGains: [WorkbenchAudioGain] = []
 
     var duration: Double { clips.reduce(0) { $0 + $1.duration } }
 
@@ -102,10 +113,11 @@ struct WorkbenchDocument: Equatable {
         return nil
     }
 
-    /// 把时间轴上 [a, b) 覆盖到的源区间.effects 清掉（删除片段时调用）
+    /// 把源区间内的特效清掉（删除片段时调用）
     mutating func removeEffects(inside sourceIn: Double, sourceOut: Double) {
         focuses.removeAll { $0.sourceIn >= sourceIn - 0.001 && $0.sourceOut <= sourceOut + 0.001 }
         annotations.removeAll { $0.sourceIn >= sourceIn - 0.001 && $0.sourceOut <= sourceOut + 0.001 }
+        audioGains.removeAll { $0.sourceIn >= sourceIn - 0.001 && $0.sourceOut <= sourceOut + 0.001 }
     }
 }
 
@@ -232,41 +244,65 @@ enum WorkbenchEngine {
         document.timelineStart(ofClip: clip.id)
     }
 
-    /// 音频混音：整轨音量/静音 + 片段静音 + 淡入淡出（全部映射到合成时间）。
+    /// 音频混音：整轨音量/静音 + 片段静音 + 淡入淡出 + 音量段。
+    /// 在所有「音量拐点」（片段边界、淡入淡出端点、音量段首尾、文档首尾）上采样求值，
+    /// 交给 AVAudioMix 在拐点间线性插值。
     static func audioMix(document: WorkbenchDocument, audioTrackIDs: [CMPersistentTrackID]) -> AVAudioMix? {
         guard audioTrackIDs.count == document.lanes.count, !audioTrackIDs.isEmpty else { return nil }
-        let allDefault = document.lanes.allSatisfy { $0.volume == 1 && !$0.muted }
+        let hasNoEdits = document.lanes.allSatisfy { $0.volume == 1 && !$0.muted }
             && document.clips.allSatisfy { !$0.muted && $0.fadeIn == 0 && $0.fadeOut == 0 }
-        if allDefault { return nil }
+            && document.audioGains.isEmpty
+        if hasNoEdits { return nil }
+
+        // 音量段投影到时间轴（源时间锚定）
+        func gainRanges(_ laneIndex: Int) -> [(start: Double, end: Double, volume: Double)] {
+            document.audioGains
+                .filter { $0.laneIndex == laneIndex }
+                .sorted { $0.sourceIn < $1.sourceIn }
+                .map { (document.timelineTime(forSource: $0.sourceIn),
+                        document.timelineTime(forSource: $0.sourceOut),
+                        $0.volume) }
+        }
+
+        func effectiveVolume(lane: WorkbenchLane, laneIndex: Int, at t: Double) -> Float {
+            var v = lane.muted ? 0 : lane.volume
+            guard let hit = document.clip(atTimeline: t) else { return Float(v) }
+            let (clip, _, clipStart) = hit
+            let local = t - clipStart
+            if clip.muted { return 0 }
+            if clip.fadeIn > 0, local < clip.fadeIn { v *= local / clip.fadeIn }
+            if clip.fadeOut > 0, local > clip.duration - clip.fadeOut {
+                v *= max(0, (clip.duration - local) / clip.fadeOut)
+            }
+            if let gain = gainRanges(laneIndex).last(where: { t >= $0.start && t < $0.end }) {
+                v *= gain.volume
+            }
+            return Float(max(0, min(1, v)))
+        }
 
         let mix = AVMutableAudioMix()
-        var parametersList: [AVMutableAudioMixInputParameters] = []
-        for (index, trackID) in audioTrackIDs.enumerated() {
+        mix.inputParameters = audioTrackIDs.enumerated().map { index, trackID in
             let lane = document.lanes[index]
-            let base = lane.muted ? 0 : lane.volume
             let parameters = AVMutableAudioMixInputParameters()
             parameters.trackID = trackID
-            var cursor = 0.0
+            var boundaries: Set<Double> = [0, document.duration]
             for clip in document.clips {
-                let d = clip.duration
-                let v = Float(clip.muted ? 0 : base)
-                if clip.fadeIn > 0, clip.fadeIn < d {
-                    parameters.setVolume(0, at: CMTime(seconds: cursor, preferredTimescale: 600))
-                    parameters.setVolume(v, at: CMTime(seconds: cursor + clip.fadeIn, preferredTimescale: 600))
-                } else {
-                    parameters.setVolume(v, at: CMTime(seconds: cursor, preferredTimescale: 600))
-                }
-                if clip.fadeOut > 0, clip.fadeOut < d {
-                    parameters.setVolume(v, at: CMTime(seconds: cursor + d - clip.fadeOut, preferredTimescale: 600))
-                    parameters.setVolume(0, at: CMTime(seconds: cursor + d, preferredTimescale: 600))
-                } else {
-                    parameters.setVolume(v, at: CMTime(seconds: cursor + d, preferredTimescale: 600))
-                }
-                cursor += d
+                let start = document.timelineStart(ofClip: clip.id)
+                boundaries.insert(start)
+                boundaries.insert(start + clip.duration)
+                if clip.fadeIn > 0 { boundaries.insert(start + clip.fadeIn) }
+                if clip.fadeOut > 0 { boundaries.insert(start + clip.duration - clip.fadeOut) }
             }
-            parametersList.append(parameters)
+            for gain in gainRanges(index) {
+                boundaries.insert(gain.start)
+                boundaries.insert(gain.end)
+            }
+            for t in boundaries.sorted() {
+                parameters.setVolume(effectiveVolume(lane: lane, laneIndex: index, at: t),
+                                     at: CMTime(seconds: t, preferredTimescale: 600))
+            }
+            return parameters
         }
-        mix.inputParameters = parametersList
         return mix
     }
 }

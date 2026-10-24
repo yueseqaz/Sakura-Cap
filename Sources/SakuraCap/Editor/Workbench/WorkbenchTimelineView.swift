@@ -151,6 +151,23 @@ final class WorkbenchTimelineContainer: NSView {
         zoomAction[sender.identifier?.rawValue ?? ""]?()
     }
 
+    /// 动态缩放下限：时间轴最小时恰好铺满整个可视宽度（不显示视频之外的空白）。
+    /// 视频很长装不下时退回静态 minPPS，允许滚动。
+    private func minZoomPPS(for model: WorkbenchViewModel) -> Double {
+        let visible = Double(scrollView.contentView.bounds.width)
+        guard model.duration > 0, visible > 10 else { return TimelineMetrics.minPPS }
+        return max(TimelineMetrics.minPPS, visible / model.duration)
+    }
+
+    private func clampZoom(_ pps: Double, for model: WorkbenchViewModel) -> Double {
+        max(minZoomPPS(for: model), min(TimelineMetrics.maxPPS, pps))
+    }
+
+    private func syncZoomSlider(_ pps: Double, for model: WorkbenchViewModel) {
+        let minPPS = minZoomPPS(for: model)
+        zoomSlider.doubleValue = log(max(pps, minPPS) / minPPS) / log(TimelineMetrics.maxPPS / minPPS)
+    }
+
     private func zoom(by factor: Double) {
         guard let model else { return }
         setZoom(model.pixelsPerSecond * factor, anchorTime: visibleCenterTime())
@@ -158,8 +175,9 @@ final class WorkbenchTimelineContainer: NSView {
 
     @objc private func zoomSliderChanged() {
         guard let model else { return }
+        let minPPS = minZoomPPS(for: model)
         let value = zoomSlider.doubleValue
-        let pps = TimelineMetrics.minPPS * pow(TimelineMetrics.maxPPS / TimelineMetrics.minPPS, value)
+        let pps = minPPS * pow(TimelineMetrics.maxPPS / minPPS, value)
         setZoom(pps, anchorTime: visibleCenterTime())
     }
 
@@ -170,7 +188,7 @@ final class WorkbenchTimelineContainer: NSView {
 
     private func setZoom(_ pps: Double, anchorTime anchor: Double) {
         guard let model else { return }
-        let clamped = max(TimelineMetrics.minPPS, min(TimelineMetrics.maxPPS, pps))
+        let clamped = clampZoom(pps, for: model)
         guard abs(clamped - model.pixelsPerSecond) > 0.001 else { return }
         let visibleWidth = scrollView.contentView.bounds.width
         model.pixelsPerSecond = clamped
@@ -179,7 +197,7 @@ final class WorkbenchTimelineContainer: NSView {
         let anchorX = CGFloat(anchor) * CGFloat(clamped)
         let targetOffset = max(0, anchorX - visibleWidth / 2)
         scrollView.contentView.setBoundsOrigin(NSPoint(x: targetOffset, y: 0))
-        zoomSlider.doubleValue = log(clamped / TimelineMetrics.minPPS) / log(TimelineMetrics.maxPPS / TimelineMetrics.minPPS)
+        syncZoomSlider(clamped, for: model)
     }
 
     // MARK: 布局
@@ -197,24 +215,26 @@ final class WorkbenchTimelineContainer: NSView {
                                   y: bounds.height - (zoomStack?.fittingSize.height ?? 26) - 6,
                                   width: zoomStack?.fittingSize.width ?? 120,
                                   height: zoomStack?.fittingSize.height ?? 26)
-        if !didFitZoom, let model, model.duration > 0 {
-            let visible = scrollView.contentView.bounds.width
-            if visible > 10 {
-                didFitZoom = true
-                let pps = max(TimelineMetrics.minPPS,
-                              min(TimelineMetrics.maxPPS, Double(visible - 60) / model.duration))
-                if abs(pps - model.pixelsPerSecond) > 0.001 {
-                    model.pixelsPerSecond = pps
-                }
-            }
+        if let model {
+            enforceZoomFloor(model)
         }
         relayoutContent()
     }
 
+    /// 窗口变大后动态下限抬高：时间轴重新恰好铺满（不留视频外的空白）
+    private func enforceZoomFloor(_ model: WorkbenchViewModel) {
+        let floor = minZoomPPS(for: model)
+        if model.duration > 0, model.pixelsPerSecond < floor - 0.001 {
+            model.pixelsPerSecond = min(floor, TimelineMetrics.maxPPS)
+        }
+    }
+
     private func relayoutContent() {
         guard let model else { return }
+        enforceZoomFloor(model)
         let pps = CGFloat(model.pixelsPerSecond)
-        let width = max(scrollView.contentView.bounds.width, CGFloat(model.duration) * pps + 60)
+        // 画布宽度 = 视频时长 × 缩放，精确到视频结尾，不附加空白
+        let width = max(scrollView.contentView.bounds.width, CGFloat(model.duration) * pps)
         let height = WorkbenchTimelineCanvas.contentHeight(laneCount: model.document.lanes.count)
         canvas.model = model
         canvas.pps = model.pixelsPerSecond
@@ -231,13 +251,13 @@ final class WorkbenchTimelineContainer: NSView {
     func sync(with model: WorkbenchViewModel) {
         self.model = model
         headerColumn.model = model
-        // 时长异步加载完成后做一次自适应缩放（首帧 layout 时 duration 还是 0）
+        // 时长异步加载完成后做一次自适应缩放（首帧 layout 时 duration 还是 0）：
+        // 恰好铺满可视宽度，不多显示一秒空白
         if !didFitZoom, model.duration > 0 {
             let visible = scrollView.contentView.bounds.width
             if visible > 10 {
                 didFitZoom = true
-                let pps = max(TimelineMetrics.minPPS,
-                              min(TimelineMetrics.maxPPS, Double(visible - 60) / model.duration))
+                let pps = clampZoom(visible / model.duration, for: model)
                 if abs(pps - model.pixelsPerSecond) > 0.001 {
                     model.pixelsPerSecond = pps
                 }
@@ -250,8 +270,7 @@ final class WorkbenchTimelineContainer: NSView {
             playhead.needsDisplay = true
             if model.isPlaying { autoScrollToPlayhead(model) }
         }
-        zoomSlider.doubleValue = log(max(model.pixelsPerSecond, TimelineMetrics.minPPS) / TimelineMetrics.minPPS)
-            / log(TimelineMetrics.maxPPS / TimelineMetrics.minPPS)
+        syncZoomSlider(model.pixelsPerSecond, for: model)
     }
 
     private func relayoutContentIfNeeded(_ model: WorkbenchViewModel) {
@@ -314,13 +333,13 @@ final class WorkbenchTimelineContainer: NSView {
 
     private func setZoomAtPointer(_ pps: Double, anchorTime anchor: Double, pointerX: CGFloat) {
         guard let model else { return }
-        let clamped = max(TimelineMetrics.minPPS, min(TimelineMetrics.maxPPS, pps))
+        let clamped = clampZoom(pps, for: model)
         guard abs(clamped - model.pixelsPerSecond) > 0.001 else { return }
         model.pixelsPerSecond = clamped
         relayoutContent()
         let targetOffset = max(0, CGFloat(anchor) * CGFloat(clamped) - pointerX)
         scrollView.contentView.setBoundsOrigin(NSPoint(x: targetOffset, y: 0))
-        zoomSlider.doubleValue = log(clamped / TimelineMetrics.minPPS) / log(TimelineMetrics.maxPPS / TimelineMetrics.minPPS)
+        syncZoomSlider(clamped, for: model)
     }
 }
 
@@ -455,11 +474,18 @@ final class WorkbenchTimelineCanvas: NSView {
         case moveClip(UUID)
         case effectMove(UUID, isFocus: Bool)
         case effectEdge(UUID, isFocus: Bool, left: Bool)
+        case gainMove(UUID)
+        case gainEdge(UUID, left: Bool)
+        /// 轨道上拖拽创建新段（聚焦 / 标注 / 音量），两端夹点由拖拽范围决定
+        case createRange(RowKind)
     }
 
     private var drag: DragMode = .none
     private var dragLastX: CGFloat = 0
     private var dragInsertIndex: Int?
+    /// createRange 的起点时间与当前时间
+    private var createAnchor: Double = 0
+    private var createCurrent: Double = 0
     private var hoverClipID: UUID?
     private var hoverEdge: Bool = false
     private var waveCacheSignature: String?
@@ -539,7 +565,7 @@ final class WorkbenchTimelineCanvas: NSView {
             drawClip(clip, timelineStart: start, index: index, model: model)
         }
 
-        // 音轨波形
+        // 音轨波形 + 音量段
         for (laneIndex, track) in (model.media?.audioTracks ?? []).enumerated() {
             drawAudioLane(laneIndex: laneIndex, track: track, model: model)
         }
@@ -549,12 +575,56 @@ final class WorkbenchTimelineCanvas: NSView {
                        symbol: "plus.magnifyingglass", model: model)
         drawEffectLane(kind: .annotationLane, items: document.annotations.map { ($0.id, $0.sourceIn, $0.sourceOut) },
                        symbol: "pencil.tip", model: model)
+
+        // 空轨道提示
+        drawLaneHint(L("拖拽创建聚焦"), rowKind: .focusLane, model: model,
+                     isEmpty: document.focuses.isEmpty)
+        drawLaneHint(L("拖拽创建标注"), rowKind: .annotationLane, model: model,
+                     isEmpty: document.annotations.isEmpty)
+
+        // 拖拽创建段的预览框
+        if case .createRange(let kind) = drag {
+            drawCreationPreview(kind: kind, model: model)
+        }
+
         // 拖动排序的插入线
         if case .moveClip = drag, let index = dragInsertIndex {
             let x = insertionLineX(index: index, model: model)
             drawVerticalLine(at: x, y: 0, height: frame.height,
                              color: SettingsAppearance.accent, dashed: false, width: 2)
         }
+    }
+
+    /// 空轨道左侧的轻量提示文案
+    private func drawLaneHint(_ text: String, rowKind: RowKind, model: WorkbenchViewModel, isEmpty: Bool) {
+        guard isEmpty else { return }
+        let row = Self.rowYRow(for: rowKind, laneCount: model.document.lanes.count)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10),
+            .foregroundColor: NSColor.tertiaryLabelColor,
+        ]
+        (text as NSString).draw(at: NSPoint(x: 8, y: row.y + row.height / 2 - 6), withAttributes: attrs)
+    }
+
+    /// 拖拽创建时画在对应轨道上的虚线预览框（两个夹点的雏形）
+    private func drawCreationPreview(kind: RowKind, model: WorkbenchViewModel) {
+        let row: Row
+        switch kind {
+        case .focusLane: row = Self.rowYRow(for: .focusLane, laneCount: model.document.lanes.count)
+        case .annotationLane: row = Self.rowYRow(for: .annotationLane, laneCount: model.document.lanes.count)
+        case .audio(let index): row = Self.rowYRow(for: .audio(index), laneCount: model.document.lanes.count)
+        default: return
+        }
+        let x0 = x(for: min(createAnchor, createCurrent))
+        let x1 = x(for: max(createAnchor, createCurrent))
+        let rect = NSRect(x: x0, y: row.y + 1, width: max(2, x1 - x0), height: row.height - 2)
+        SettingsAppearance.accent.withAlphaComponent(0.25).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5).fill()
+        let path = NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5)
+        SettingsAppearance.accent.setStroke()
+        path.lineWidth = 1.5
+        path.setLineDash([4, 3], count: 2, phase: 0)
+        path.stroke()
     }
 
     private func drawRuler(_ dirtyRect: NSRect, model: WorkbenchViewModel) {
@@ -566,7 +636,8 @@ final class WorkbenchTimelineCanvas: NSView {
         let steps: [Double] = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600]
         let step = steps.first(where: { CGFloat($0) * CGFloat(pps) >= 70 }) ?? 900
         let minor = step / 5
-        let visibleEnd = time(forX: frame.width)
+        // 标尺只画到视频结尾，不显示时长之外的刻度
+        let visibleEnd = min(model.duration, time(forX: frame.width))
 
         let minorColor = NSColor.tertiaryLabelColor
         let majorColor = NSColor.secondaryLabelColor
@@ -575,7 +646,7 @@ final class WorkbenchTimelineCanvas: NSView {
 
         var t = 0.0
         var index = 0
-        while t <= visibleEnd + step {
+        while t <= visibleEnd + minor {
             let x = x(for: t)
             let isMajor = index % 5 == 0
             let line = NSBezierPath()
@@ -712,6 +783,48 @@ final class WorkbenchTimelineCanvas: NSView {
             ]
             ("\(Int(volume * 100))%" as NSString).draw(at: NSPoint(x: 8, y: row.y + row.height - 14), withAttributes: attrs)
         }
+
+        // 音量段块（两端夹点可拖，选中高亮）
+        for gain in model.document.audioGains where gain.laneIndex == laneIndex {
+            let tlIn = model.document.timelineTime(forSource: gain.sourceIn)
+            let tlOut = model.document.timelineTime(forSource: gain.sourceOut)
+            let x0 = x(for: tlIn)
+            let x1 = x(for: tlOut)
+            let rect = NSRect(x: x0, y: row.y + 2, width: max(4, x1 - x0), height: row.height - 4)
+            guard rect.maxX >= 0, rect.minX <= frame.width else { continue }
+            let isSelected = model.selection == .audioGain(gain.id)
+            let path = NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5)
+            if gain.volume == 0 {
+                SettingsAppearance.warning.withAlphaComponent(isSelected ? 0.55 : 0.38).setFill()
+            } else {
+                SettingsAppearance.accent.withAlphaComponent(isSelected ? 0.45 : 0.28).setFill()
+            }
+            path.fill()
+            if isSelected {
+                SettingsAppearance.accent.setStroke()
+                path.lineWidth = 1.5
+                path.stroke()
+                // 两端夹点手柄
+                for handleX in [rect.minX, rect.maxX] {
+                    let handle = NSBezierPath(roundedRect: NSRect(x: handleX - 2, y: rect.midY - 9, width: 4, height: 18),
+                                              xRadius: 2, yRadius: 2)
+                    SettingsAppearance.accent.setFill()
+                    handle.fill()
+                }
+            }
+            if rect.width > 34 {
+                let label = gain.volume == 0 ? L("已静音") : "\(Int(gain.volume * 100))%"
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium),
+                    .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+                ]
+                let size = (label as NSString).size(withAttributes: attrs)
+                if rect.width > size.width + 12 {
+                    (label as NSString).draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
+                                             withAttributes: attrs)
+                }
+            }
+        }
     }
 
     /// 整条音轨的波形图（按当前缩放缓存为位图）
@@ -822,12 +935,25 @@ final class WorkbenchTimelineCanvas: NSView {
         case .video:
             handleVideoMouseDown(p, model: model)
         case .audio(let index):
-            model.selection = .lane(index)
+            handleAudioMouseDown(p, laneIndex: index, model: model)
         case .focusLane:
-            handleEffectMouseDown(p, model: model, isFocus: true)
+            if !handleEffectMouseDown(p, model: model, isFocus: true) {
+                beginCreateRange(.focusLane, at: p, model: model)
+            }
         case .annotationLane:
-            handleEffectMouseDown(p, model: model, isFocus: false)
+            if !handleEffectMouseDown(p, model: model, isFocus: false) {
+                beginCreateRange(.annotationLane, at: p, model: model)
+            }
         }
+    }
+
+    /// 开始拖拽创建：先按下锚点，拖动中画预览，松开时生成段
+    private func beginCreateRange(_ kind: RowKind, at p: NSPoint, model: WorkbenchViewModel) {
+        model.beginScrub()
+        drag = .createRange(kind)
+        createAnchor = time(forX: p.x)
+        createCurrent = createAnchor
+        needsDisplay = true
     }
 
     private func handleVideoMouseDown(_ p: NSPoint, model: WorkbenchViewModel) {
@@ -870,7 +996,8 @@ final class WorkbenchTimelineCanvas: NSView {
         model.seek(to: time(forX: p.x))
     }
 
-    private func handleEffectMouseDown(_ p: NSPoint, model: WorkbenchViewModel, isFocus: Bool) {
+    /// 特效段命中：边缘 → 拉伸；内部 → 选中并进入编辑。返回是否命中任何段。
+    private func handleEffectMouseDown(_ p: NSPoint, model: WorkbenchViewModel, isFocus: Bool) -> Bool {
         let document = model.document
         let items: [(id: UUID, startIn: Double, startOut: Double)] = isFocus
             ? document.focuses.map { ($0.id, $0.sourceIn, $0.sourceOut) }
@@ -883,23 +1010,56 @@ final class WorkbenchTimelineCanvas: NSView {
                 drag = .effectEdge(item.id, isFocus: isFocus, left: true)
                 model.beginUndoableDrag()
                 model.beginScrub()
-                return
+                return true
             }
             if abs(p.x - x1) <= TimelineMetrics.edgeHit {
                 drag = .effectEdge(item.id, isFocus: isFocus, left: false)
                 model.beginUndoableDrag()
                 model.beginScrub()
-                return
+                return true
             }
             if p.x > x0, p.x < x1 {
                 drag = .effectMove(item.id, isFocus: isFocus)
                 model.beginUndoableDrag()
                 model.beginScrub()
                 if isFocus { model.beginFocusEdit(item.id) } else { model.beginAnnotationSelection(item.id) }
+                return true
+            }
+        }
+        return false
+    }
+
+    /// 音频轨命中：音量段边缘 → 拉伸；段内 → 选中/移动；空白 → 拖拽创建音量段
+    private func handleAudioMouseDown(_ p: NSPoint, laneIndex: Int, model: WorkbenchViewModel) {
+        let document = model.document
+        let gains = document.audioGains.filter { $0.laneIndex == laneIndex }
+        for gain in gains {
+            let x0 = x(for: document.timelineTime(forSource: gain.sourceIn))
+            let x1 = x(for: document.timelineTime(forSource: gain.sourceOut))
+            guard p.x >= x0 - TimelineMetrics.edgeHit, p.x <= x1 + TimelineMetrics.edgeHit else { continue }
+            model.selection = .audioGain(gain.id)
+            if abs(p.x - x0) <= TimelineMetrics.edgeHit {
+                drag = .gainEdge(gain.id, left: true)
+                model.beginUndoableDrag()
+                model.beginScrub()
+                return
+            }
+            if abs(p.x - x1) <= TimelineMetrics.edgeHit {
+                drag = .gainEdge(gain.id, left: false)
+                model.beginUndoableDrag()
+                model.beginScrub()
+                return
+            }
+            if p.x > x0, p.x < x1 {
+                drag = .gainMove(gain.id)
+                model.beginUndoableDrag()
+                model.beginScrub()
                 return
             }
         }
-        model.selection = nil
+        // 空白：点选轨道 + 拖拽创建音量段
+        model.selection = .lane(laneIndex)
+        beginCreateRange(.audio(laneIndex), at: p, model: model)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -948,6 +1108,17 @@ final class WorkbenchTimelineCanvas: NSView {
             stretchEffect(id: id, isFocus: isFocus, left: left, atTimeline: time(forX: p.x), model: model)
             needsDisplay = true
 
+        case .gainMove(let id):
+            shiftGain(id: id, delta: dt, model: model)
+
+        case .gainEdge(let id, let left):
+            stretchGain(id: id, left: left, atTimeline: time(forX: p.x), model: model)
+            needsDisplay = true
+
+        case .createRange:
+            createCurrent = max(0, min(model.duration, time(forX: p.x)))
+            needsDisplay = true
+
         case .none:
             break
         }
@@ -966,10 +1137,57 @@ final class WorkbenchTimelineCanvas: NSView {
         case .effectMove, .effectEdge:
             model.refreshOverlays()
             needsDisplay = true
+        case .gainMove, .gainEdge:
+            needsDisplay = true
+        case .createRange(let kind):
+            commitCreateRange(kind, model: model)
         default:
             break
         }
         drag = .none
+        needsDisplay = true
+    }
+
+    /// 松手：把拖出的范围变成对应的段（聚焦/标注/音量段）
+    private func commitCreateRange(_ kind: RowKind, model: WorkbenchViewModel) {
+        let a = max(0, min(model.duration, min(createAnchor, createCurrent)))
+        let b = max(0, min(model.duration, max(createAnchor, createCurrent)))
+        guard b - a >= 0.2 else { return }
+        switch kind {
+        case .focusLane:
+            model.createFocusRange(timelineStart: a, timelineEnd: b)
+        case .annotationLane:
+            model.createAnnotationRange(timelineStart: a, timelineEnd: b)
+        case .audio(let laneIndex):
+            model.createGainRange(laneIndex: laneIndex, timelineStart: a, timelineEnd: b)
+        default:
+            break
+        }
+    }
+
+    private func shiftGain(id: UUID, delta: Double, model: WorkbenchViewModel) {
+        let duration = model.duration
+        guard duration > 0,
+              let index = model.document.audioGains.firstIndex(where: { $0.id == id }) else { return }
+        var gain = model.document.audioGains[index]
+        let length = gain.sourceOut - gain.sourceIn
+        let newIn = max(0, min(duration - length, gain.sourceIn + delta))
+        gain.sourceIn = newIn
+        gain.sourceOut = newIn + length
+        model.updateGain(gain)
+        needsDisplay = true
+    }
+
+    private func stretchGain(id: UUID, left: Bool, atTimeline t: Double, model: WorkbenchViewModel) {
+        guard let source = model.document.sourceTime(atTimeline: max(0, t)),
+              let index = model.document.audioGains.firstIndex(where: { $0.id == id }) else { return }
+        var gain = model.document.audioGains[index]
+        if left {
+            gain.sourceIn = max(0, min(gain.sourceOut - 0.2, source))
+        } else {
+            gain.sourceOut = max(gain.sourceIn + 0.2, min(model.media?.duration ?? gain.sourceOut, source))
+        }
+        model.updateGain(gain)
     }
 
     // MARK: 特效拖拽（源时间 ↔ 时间轴投影）
@@ -1136,13 +1354,27 @@ final class WorkbenchTimelineCanvas: NSView {
                 }
             }
         case .audio(let index):
-            model.selection = .lane(index)
-            let lane = model.document.lanes.indices.contains(index) ? model.document.lanes[index] : nil
-            let title = (lane?.muted ?? false) ? L("取消静音") : L("整轨静音")
-            let item = NSMenuItem(title: title, action: #selector(menuToggleLaneMute(_:)), keyEquivalent: "")
-            item.tag = index
-            item.target = self
-            menu.addItem(item)
+            if let gainID = hitGain(p, laneIndex: index, model: model) {
+                model.selection = .audioGain(gainID)
+                let gain = model.document.audioGains.first { $0.id == gainID }
+                let toggleTitle = (gain?.volume ?? 1) == 0 ? L("恢复音量") : L("静音此段")
+                let toggle = NSMenuItem(title: toggleTitle, action: #selector(menuToggleGain), keyEquivalent: "")
+                toggle.representedObject = gainID
+                toggle.target = self
+                menu.addItem(toggle)
+                let delete = NSMenuItem(title: L("删除音量段"), action: #selector(menuDeleteGain), keyEquivalent: "")
+                delete.representedObject = gainID
+                delete.target = self
+                menu.addItem(delete)
+            } else {
+                model.selection = .lane(index)
+                let lane = model.document.lanes.indices.contains(index) ? model.document.lanes[index] : nil
+                let title = (lane?.muted ?? false) ? L("取消静音") : L("整轨静音")
+                let item = NSMenuItem(title: title, action: #selector(menuToggleLaneMute(_:)), keyEquivalent: "")
+                item.tag = index
+                item.target = self
+                menu.addItem(item)
+            }
         case .focusLane:
             if let focus = hitEffect(p, isFocus: true, model: model) {
                 model.selection = .focus(focus)
@@ -1178,6 +1410,15 @@ final class WorkbenchTimelineCanvas: NSView {
         return nil
     }
 
+    private func hitGain(_ p: NSPoint, laneIndex: Int, model: WorkbenchViewModel) -> UUID? {
+        for gain in model.document.audioGains where gain.laneIndex == laneIndex {
+            let x0 = x(for: model.document.timelineTime(forSource: gain.sourceIn))
+            let x1 = x(for: model.document.timelineTime(forSource: gain.sourceOut))
+            if p.x >= x0, p.x <= x1 { return gain.id }
+        }
+        return nil
+    }
+
     @objc private func menuSplit() { model?.splitAtPlayhead() }
     @objc private func menuToggleMute() {
         guard let model, case .clip(let id)? = model.selection else { return }
@@ -1197,6 +1438,14 @@ final class WorkbenchTimelineCanvas: NSView {
     @objc private func menuDeleteAnnotation(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? UUID else { return }
         model?.removeAnnotation(id)
+    }
+    @objc private func menuToggleGain(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UUID else { return }
+        model?.toggleGainMute(id)
+    }
+    @objc private func menuDeleteGain(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UUID else { return }
+        model?.removeGain(id)
     }
 }
 
