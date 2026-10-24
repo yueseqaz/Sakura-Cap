@@ -33,6 +33,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         applyHotKeys()
 
+        // 调试入口：`-audiotest` 录 5 秒系统声音后自动停止并退出（结果写 /tmp/audiotest.log）
+        if CommandLine.arguments.contains("-audiotest") {
+            AudioRecorderController.shared.start(.system)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                AudioRecorderController.shared.stop()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    let path = AudioRecorderController.shared.lastSavedURL?.path ?? "nil"
+                    try? path.write(toFile: "/tmp/audiotest.log", atomically: true, encoding: .utf8)
+                    exit(0)
+                }
+            }
+        }
+
         // 调试入口：`-aichat` 打开 AI 聊天窗口（带样例 Markdown 消息）
         if CommandLine.arguments.contains("-aichat") {
             var demo = AIChatSession()

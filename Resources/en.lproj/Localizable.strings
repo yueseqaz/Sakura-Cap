@@ -604,3 +604,18 @@
 "添加图片" = "Add Images";
 "早期对话已压缩为摘要，随对话滚动更新" = "Earlier messages are rolled into a running summary";
 "翻译与 AI" = "Translation & AI";
+
+/* 录音 */
+"录音" = "Audio Recording";
+"录制系统声音" = "Record System Audio";
+"录制麦克风" = "Record Microphone";
+"系统声音 + 麦克风" = "System Audio + Microphone";
+"停止录音（%@）" = "Stop Recording (%@)";
+"暂停录音（%@）" = "Pause Recording (%@)";
+"继续录音（%@）" = "Resume Recording (%@)";
+"已保存录音" = "Recording saved";
+"没有录到声音" = "Nothing was recorded";
+"录音失败" = "Recording failed";
+"系统声音采集同样依赖屏幕录制授权" = "System audio capture also requires screen recording permission";
+"需要麦克风权限" = "Microphone permission required";
+"请在系统设置中允许麦克风访问" = "Allow microphone access in System Settings";

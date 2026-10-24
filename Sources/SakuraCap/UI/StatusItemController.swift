@@ -71,6 +71,7 @@ final class StatusItemController: NSObject {
         if controller.state == .ready {
             menu.addItem(makeItem(L("开始录制"), #selector(menuToggle)))
             menu.addItem(makeItem(L("取消"), #selector(menuCancelArmed)))
+            menu.addItem(audioMenuItem())
         } else if controller.state == .recording {
             let mmss = Self.mmss(controller.elapsed)
             let pauseTitle = controller.isPaused
@@ -78,8 +79,10 @@ final class StatusItemController: NSObject {
                 : String(format: L("暂停录制（%@）"), mmss)
             menu.addItem(makeItem(pauseTitle, #selector(menuPause)))
             menu.addItem(makeItem(String(format: L("停止录制（%@）"), mmss), #selector(menuToggle)))
+            menu.addItem(audioMenuItem())
         } else if controller.isBusy {
             menu.addItem(makeItem(L("取消录制"), #selector(menuToggle)))
+            menu.addItem(audioMenuItem())
         } else {
             let shot = NSMenuItem(title: L("截屏"), action: nil, keyEquivalent: "")
             let shotMenu = NSMenu()
@@ -98,6 +101,8 @@ final class StatusItemController: NSObject {
             submenu.addItem(makeItem(L("窗口录制…"), #selector(recordWindow)))
             record.submenu = submenu
             menu.addItem(record)
+
+            menu.addItem(audioMenuItem())
 
             let translate = NSMenuItem(title: L("翻译"), action: nil, keyEquivalent: "")
             let translateMenu = NSMenu()
@@ -129,6 +134,37 @@ final class StatusItemController: NSObject {
         menu.addItem(makeItem(L("退出"), #selector(menuQuit)))
         return menu
     }
+
+    /// 「录音」菜单项：空闲时给三种声源；录音中给 暂停/停止
+    private func audioMenuItem() -> NSMenuItem {
+        let audio = AudioRecorderController.shared
+        let item = NSMenuItem(title: L("录音"), action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        if audio.state == .idle {
+            for source in AudioRecorderController.Source.allCases {
+                let sourceItem = makeItem(source.label, #selector(audioStart(_:)))
+                sourceItem.representedObject = source.rawValue
+                submenu.addItem(sourceItem)
+            }
+        } else {
+            let mmss = Self.mmss(audio.elapsed)
+            submenu.addItem(makeItem(audio.state == .paused
+                ? String(format: L("继续录音（%@）"), mmss)
+                : String(format: L("暂停录音（%@）"), mmss), #selector(audioPause)))
+            submenu.addItem(makeItem(String(format: L("停止录音（%@）"), mmss), #selector(audioStop)))
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func audioStart(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let source = AudioRecorderController.Source(rawValue: raw) else { return }
+        AudioRecorderController.shared.start(source)
+    }
+
+    @objc private func audioPause() { AudioRecorderController.shared.togglePause() }
+    @objc private func audioStop() { AudioRecorderController.shared.stop() }
 
     private func makeItem(_ title: String, _ action: Selector) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -291,3 +327,4 @@ final class StatusItemController: NSObject {
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
     }
 }
+
