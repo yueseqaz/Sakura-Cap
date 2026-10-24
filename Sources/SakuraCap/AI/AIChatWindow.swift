@@ -162,9 +162,54 @@ final class AIChatPresenter {
     }
 }
 
+/// 附件缩略图：点击放大查看，右上角移除（热区 22pt，完整露出）
+private struct StagedThumb: View {
+    let name: String
+    let model: AIChatViewModel
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let cg = model.image(name) {
+                    Image(nsImage: NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)))
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 60, height: 60)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .onTapGesture {
+                            if let cg = model.image(name) { AIChatImageViewer.shared.show(cg) }
+                        }
+                }
+            }
+            Button {
+                model.removeStagedImage(name)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .offset(x: 7, y: -7)
+        }
+    }
+}
+
 // MARK: - 视图
 
 struct AIChatView: View {
+    @ObservedObject var model: AIChatViewModel
+
+    var body: some View {
+        ChatPane(model: model)
+            .background(SettingsAppearance.color(SettingsAppearance.canvas))
+            .frame(minWidth: 380, minHeight: 460)
+    }
+}
+
+/// 聊天主体（顶栏 + 消息列表 + 输入区），独立窗口与历史窗口共用
+struct ChatPane: View {
     @ObservedObject var model: AIChatViewModel
 
     var body: some View {
@@ -175,8 +220,6 @@ struct AIChatView: View {
             Divider()
             composer
         }
-        .background(SettingsAppearance.color(SettingsAppearance.canvas))
-        .frame(minWidth: 380, minHeight: 460)
     }
 
     private var topBar: some View {
@@ -239,30 +282,17 @@ struct AIChatView: View {
     }
 
     private var composer: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             if !model.stagedImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 12) {
                         ForEach(model.stagedImages, id: \.self) { name in
-                            ZStack(alignment: .topTrailing) {
-                                if let cg = model.image(name) {
-                                    Image(nsImage: NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)))
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                        .frame(width: 64, height: 64)
-                                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                                }
-                                Button { model.removeStagedImage(name) } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                                .offset(x: 5, y: -5)
-                            }
+                            StagedThumb(name: name, model: model)
                         }
                     }
+                    .padding(.top, 10)   // 给移除按钮留出上方空间，不被分隔线压住
                 }
-                .frame(height: 70)
+                .frame(height: 80)
                 .padding(.horizontal, 12)
             }
             HStack(alignment: .bottom, spacing: 8) {
@@ -318,6 +348,7 @@ private struct MessageBubble: View {
                                     .aspectRatio(contentMode: .fill)
                                     .frame(width: 120, height: 90)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .onTapGesture { AIChatImageViewer.shared.show(cg) }
                             }
                         }
                     }
@@ -385,5 +416,37 @@ struct MarkdownTextView: NSViewRepresentable {
     func updateNSView(_ view: AutoHeightTextView, context: Context) {
         view.textStorage?.setAttributedString(attributed)
         view.invalidateIntrinsicContentSize()
+    }
+}
+
+
+/// 图片查看器：点击聊天里的图片弹出大图（悬浮窗，可缩放窗口）
+@MainActor
+final class AIChatImageViewer {
+    static let shared = AIChatImageViewer()
+
+    private var window: NSWindow?
+
+    func show(_ image: CGImage, title: String = "") {
+        NSApp.activate(ignoringOtherApps: true)
+        window?.close()
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let width = min(screen.width * 0.6, max(320, CGFloat(image.width) + 48))
+        let height = min(screen.height * 0.7, max(240, CGFloat(image.height) + 48))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+                              styleMask: [.titled, .closable, .resizable],
+                              backing: .buffered, defer: false)
+        window.title = title.isEmpty ? L("图片") : title
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        imageView.image = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.autoresizingMask = [.width, .height]
+        window.contentView = imageView
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        self.window = window
     }
 }

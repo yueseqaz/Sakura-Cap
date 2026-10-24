@@ -84,9 +84,15 @@ final class AIChatStore {
         sessions.insert(session, at: 0)
     }
 
+    /// 彻底删除：会话 JSON + 消息里引用的全部图片文件
     func delete(_ session: AIChatSession) {
         sessions.removeAll { $0.id == session.id }
         try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(session.id.uuidString).json"))
+        for message in session.messages {
+            for name in message.imageFiles {
+                try? FileManager.default.removeItem(at: imageFileURL(name))
+            }
+        }
     }
 
     /// 压缩为 JPEG 存入图片目录，返回文件名（长边压到 1600，足够视觉模型且省 token）

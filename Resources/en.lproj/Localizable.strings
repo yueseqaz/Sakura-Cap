@@ -594,3 +594,8 @@
 "AI 接口地址无效" = "Invalid AI endpoint";
 "截屏失败" = "Screenshot failed";
 "识别失败" = "Recognition failed";
+"图片" = "Image";
+"选择左侧的聊天记录查看" = "Select a chat on the left to view";
+"删除这段聊天记录？" = "Delete this chat?";
+"将同时清理其中的图片文件，删除后无法恢复。" = "Its image files will be removed too. This cannot be undone.";
+"聊天记录（%d）" = "Chats (%d)";
