@@ -79,7 +79,7 @@ atos -o build/Sakura-Cap.app/Contents/MacOS/SakuraCap -arch arm64 -l <loadAddres
 ## 已知坑与设计对策
 
 1. **ad-hoc 重编译 → TCC 失效**：见上文自签证书方案。
-2. **多套坐标系**（AppKit 左下 / CG 全局左上 / SCK 左上原点，另有像素维度）：全部收口在 `Platform/ScreenCoordinateKit.swift`，配套 `Scripts/verify_coordinates.swift` 断言；副屏在主屏左侧时全局原点为负，跨屏运算只在 CG 全局空间进行。
+2. **多套坐标系**（AppKit 左下 / CG 全局左上 / SCK 左上原点，另有像素维度）：全部收口在 `Platform/ScreenCoordinateKit.swift`，配套 `Scripts/verify_coordinates.swift` 断言（脚本是源码公式的复刻，两侧必须同步改；CI 会在每次 push/PR 自动跑它，见 `.github/workflows/ci.yml`）；副屏在主屏左侧时全局原点为负，跨屏运算只在 CG 全局空间进行。
 3. **不设置 `sourceRect`**：全屏模式不传 `sourceRect`，区域模式原生采集整屏后由 `StreamSession` 用 Core Image 按像素裁剪 + 缩放，规避不同 macOS 对 `sourceRect` 单位解释的差异。
 4. **`CIContext.render(_:to:)` 不缩放**：它只做 1:1 渲染并裁掉超出部分。裁剪后需把 extent 原点平移回 (0,0)，缩放需显式 `transformed(by:)`，否则画面错位/全黑。
 5. **Retina / 混合 DPI**：输出缓冲用「像素」，按每屏 `pointPixelScale` 独立推导。

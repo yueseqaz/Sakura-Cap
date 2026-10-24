@@ -1,6 +1,7 @@
 // 坐标系换算验证脚本（零依赖，替代 XCTest：纯 CLT 工具链不含 XCTest）
-// 运行: swift Scripts/verify_coordinates.swift
-// 复刻 ScreenCoordinateKit 中两个纯函数的公式，任何改动请与源码同步修改。
+// 运行: swift Scripts/verify_coordinates.swift（CI 每次 push/PR 自动执行，见 .github/workflows/ci.yml）
+// ⚠️ 复刻 ScreenCoordinateKit 中两个纯函数的公式（SPM executable 无法被脚本 import）。
+//    任何一侧改动必须同步另一侧：改 ScreenCoordinateKit / 改本文件，两处一起动！
 import Foundation
 import CoreGraphics
 

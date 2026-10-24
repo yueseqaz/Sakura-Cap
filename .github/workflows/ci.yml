@@ -1,0 +1,21 @@
+name: CI
+
+# 每次 push / PR：编译门禁（release 构建 + .app 组装签名）+ 坐标换算断言脚本。
+# 发版流程见 release.yml（打 tag 触发）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-verify:
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build & package (ad-hoc)
+        run: SIGN_IDENTITY=- ./build.sh
+
+      - name: Coordinate assertions
+        run: swift Scripts/verify_coordinates.swift
