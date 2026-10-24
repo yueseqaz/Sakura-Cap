@@ -39,9 +39,11 @@ enum UpdateChecker {
 
     // MARK: - 网络
 
-    /// 优先用 GitHub API（能拿到更新说明）；被限流/失败时退回 releases/latest 重定向（无速率限制）。
+    /// 优先用 GitHub API（能拿到更新说明）；被限流/失败时依次退回
+    /// raw cask（raw.githubusercontent.com，无 API 限流，天然带 sha256）和 releases/latest 重定向。
     private static func fetchLatest() async throws -> Release {
         if let release = try? await fetchFromAPI() { return release }
+        if let release = try? await fetchFromCask() { return release }
         return try await fetchFromRedirect()
     }
 
@@ -66,6 +68,43 @@ enum UpdateChecker {
         return Release(version: version, pageURL: pageURL, notes: json["body"] as? String ?? "",
                        assetURL: (asset?["browser_download_url"] as? String).flatMap(URL.init(string:)),
                        digest: asset?["digest"] as? String)
+    }
+
+    /// API 被限流时的回退：读 main 分支的 Homebrew cask（raw.githubusercontent.com 不受 API 限流）。
+    /// 发版流水线会自动把 version + sha256 回写进 cask——哈希正好作为安装包校验值，
+    /// 避免走到重定向路径时因拿不到 digest 而拒绝自动安装。
+    private static func fetchFromCask() async throws -> Release {
+        guard let url = URL(string: "https://raw.githubusercontent.com/yueseqaz/Sakura-Cap/main/Casks/sakura-cap.rb") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        request.setValue("Sakura-Cap/\(AppInfo.version)", forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let text = String(data: data, encoding: .utf8), text.count < 10_000 else {
+            throw URLError(.cannotParseResponse)
+        }
+        var version: String?
+        var sha256: String?
+        for rawLine in text.split(separator: "\n") {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if version == nil, line.hasPrefix("version \"") {
+                version = String(line.dropFirst(9).dropLast(1))
+            } else if sha256 == nil, line.hasPrefix("sha256 \"") {
+                let value = String(line.dropFirst(8).dropLast(1))
+                if value.count == 64 { sha256 = value }
+            }
+        }
+        guard let version,
+              version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil,
+              let sha256 else {
+            throw URLError(.cannotParseResponse)
+        }
+        let asset = URL(string: "https://github.com/yueseqaz/Sakura-Cap/releases/download/v\(version)/Sakura-Cap-\(version).zip")
+        return Release(version: version,
+                       pageURL: URL(string: "https://github.com/yueseqaz/Sakura-Cap/releases/latest"),
+                       notes: "", assetURL: asset, digest: "sha256:\(sha256)")
     }
 
     /// 读取 `github.com/owner/repo/releases/latest` 跳转后的地址，取出 `vX.Y.Z`。

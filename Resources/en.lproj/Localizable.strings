@@ -632,7 +632,6 @@
 "工具" = "Tools";
 
 /* 健壮性修复（optimize/robustness-and-cleanup） */
-"钥匙串不可用，API Key 本次仅保存在内存中" = "Keychain unavailable; the API key is kept in memory only for this session";
 "已导出 %@（原文件删除失败，请手动删除）" = "Exported %@ (failed to delete the original file; please delete it manually)";
 "聊天记录保存失败" = "Failed to save chat history";
 "部分聊天记录无法读取" = "Some chat history could not be read";
