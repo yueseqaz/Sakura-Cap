@@ -196,7 +196,7 @@ final class StatusItemController: NSObject {
     @objc private func menuTrim() {
         if let url = controller.lastSavedFiles.first, FileManager.default.fileExists(atPath: url.path) {
             DispatchQueue.main.async {
-                TrimWindowController.shared.show(url: url, origin: .manual)
+                WorkbenchWindowController.shared.show(url: url, origin: .manual)
             }
         } else {
             let panel = NSOpenPanel()
@@ -206,7 +206,7 @@ final class StatusItemController: NSObject {
             if panel.runModal() == .OK, let url = panel.url {
                 // Let the file panel and status menu finish dismissing before ordering the editor.
                 DispatchQueue.main.async {
-                    TrimWindowController.shared.show(url: url, origin: .manual)
+                    WorkbenchWindowController.shared.show(url: url, origin: .manual)
                 }
             }
         }

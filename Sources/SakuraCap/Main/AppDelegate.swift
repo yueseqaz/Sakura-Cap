@@ -33,6 +33,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         applyHotKeys()
 
+        // 调试入口：`SakuraCap -workbench <视频路径>` 直接打开后期工作台
+        if let index = CommandLine.arguments.firstIndex(of: "-workbench"),
+           index + 1 < CommandLine.arguments.count {
+            let path = CommandLine.arguments[index + 1]
+            if FileManager.default.fileExists(atPath: path) {
+                WorkbenchWindowController.shared.show(url: URL(fileURLWithPath: path), origin: .manual)
+            }
+        }
+
         // Vision 首次识别会加载模型；后台预热，不延迟菜单栏和窗口启动。
         Task.detached(priority: .utility) { OCR.prewarm() }
 
