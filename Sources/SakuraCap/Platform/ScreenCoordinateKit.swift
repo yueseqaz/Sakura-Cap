@@ -8,6 +8,31 @@ extension NSScreen {
     }
 }
 
+/// 「点→像素」换算的唯一入口。
+/// 关键陷阱：SCDisplay.width/height 与 CGDisplayPixelsWide/High 在现代 macOS 上
+/// 返回的都是逻辑点（Retina 屏上恰好等于 frame 宽高），拿它们当像素会把 HiDPI 屏
+/// 按 1x 采集，录屏整体发糊；只有 CGDisplayMode 的 pixelWidth/pixelHeight 是
+/// 该屏真实的采样像素（HiDPI 缩放模式下即合成器实际渲染的缓冲尺寸）。
+enum DisplayPixelMetrics {
+    static func size(_ displayID: CGDirectDisplayID) -> (width: Int, height: Int) {
+        if let mode = CGDisplayCopyDisplayMode(displayID),
+           mode.pixelWidth > 0, mode.pixelHeight > 0 {
+            return (mode.pixelWidth, mode.pixelHeight)
+        }
+        return (CGDisplayPixelsWide(displayID), CGDisplayPixelsHigh(displayID))
+    }
+
+    static func scale(_ displayID: CGDirectDisplayID) -> (x: CGFloat, y: CGFloat) {
+        if let mode = CGDisplayCopyDisplayMode(displayID),
+           mode.width > 0, mode.height > 0, mode.pixelWidth > 0, mode.pixelHeight > 0 {
+            return (CGFloat(mode.pixelWidth) / CGFloat(mode.width),
+                    CGFloat(mode.pixelHeight) / CGFloat(mode.height))
+        }
+        let s = NSScreen.screens.first { $0.displayID == displayID }?.backingScaleFactor ?? 2
+        return (s, s)
+    }
+}
+
 /// 四套坐标系换算的唯一入口（AppKit / CG 全局 / SCK / 像素）。
 /// 纯函数，便于单元测试；任何散落的坐标运算都应收拢到这里。
 enum ScreenCoordinate {

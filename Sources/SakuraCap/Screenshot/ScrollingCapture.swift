@@ -142,12 +142,12 @@ final class ScrollingCapture {
         let controlIDs = Set([hud?.windowNumber, preview?.windowNumber].compactMap { $0 })
         let controls = content.windows.filter { controlIDs.contains(Int($0.windowID)) }
         let newFilter = SCContentFilter(display: display, excludingWindows: controls)
-        let screen = NSScreen.screens.first { $0.displayID == region.displayID }
-        let scaleX = screen.map { CGFloat(CGDisplayPixelsWide(region.displayID)) / max($0.frame.width, 1) } ?? 2
-        let scaleY = screen.map { CGFloat(CGDisplayPixelsHigh(region.displayID)) / max($0.frame.height, 1) } ?? 2
+        // SCK 配置要真实像素、裁剪要真实缩放；CGDisplayPixelsWide 返回逻辑点，不能用
+        let pixels = DisplayPixelMetrics.size(region.displayID)
+        let (scaleX, scaleY) = DisplayPixelMetrics.scale(region.displayID)
         let newConfig = SCStreamConfiguration()
-        newConfig.width = CGDisplayPixelsWide(region.displayID)
-        newConfig.height = CGDisplayPixelsHigh(region.displayID)
+        newConfig.width = pixels.width
+        newConfig.height = pixels.height
         newConfig.showsCursor = false
         newConfig.captureResolution = .best
         filter = newFilter

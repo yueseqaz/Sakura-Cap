@@ -25,12 +25,14 @@ final class DisplayCatalog: ObservableObject {
         for display in content.displays {
             let screen = NSScreen.screens.first { $0.displayID == display.displayID }
             let scale = screen?.backingScaleFactor ?? 2
+            // SCDisplay.width/height 是逻辑点；录制缓冲与分辨率展示都需要真实像素
+            let pixels = DisplayPixelMetrics.size(display.displayID)
             let info = DisplayInfo(id: display.displayID,
                                    name: screen?.localizedName ?? (L("显示器") + " \(display.displayID)"),
-                                   widthPx: display.width,
-                                   heightPx: display.height,
-                                   widthPt: CGFloat(display.width) / scale,
-                                   heightPt: CGFloat(display.height) / scale,
+                                   widthPx: pixels.width,
+                                   heightPx: pixels.height,
+                                   widthPt: CGFloat(display.width),
+                                   heightPt: CGFloat(display.height),
                                    scaleFactor: scale,
                                    isMain: CGDisplayIsMain(display.displayID) != 0)
             infos.append(info)

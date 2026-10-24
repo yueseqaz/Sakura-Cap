@@ -7,8 +7,8 @@ import CoreVideo
 /// 单屏 / 全部屏幕并行 / 自定义区域（不跨屏）。
 ///
 /// 坐标与缩放约定（画质专项）：
-/// - sourceRect 与缓冲尺寸一律以「物理像素」表达：点值 × 过滤器自带的 pointPixelScale
-///   （macOS 14+，反映该过滤器真实的点→像素缩放；旧系统回退该屏 backingScaleFactor）
+/// - sourceRect 与缓冲尺寸一律以「物理像素」表达；点→像素换算统一走
+///   DisplayPixelMetrics（CGDisplayMode.pixelWidth，唯一可靠的像素来源）
 /// - 每路流独立换算，多屏混合 DPI 互不影响
 /// - 输出分辨率 = 捕获分辨率，1:1 无中间缩放；宽高强制偶数（4:2:0 编码要求）
 @MainActor
@@ -52,10 +52,9 @@ enum StreamPlanner {
             for info in chosen {
                 guard let display = catalog.scDisplay(for: info.id) else { continue }
                 let filter = SCContentFilter(display: display, excludingWindows: [])
-                // SCContentFilter.pointPixelScale can describe logical scaling on
-                // scaled external displays. DisplayCatalog already has the actual
-                // ScreenCaptureKit pixel dimensions, so use those as the source of
-                // truth for the recording buffer.
+                // DisplayCatalog.widthPx/heightPx 来自 CGDisplayMode 的真实像素。
+                // 千万不要用 SCDisplay.width/height：现代 macOS 上它返回逻辑点，
+                // 按 1x 采集会让 Retina 录屏整体发糊。
                 let native = evenDimensions(info.widthPx, info.heightPx)
                 // 输出分辨率：需要缩小就直接让 SCK 输出目标尺寸（原生采样、无中间缩放）
                 let (w, h) = outputSize(native, resolution: settings.outputResolution)
@@ -83,9 +82,9 @@ enum StreamPlanner {
                 throw RecordingError.displayMissing
             }
             let filter = SCContentFilter(display: display, excludingWindows: [])
-            // 用过滤器真实的「像素/点」比例换算选区；缩放分辨率下 backingScaleFactor
-            // 未必等于真实比例，直接用它会造成尺寸/位置偏差。
-            let (scaleX, scaleY) = displayPixelScale(info)
+            // 用 CGDisplayMode 的真实「像素/点」比例换算选区；CGDisplayPixelsWide 与
+            // SCDisplay.width 在现代 macOS 上都返回逻辑点，做分母/分子相除恒为 1。
+            let (scaleX, scaleY) = DisplayPixelMetrics.scale(region.displayID)
             let native = evenDimensions(Int((region.sckRect.width * scaleX).rounded()),
                                         Int((region.sckRect.height * scaleY).rounded()))
             let crop = CGRect(x: region.sckRect.minX * scaleX,
@@ -110,29 +109,6 @@ enum StreamPlanner {
 
         guard !specs.isEmpty else { throw RecordingError.noSpecs }
         return specs
-    }
-
-    private static func displayPixelScale(_ info: DisplayInfo) -> (CGFloat, CGFloat) {
-        guard let screen = NSScreen.screens.first(where: { $0.displayID == info.id }),
-              screen.frame.width > 0, screen.frame.height > 0 else {
-            let scale = info.scaleFactor > 0 ? info.scaleFactor : 1
-            return (scale, scale)
-        }
-        return (CGFloat(CGDisplayPixelsWide(info.id)) / screen.frame.width,
-                CGFloat(CGDisplayPixelsHigh(info.id)) / screen.frame.height)
-    }
-
-    /// 该过滤器内容的真实像素尺寸（点 × 像素/点），保证与采样缓冲区一致。
-    private static func pixelSize(filter: SCContentFilter, fallback: (Int, Int)) -> (Int, Int) {
-        if #available(macOS 14.0, *) {
-            let rect = filter.contentRect
-            let scale = CGFloat(filter.pointPixelScale)
-            if rect.width > 0, rect.height > 0, scale > 0 {
-                return evenDimensions(Int((rect.width * scale).rounded()),
-                                      Int((rect.height * scale).rounded()))
-            }
-        }
-        return evenDimensions(fallback.0, fallback.1)
     }
 
     /// 4:2:0 编码要求宽高为偶数

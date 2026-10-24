@@ -251,11 +251,9 @@ final class SelectionOverlayView: NSView {
                 needsDisplay = true
                 return
             }
-            // Use the display's actual pixel dimensions rather than
-            // NSScreen.backingScaleFactor. The latter can be stale or rounded
-            // on mixed-DPI/Retina setups and makes the captured area drift.
-            let scaleX = CGFloat(CGDisplayPixelsWide(screen.displayID)) / max(screen.frame.width, 1)
-            let scaleY = CGFloat(CGDisplayPixelsHigh(screen.displayID)) / max(screen.frame.height, 1)
+            // 点→像素换算必须走 CGDisplayMode：CGDisplayPixelsWide 在现代 macOS
+            // 上返回逻辑点，除以 frame 宽高恒为 1，会把选区按 1x 尺寸记录下来。
+            let (scaleX, scaleY) = DisplayPixelMetrics.scale(screen.displayID)
             let selection = RegionSelection(
                 displayID: screen.displayID,
                 sckRect: ScreenCoordinate.sckSourceRect(fromAppKitLocalRect: rect, in: screen),

@@ -196,6 +196,9 @@ final class ScreenshotController {
         guard let screen = NSScreen.screens.first(where: {
             ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID
         }) else { return nil }
+        // 注意：这里不能用 DisplayPixelMetrics.scale！CGDisplayCreateImage 的 rect
+        // 参数就是「点」单位，sckRect 也是点；乘上真实缩放（2x）反而会裁错区域。
+        // 返回的 CGImage 天然是原生像素分辨率，无需手动换算。
         let scaleX = CGFloat(CGDisplayPixelsWide(displayID)) / max(screen.frame.width, 1)
         let scaleY = CGFloat(CGDisplayPixelsHigh(displayID)) / max(screen.frame.height, 1)
         guard scaleX > 0, scaleY > 0 else { return nil }
