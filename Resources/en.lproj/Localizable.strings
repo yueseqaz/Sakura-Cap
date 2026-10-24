@@ -555,3 +555,5 @@
 "在轨道上拖拽创建聚焦 / 标注 / 音量段；点击片段或音轨编辑属性。" = "Drag on a lane to create focus / annotation / volume segments; click a clip or lane to edit it.";
 "在画面上直接拖拽矩形框选，拖四角改大小、拖中间移动。" = "Drag a rectangle on the frame; drag corners to resize, middle to move.";
 "框选的是聚焦的区域；放大几倍在这里拖滑杆决定。" = "The rectangle selects the focus region; set zoom here with the slider.";
+"声音淡入" = "Audio Fade In";
+"声音淡出" = "Audio Fade Out";

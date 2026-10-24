@@ -191,8 +191,8 @@ struct WorkbenchView: View {
                     get: { clip.muted },
                     set: { _ in model.toggleClipMute(id) }))
                     .font(SettingsAppearance.detailFont)
-                fadeRow(label: L("淡入"), value: clip.fadeIn) { model.setClipFade(.in, $0, forClip: id) }
-                fadeRow(label: L("淡出"), value: clip.fadeOut) { model.setClipFade(.out, $0, forClip: id) }
+                fadeRow(label: L("声音淡入"), value: clip.fadeIn) { model.setClipFade(.in, $0, forClip: id) }
+                fadeRow(label: L("声音淡出"), value: clip.fadeOut) { model.setClipFade(.out, $0, forClip: id) }
                 Button(L("删除片段"), role: .destructive) { model.deleteClip(id) }
                     .buttonStyle(.bordered)
                     .disabled(model.document.clips.count <= 1)
