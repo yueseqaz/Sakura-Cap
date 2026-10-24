@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Combine
 
+
 /// 摄像头画中画：一个可拖动的无边框预览窗口，`sharingType = .readOnly`，
 /// 因此会被 ScreenCaptureKit 录进画面。只在「待开始 / 准备 / 倒计时 / 录制」阶段显示。
 @MainActor
@@ -160,13 +161,14 @@ final class CameraPiP: ObservableObject {
         configureDeviceIfNeeded()
         showWindow()
         applyConfiguration()
-        if !session.isRunning {
-            let session = self.session
-            sessionQueue.async { if !session.isRunning { session.startRunning() } }
-            running = true
-            // 预览层连接在会话起转后才可用，稍后再同步一次镜像
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.applyConfiguration() }
-        }
+        // running 不依赖主线程读到的 session.isRunning：stop() 的 stopRunning 是
+        // 异步排队的，快速停→启时这里可能仍读到 true，跳过赋值会让 running 卡在
+        // false（预览可见但截取被 guard 静默拦下）。统一入队检查并置位。
+        let session = self.session
+        sessionQueue.async { if !session.isRunning { session.startRunning() } }
+        running = true
+        // 预览层连接在会话起转后才可用，稍后再同步一次镜像
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.applyConfiguration() }
     }
 
     private func stop() {
@@ -204,7 +206,6 @@ final class CameraPiP: ObservableObject {
 
     /// 画中画上的剪刀按钮：把摄像头当前帧送进标注编辑器
     func captureSnapshot() {
-        guard running else { return }
         window?.playCaptureFlash()
         frameStore.requestFrame { image in
             Task { @MainActor in
@@ -242,6 +243,7 @@ final class CameraPiP: ObservableObject {
         if window == nil {
             let created = CameraPiPWindow(session: session, videoOutput: videoOutput)
             created.onClose = { [weak self] in self?.disable() }
+            created.onCapture = { [weak self] in self?.captureSnapshot() }
             window = created
         }
         window?.orderFrontRegardless()
@@ -347,7 +349,9 @@ private final class CameraPiPContentView: NSView {
     }
 
     @objc private func handleClose() { onClose?() }
-    @objc private func handleCapture() { onCapture?() }
+    @objc private func handleCapture() {
+        onCapture?()
+    }
 
     /// 截取时的白色闪光反馈（拍照效果）
     func playCaptureFlash() {
@@ -458,19 +462,33 @@ private final class CameraPiPWindow: NSWindow {
 /// 摄像头最近一帧的缓存：剪刀按下时标记，下一帧到达即转换回调（不做逐帧转换，省 CPU）
 private final class CameraFrameStore: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let lock = NSLock()
-    private var pending: [(CGImage?) -> Void] = []
+    private var pending: [(id: UUID, fn: (CGImage?) -> Void)] = []
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
+
     func requestFrame(completion: @escaping (CGImage?) -> Void) {
+        let id = UUID()
         lock.lock()
-        pending.append(completion)
+        pending.append((id, completion))
         lock.unlock()
+        // 超时兜底：1 秒内没有帧到达（会话未起转等）也给出反馈，而不是静默
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            if let index = self.pending.firstIndex(where: { $0.id == id }) {
+                let waiter = self.pending.remove(at: index).fn
+                self.lock.unlock()
+                waiter(nil)
+            } else {
+                self.lock.unlock()
+            }
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         lock.lock()
-        let waiters = pending
+        let waiters = pending.map { $0.fn }
         pending.removeAll()
         lock.unlock()
         guard !waiters.isEmpty else { return }
