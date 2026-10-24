@@ -324,6 +324,15 @@ struct PanelView: View {
                         ForEach(TranslateProvider.allCases) { p in Text(p.label).tag(p) }
                     }.pickerStyle(.segmented).labelsHidden()
                 }
+                // 明示当前生效的服务：文本翻译 / OCR 翻译实际走的就是它
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(activeProviderStatus)
+                        .font(SettingsAppearance.detailFont)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if settings.translateProvider != .deepSeek {
                     fieldRow("API 地址") {
                         TextField("https://…/v1", text: $settings.translateBaseURL)
@@ -377,6 +386,15 @@ struct PanelView: View {
                 }
             }
         }
+    }
+
+    /// 当前生效服务的描述：翻译窗口与 OCR 都走这个
+    private var activeProviderStatus: String {
+        if settings.translateProvider == .deepSeek {
+            return String(format: L("当前使用：DeepSeek（%@）"), settings.activeTranslateModel)
+        }
+        let format = CustomAPIFormat(rawValue: settings.translateCustomFormat) ?? .openAIChat
+        return String(format: L("当前使用：自定义 · %@（%@）"), format.label, settings.activeTranslateModel)
     }
 
     private func fetchModels() {

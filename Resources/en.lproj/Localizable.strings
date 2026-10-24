@@ -569,3 +569,5 @@
 "识别屏幕翻译" = "Translate Screen (OCR)";
 "译成" = "To";
 "风格" = "Style";
+"当前使用：DeepSeek（%@）" = "Using: DeepSeek (%@)";
+"当前使用：自定义 · %@（%@）" = "Using: Custom · %@ (%@)";

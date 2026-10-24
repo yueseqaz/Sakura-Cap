@@ -160,6 +160,8 @@ struct TranslationView: View {
             .frame(minHeight: 140)
 
             HStack {
+                Text(providerStatus)
+                    .font(SettingsAppearance.detailFont).foregroundStyle(.tertiary)
                 Spacer()
                 Button { copy() } label: { Text(L("复制译文")) }
                     .disabled(model.translation.isEmpty)
@@ -176,6 +178,15 @@ struct TranslationView: View {
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+    }
+
+    /// 底部状态：当前翻译实际使用的服务
+    private var providerStatus: String {
+        if settings.translateProvider == .deepSeek {
+            return "DeepSeek · \(settings.activeTranslateModel)"
+        }
+        let format = CustomAPIFormat(rawValue: settings.translateCustomFormat) ?? .openAIChat
+        return "自定义 · \(format.label) · \(settings.activeTranslateModel)"
     }
 
     private func copy() {
