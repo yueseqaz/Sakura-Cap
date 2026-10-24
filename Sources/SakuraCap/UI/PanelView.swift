@@ -578,7 +578,7 @@ struct PanelView: View {
                 linkRow(L("发布版本"), AppInfo.repository.appendingPathComponent("releases"))
                 linkRow(L("开发文档"), AppInfo.repository.appendingPathComponent("blob/main/docs/DEVELOPMENT.md"))
             }
-            Text("© 2026 Sakura")
+            Text("© 2026 Sakura · Sakura最可爱了")
                 .font(SettingsAppearance.detailFont)
                 .foregroundStyle(SettingsAppearance.color(SettingsAppearance.secondary))
         }
