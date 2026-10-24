@@ -153,7 +153,7 @@ final class CompareWindowController {
               let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return }
         let url = dir.appendingPathComponent(FileName.make(ext: "png"))
         do {
-            try data.write(to: url)
+            try data.write(to: url, options: .atomic)
             NSWorkspace.shared.activateFileViewerSelecting([url])
             Toast.show(title: L("已保存对比图"), detail: url.lastPathComponent)
         } catch {

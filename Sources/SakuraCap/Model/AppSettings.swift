@@ -126,8 +126,10 @@ final class AppSettings: ObservableObject {
     @Published var translateCustomModel = "" { didSet { d.set(translateCustomModel, forKey: Keys.translateCustomModel) } }
     @Published var translateCustomModels: [String] = [] { didSet { d.set(translateCustomModels, forKey: Keys.translateCustomModels) } }
     @Published var translateStyle = TranslateStyle.natural.rawValue { didSet { d.set(translateStyle, forKey: Keys.translateStyle) } }
-    @Published var translateAPIKey = "" { didSet { d.set(translateAPIKey, forKey: Keys.translateAPIKey) } }
-    @Published var translateCustomAPIKey = "" { didSet { d.set(translateCustomAPIKey, forKey: Keys.translateCustomAPIKey) } }
+    // 敏感值（API Key）：Keychain 持久化，绝不落 UserDefaults 明文。
+    // 旧版本曾存于 UserDefaults（translateAPIKey / translateCustomAPIKey），init 时自动迁移。
+    @Published var translateAPIKey = "" { didSet { storeSecret(translateAPIKey, account: Secrets.translateAPIKey) } }
+    @Published var translateCustomAPIKey = "" { didSet { storeSecret(translateCustomAPIKey, account: Secrets.translateCustomAPIKey) } }
     @Published var translateSourceLang = TranslateLanguage.auto.rawValue { didSet { d.set(translateSourceLang, forKey: Keys.translateSourceLang) } }
     @Published var translateTargetLang = TranslateLanguage.zhHans.rawValue { didSet { d.set(translateTargetLang, forKey: Keys.translateTargetLang) } }
 
@@ -187,8 +189,8 @@ final class AppSettings: ObservableObject {
         translateCustomModel = d.string(forKey: Keys.translateCustomModel) ?? ""
         translateCustomModels = d.stringArray(forKey: Keys.translateCustomModels) ?? []
         if let s = d.string(forKey: Keys.translateStyle) { translateStyle = s }
-        translateAPIKey = d.string(forKey: Keys.translateAPIKey) ?? ""
-        translateCustomAPIKey = d.string(forKey: Keys.translateCustomAPIKey) ?? ""
+        translateAPIKey = loadSecret(defaultsKey: Keys.translateAPIKey, account: Secrets.translateAPIKey)
+        translateCustomAPIKey = loadSecret(defaultsKey: Keys.translateCustomAPIKey, account: Secrets.translateCustomAPIKey)
         if let s = d.string(forKey: Keys.translateSourceLang) { translateSourceLang = s }
         if let s = d.string(forKey: Keys.translateTargetLang) { translateTargetLang = s }
         launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -198,6 +200,45 @@ final class AppSettings: ObservableObject {
                 HotKeyAction(rawValue: key).map { ($0, combo) }
             })
         }
+    }
+
+    // MARK: - 敏感值存取（Keychain）
+
+    private enum Secrets {
+        static let translateAPIKey = "translateAPIKey"
+        static let translateCustomAPIKey = "translateCustomAPIKey"
+    }
+
+    /// 写入 Keychain；空值删除条目。失败时值仍在内存里（本次运行可用），提示用户持久化未生效。
+    private func storeSecret(_ value: String, account: String) {
+        do {
+            if value.isEmpty {
+                KeychainStore.delete(account: account)
+            } else {
+                try KeychainStore.write(value, account: account)
+            }
+        } catch {
+            Log.app.error("Keychain 写入失败(\(account, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+            Task { @MainActor in
+                Toast.show(title: L("钥匙串不可用，API Key 本次仅保存在内存中"), detail: error.localizedDescription)
+            }
+        }
+    }
+
+    /// 读 Keychain；老版本的明文仍在 UserDefaults → 就地迁入 Keychain 并删除明文。
+    /// 迁移失败时保留明文（下次启动重试），不能让用户丢 Key。
+    private func loadSecret(defaultsKey: String, account: String) -> String {
+        if let value = KeychainStore.read(account: account), !value.isEmpty { return value }
+        let legacy = d.string(forKey: defaultsKey) ?? ""
+        guard !legacy.isEmpty else { return "" }
+        do {
+            try KeychainStore.write(legacy, account: account)
+            d.removeObject(forKey: defaultsKey)
+            Log.app.notice("已把 UserDefaults 明文密钥迁入 Keychain: \(account, privacy: .public)")
+        } catch {
+            Log.app.error("密钥迁入 Keychain 失败，下次启动重试: \(error.localizedDescription, privacy: .public)")
+        }
+        return legacy
     }
 
     // MARK: - 开机自启

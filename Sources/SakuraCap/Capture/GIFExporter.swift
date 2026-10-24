@@ -49,6 +49,22 @@ enum GIFExporter {
                        videoComposition: AVVideoComposition? = nil,
                        fps: Int = 12,
                        to outputURL: URL) async throws {
+        do {
+            try await writeFrames(asset: asset, timeRange: timeRange, size: size,
+                                  videoComposition: videoComposition, fps: fps, to: outputURL)
+        } catch {
+            // 半成品/空文件不留盘（CGImageDestination 建立时即创建文件）
+            try? FileManager.default.removeItem(at: outputURL)
+            throw error
+        }
+    }
+
+    private static func writeFrames(asset: AVAsset,
+                                    timeRange: CMTimeRange,
+                                    size: GIFSize,
+                                    videoComposition: AVVideoComposition?,
+                                    fps: Int,
+                                    to outputURL: URL) async throws {
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.videoComposition = videoComposition

@@ -102,7 +102,6 @@
 "打开快捷指令…" = "Open Shortcuts…";
 "勿扰未开启" = "Do Not Disturb was not enabled";
 "仍要录制" = "Record anyway";
-"取消录制" = "Cancel recording";
 "勿扰未关闭" = "Do Not Disturb was not disabled";
 "找不到快捷指令「%@」。请在「快捷指令」App 中创建并核对名称。" = "Shortcut “%@” not found. Create it in Shortcuts and check its name.";
 "切换勿扰模式失败：%@" = "Could not change Do Not Disturb: %@";
@@ -460,7 +459,6 @@
 "开发文档" = "Development docs";
 "标注与编辑" = "Annotate & Edit";
 "视频处理" = "Video";
-"菜单栏常驻的极简 Mac 录屏 / 截图 / 标注工具。" = "A minimal menu-bar screen recorder, snipper & annotator for Mac.";
 "全屏 / 区域 / 窗口，暂停续录、摄像头画中画、点击标记、按键显示。" = "Full screen / region / window; pause & resume, camera PiP, click highlights, keystroke display.";
 "全屏 / 区域截图、OCR 取字、二维码识别、滚动截屏、AI 翻译。" = "Full screen / region capture, OCR, QR scanning, scrolling capture, AI translation.";
 "画笔 / 箭头 / 矩形 / 文字 / 序号 / 马赛克 / 裁剪；吸管取色、两点测量、截图对比。" = "Pen / arrow / rectangle / text / number / mosaic / crop; eyedropper, two-point measure, screenshot compare.";
@@ -601,8 +599,6 @@
 "聊天记录（%d）" = "Chats (%d)";
 "添加图片" = "Add Images";
 "早期对话已压缩为摘要，随对话滚动更新" = "Earlier messages are rolled into a running summary";
-"添加图片" = "Add Images";
-"早期对话已压缩为摘要，随对话滚动更新" = "Earlier messages are rolled into a running summary";
 "翻译与 AI" = "Translation & AI";
 
 /* 录音 */
@@ -621,7 +617,6 @@
 "请在系统设置中允许麦克风访问" = "Allow microphone access in System Settings";
 "编辑音频…" = "Edit Audio…";
 "选择要编辑的音频" = "Choose an audio file to edit";
-"音频" = "Audio";
 "音频编辑中" = "Editing audio";
 "音频与画面轨都缺失，无法编辑" = "No audio or video tracks to edit";
 "音频片段" = "Audio Clip";
@@ -635,3 +630,10 @@
 "删除录音原文件" = "Delete original recording";
 "删除录音文件" = "Delete recording file";
 "工具" = "Tools";
+
+/* 健壮性修复（optimize/robustness-and-cleanup） */
+"钥匙串不可用，API Key 本次仅保存在内存中" = "Keychain unavailable; the API key is kept in memory only for this session";
+"已导出 %@（原文件删除失败，请手动删除）" = "Exported %@ (failed to delete the original file; please delete it manually)";
+"聊天记录保存失败" = "Failed to save chat history";
+"部分聊天记录无法读取" = "Some chat history could not be read";
+"%d 个聊天记录文件无法读取，已跳过（文件保留在原处）" = "%d chat history file(s) were unreadable and skipped (files kept in place)";

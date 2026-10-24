@@ -553,7 +553,14 @@ final class AnnotationEditorWindow: NSWindow {
               let dir = OutputDirectoryPicker.ensureDirectory(current: AppSettings.shared.outputDirectory),
               let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return }
         let url = dir.appendingPathComponent(suggestedName)
-        try? data.write(to: url)
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            // 保存失败绝不能假装成功：不弹 Finder、不发已保存通知、不关窗，留着让用户重试
+            Log.app.error("截图保存失败: \(url.path, privacy: .public) \(error.localizedDescription, privacy: .public)")
+            Toast.show(title: L("保存失败"), detail: error.localizedDescription)
+            return
+        }
         NSWorkspace.shared.activateFileViewerSelecting([url])
         CompletionNotifier.shared.postSavedImage(url: url)
         close()

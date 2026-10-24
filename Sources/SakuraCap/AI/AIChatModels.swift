@@ -70,10 +70,23 @@ final class AIChatStore {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        sessions = files.filter { $0.pathExtension == "json" }.compactMap { url in
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return try? decoder.decode(AIChatSession.self, from: data)
-        }.sorted { $0.updatedAt > $1.updatedAt }
+        var loaded: [AIChatSession] = []
+        var unreadable = 0
+        for url in files.filter({ $0.pathExtension == "json" }) {
+            guard let data = try? Data(contentsOf: url),
+                  let session = try? decoder.decode(AIChatSession.self, from: data) else {
+                // 文件保留在原处（可能是新版本兼容问题，后续修复仍可恢复），只在界面提示
+                unreadable += 1
+                continue
+            }
+            loaded.append(session)
+        }
+        sessions = loaded.sorted { $0.updatedAt > $1.updatedAt }
+        if unreadable > 0 {
+            Log.app.error("聊天记录有 \(unreadable) 个文件无法读取，已跳过（文件保留）")
+            Toast.show(title: L("部分聊天记录无法读取"),
+                       detail: String(format: L("%d 个聊天记录文件无法读取，已跳过（文件保留在原处）"), unreadable))
+        }
     }
 
     /// 保存（upsert）并按更新时间重排
@@ -83,8 +96,13 @@ final class AIChatStore {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(session) {
-            try? data.write(to: directory.appendingPathComponent("\(session.id.uuidString).json"), options: .atomic)
+        do {
+            let data = try encoder.encode(session)
+            try data.write(to: directory.appendingPathComponent("\(session.id.uuidString).json"), options: .atomic)
+        } catch {
+            // 内存里的列表照常更新（本次会话仍可用），但要让用户知道落盘失败
+            Log.app.error("聊天记录保存失败: \(error.localizedDescription, privacy: .public)")
+            Toast.show(title: L("聊天记录保存失败"), detail: error.localizedDescription)
         }
         sessions.removeAll { $0.id == session.id }
         sessions.insert(session, at: 0)

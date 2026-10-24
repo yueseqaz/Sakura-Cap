@@ -672,8 +672,14 @@ final class WorkbenchViewModel: ObservableObject {
                 }
             }
             if deleteOriginal {
-                try? FileManager.default.removeItem(at: sourceURL)
-                status = String(format: L("已导出并删除原文件：%@"), outURL.lastPathComponent)
+                do {
+                    try FileManager.default.removeItem(at: sourceURL)
+                    status = String(format: L("已导出并删除原文件：%@"), outURL.lastPathComponent)
+                } catch {
+                    // 原文件没删掉要如实说，不能沿用「已删除」的成功文案
+                    Log.app.error("导出后删除原文件失败: \(self.sourceURL.lastPathComponent, privacy: .public) \(error.localizedDescription, privacy: .public)")
+                    status = String(format: L("已导出 %@（原文件删除失败，请手动删除）"), outURL.lastPathComponent)
+                }
             } else {
                 status = String(format: L("已导出 %@"), outURL.lastPathComponent)
             }
@@ -768,7 +774,7 @@ final class WorkbenchViewModel: ObservableObject {
                 let cg = try await generator.image(at: time).image
                 let url = dir.appendingPathComponent(FileName.make(ext: "png"))
                 guard let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return }
-                try data.write(to: url)
+                try data.write(to: url, options: .atomic)
                 status = String(format: L("已截帧 %@"), url.lastPathComponent)
                 NSWorkspace.shared.activateFileViewerSelecting([url])
                 AnnotationEditorController.shared.open(image: cg, suggestedName: url.lastPathComponent, source: .existingFile)
