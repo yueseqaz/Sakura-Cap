@@ -25,13 +25,19 @@ struct AIChatSession: Codable, Identifiable, Equatable {
     var createdAt: Date
     var updatedAt: Date
     var messages: [AIChatMessage]
+    /// 记忆压缩：早期对话的滚动摘要（nil = 未启用）
+    var summary: String?
+    /// 已并入摘要的消息条数（messages 前缀长度）
+    var summarizedUpTo: Int?
 
-    init(id: UUID = UUID(), title: String = "", createdAt: Date = Date(), updatedAt: Date = Date(), messages: [AIChatMessage] = []) {
+    init(id: UUID = UUID(), title: String = "", createdAt: Date = Date(), updatedAt: Date = Date(), messages: [AIChatMessage] = [], summary: String? = nil, summarizedUpTo: Int? = nil) {
         self.id = id
         self.title = title
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.messages = messages
+        self.summary = summary
+        self.summarizedUpTo = summarizedUpTo
     }
 
     /// 首条用户消息前 24 字作为标题

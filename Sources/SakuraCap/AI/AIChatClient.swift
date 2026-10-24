@@ -33,6 +33,7 @@ enum AIChatClient {
     static func stream(messages: [AIChatMessage],
                        config: TranslationConfig,
                        store: AIChatStore,
+                       summary: String? = nil,
                        onDelta: @escaping (String) -> Void) async throws -> String {
         let key = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw ChatError.missingAPIKey }
@@ -54,8 +55,9 @@ enum AIChatClient {
             request.setValue(key, forHTTPHeaderField: "x-api-key")
             request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         }
+        let system = summary.map { "\(systemPrompt)\n\n[Earlier conversation summary]\n\($0)" } ?? systemPrompt
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody(
-            messages: messages, config: config, store: store))
+            messages: messages, config: config, store: store, system: system))
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw ChatError.emptyResponse }
@@ -101,7 +103,7 @@ enum AIChatClient {
     }
 
     /// 各格式请求体（历史 + 多模态）
-    private static func requestBody(messages: [AIChatMessage], config: TranslationConfig, store: AIChatStore) -> [String: Any] {
+    private static func requestBody(messages: [AIChatMessage], config: TranslationConfig, store: AIChatStore, system: String) -> [String: Any] {
         // 只带最后一条用户消息的图片
         let lastImageUserID = messages.last(where: { $0.role == .user && !$0.imageFiles.isEmpty })?.id
 
@@ -136,7 +138,7 @@ enum AIChatClient {
                 content += parts
                 return ["role": "user", "content": content]
             }
-            return ["model": config.model, "stream": true, "messages": history]
+            return ["model": config.model, "stream": true, "messages": [["role": "system", "content": system]] + history]
         case .openAIResponses:
             let history: [[String: Any]] = messages.map { message in
                 let parts = imageParts(message)
@@ -147,7 +149,7 @@ enum AIChatClient {
                 content += parts
                 return ["role": "user", "content": content]
             }
-            return ["model": config.model, "stream": true, "instructions": systemPrompt, "input": history]
+            return ["model": config.model, "stream": true, "instructions": system, "input": history]
         case .anthropic:
             let history: [[String: Any]] = messages.map { message in
                 let parts = imageParts(message)
@@ -159,7 +161,7 @@ enum AIChatClient {
                 return ["role": "user", "content": content]
             }
             return ["model": config.model, "max_tokens": 4096, "stream": true,
-                    "system": systemPrompt, "messages": history]
+                    "system": system, "messages": history]
         }
     }
 }

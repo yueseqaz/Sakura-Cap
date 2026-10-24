@@ -201,6 +201,24 @@ struct TranslationView: View {
 struct EditableText: NSViewRepresentable {
     @Binding var text: String
     var font: NSFont = .systemFont(ofSize: 13)
+    /// 非空时 ⏎ 直接提交（Shift+⏎ 换行）；nil 保持 ⏎ 换行的原行为
+    var onCommit: (() -> Void)? = nil
+
+    /// 可拦截回车的文本视图
+    final class CommitTextView: NSTextView {
+        var onCommit: (() -> Void)?
+
+        override func keyDown(with event: NSEvent) {
+            if event.keyCode == 36, let onCommit {   // Return
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if !flags.contains(.shift) {
+                    onCommit()
+                    return
+                }
+            }
+            super.keyDown(with: event)
+        }
+    }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         let parent: EditableText
@@ -214,28 +232,40 @@ struct EditableText: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSTextView.scrollableTextView()
+        // 手工构建（scrollableTextView 工厂给的是通用类，无法挂回车拦截）
+        let textView = CommitTextView()
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.font = font
+        textView.textColor = .labelColor
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.onCommit = onCommit
+        // 手工构建必须配齐的自动布局参数（对齐工厂行为）
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+
+        let scroll = NSScrollView()
+        scroll.documentView = textView
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
-        if let textView = scroll.documentView as? NSTextView {
-            textView.isRichText = false
-            textView.allowsUndo = true
-            textView.drawsBackground = false
-            textView.isAutomaticQuoteSubstitutionEnabled = false
-            textView.isAutomaticDashSubstitutionEnabled = false
-            textView.isAutomaticTextReplacementEnabled = false
-            textView.font = font
-            textView.textColor = .labelColor
-            textView.delegate = context.coordinator
-            textView.string = text
-        }
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
-        guard let textView = scroll.documentView as? NSTextView else { return }
+        guard let textView = scroll.documentView as? CommitTextView else { return }
+        textView.onCommit = onCommit
         if textView.string != text {
             let selectedRanges = textView.selectedRanges
             textView.string = text

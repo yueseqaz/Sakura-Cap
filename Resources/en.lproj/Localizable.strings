@@ -599,3 +599,7 @@
 "删除这段聊天记录？" = "Delete this chat?";
 "将同时清理其中的图片文件，删除后无法恢复。" = "Its image files will be removed too. This cannot be undone.";
 "聊天记录（%d）" = "Chats (%d)";
+"添加图片" = "Add Images";
+"早期对话已压缩为摘要，随对话滚动更新" = "Earlier messages are rolled into a running summary";
+"添加图片" = "Add Images";
+"早期对话已压缩为摘要，随对话滚动更新" = "Earlier messages are rolled into a running summary";

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// AI 聊天窗口的视图模型：当前会话 + 输入 + 附件 + 流式状态
 @MainActor
@@ -35,6 +36,22 @@ final class AIChatViewModel: ObservableObject {
         stagedImages.removeAll { $0 == name }
     }
 
+    /// 加号按钮：从文件选择图片附件
+    func attachFromPicker() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canCreateDirectories = false
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            if let image = NSImage(contentsOf: url),
+               let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                attach(image: cg)
+            }
+        }
+    }
+
     func image(_ name: String) -> CGImage? {
         store.loadImage(name)
     }
@@ -61,16 +78,49 @@ final class AIChatViewModel: ObservableObject {
         streamReply()
     }
 
+    /// 记忆压缩参数：超过阈值后，早期对话滚动摘要、最近消息原文携带
+    private static let summarizeThreshold = 28
+    private static let keepRecent = 12
+
+    /// 超过阈值时把 summarizedUpTo..<(count-keepRecent) 的新增对话并入滚动摘要
+    private func compressMemoryIfNeeded(config: TranslationConfig) async {
+        let total = session.messages.count
+        let summarized = session.summarizedUpTo ?? 0
+        guard total > Self.summarizeThreshold, total - summarized > Self.keepRecent else { return }
+        let range = summarized..<(total - Self.keepRecent)
+        guard range.lowerBound < range.upperBound else { return }
+        let transcript = session.messages[range].map { message in
+            "\(message.role == .user ? "用户" : "AI")：\(message.text.prefix(600))"
+        }.joined(separator: "\n")
+        let prompt = """
+        请把以下对话压缩成滚动摘要：保留关键事实、结论与代码意图，合并进已有摘要，300 字以内，只输出摘要正文。
+        \(session.summary.map { "已有摘要：\n\($0)\n\n" } ?? "")新增对话：
+        \(transcript)
+        """
+        if let merged = try? await AIChatClient.stream(messages: [AIChatMessage(role: .user, text: prompt)],
+                                                       config: config, store: store, onDelta: { _ in }) {
+            session.summary = merged
+            session.summarizedUpTo = total - Self.keepRecent
+            store.save(&session)
+        }
+    }
+
     private func streamReply() {
-        let history = session.messages
         let config = AppSettings.shared.translationConfig
         isStreaming = true
         streamingText = ""
         scrollStamp += 1
         streamTask = Task { [weak self] in
             guard let self else { return }
+            await self.compressMemoryIfNeeded(config: config)
+            // 已有摘要时只携带未压缩的最近消息
+            let summarized = self.session.summarizedUpTo ?? 0
+            let clamped = min(summarized, self.session.messages.count)
+            let history = summarized > 0 ? Array(self.session.messages[clamped...]) : self.session.messages
+            let summary = summarized > 0 ? self.session.summary : nil
             do {
-                let full = try await AIChatClient.stream(messages: history, config: config, store: self.store) { [weak self] delta in
+                let full = try await AIChatClient.stream(messages: history, config: config, store: self.store,
+                                                         summary: summary) { [weak self] delta in
                     guard let self else { return }
                     Task { @MainActor in
                         self.streamingText += delta
@@ -230,6 +280,11 @@ struct ChatPane: View {
                 .lineLimit(1)
                 .font(SettingsAppearance.bodyFont)
             Spacer()
+            if model.session.summary != nil {
+                Image(systemName: "brain")
+                    .foregroundStyle(.tertiary)
+                    .help(L("早期对话已压缩为摘要，随对话滚动更新"))
+            }
             if model.isStreaming {
                 Button(L("停止")) { model.stopTapped() }
                     .buttonStyle(.bordered)
@@ -296,9 +351,22 @@ struct ChatPane: View {
                 .padding(.horizontal, 12)
             }
             HStack(alignment: .bottom, spacing: 8) {
-                EditableText(text: $model.input)
+                Button {
+                    model.attachFromPicker()
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 20))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(L("添加图片"))
+                .padding(.bottom, 14)
+                EditableText(text: $model.input, onCommit: { model.send() })
                     .frame(height: 72)
                 VStack(spacing: 6) {
+
                     Button {
                         model.send()
                     } label: {
@@ -309,7 +377,7 @@ struct ChatPane: View {
                     .foregroundStyle(SettingsAppearance.color(SettingsAppearance.accent))
                     .disabled(model.isStreaming && model.streamingText.isEmpty)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .help(model.isStreaming ? L("停止生成") : L("发送 ⌘↩"))
+                    .help(model.isStreaming ? L("停止生成") : L("发送 ⏎"))
                 }
                 .padding(.bottom, 6)
             }
