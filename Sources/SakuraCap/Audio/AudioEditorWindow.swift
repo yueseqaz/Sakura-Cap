@@ -4,122 +4,14 @@ import SwiftUI
 
 // MARK: - 窗口与呈现
 
-/// 音频编辑器窗口：接管回车/空格/S/Delete/⌘Z 等快捷键（输入框除外）
-final class AudioEditorWindow: NSWindow {
-    var keyHandler: ((NSEvent) -> Bool)?
-
-    override var canBecomeKey: Bool { true }
-
-    override func keyDown(with event: NSEvent) {
-        if keyHandler?(event) == true { return }
-        super.keyDown(with: event)
-    }
-}
-
-/// 音频编辑器：上波形、下时间轴与操作，专用页面（与录屏工作台分离）。
-/// 数据与导出复用 WorkbenchViewModel 引擎，界面为音频原生。
+/// 音频编辑器入口：窗口创建/去重/快捷键/关窗确认统一在 MediaEditorWindowPresenter，
+/// 此处保留类名与 show(url:origin:) 接口，调用方无需改动。
 @MainActor
-final class AudioEditorPresenter: NSObject, NSWindowDelegate {
+final class AudioEditorPresenter {
     static let shared = AudioEditorPresenter()
 
-    private var entries: [(window: AudioEditorWindow, model: WorkbenchViewModel)] = []
-    /// 每扇窗口的 willClose token，关窗时一并移除，避免 NotificationCenter 累积注册
-    private var closeObservers: [NSWindow: NSObjectProtocol] = [:]
-
     func show(url: URL, origin: TrimOrigin) {
-        if let existing = entries.first(where: { $0.model.sourceURL.standardizedFileURL == url.standardizedFileURL }) {
-            NSApp.activate(ignoringOtherApps: true)
-            existing.window.makeKeyAndOrderFront(nil)
-            existing.window.orderFrontRegardless()
-            return
-        }
-        let model = WorkbenchViewModel(url: url)
-        model.origin = origin
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 900)
-        let window = AudioEditorWindow(contentRect: NSRect(x: 0, y: 0,
-                                                           width: min(640, screen.width * 0.46),
-                                                           height: min(460, screen.height * 0.56)),
-                                       styleMask: [.titled, .closable, .resizable],
-                                       backing: .buffered, defer: false)
-        window.title = String(format: L("音频编辑 — %@"), url.lastPathComponent)
-        window.isReleasedWhenClosed = false
-        window.sharingType = .readOnly
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.minSize = NSSize(width: 540, height: 400)
-        window.contentView = NSHostingView(rootView: AudioEditorView(model: model))
-        window.delegate = self
-        model.requestClose = { [weak window] in window?.close() }
-        window.keyHandler = { [weak model] event in
-            guard let model else { return false }
-            return Self.handleKey(event, model: model)
-        }
-        window.center()
-        entries.append((window, model))
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
-        let token = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification,
-                                                           object: window, queue: .main) { [weak self] note in
-            MainActor.assumeIsolated {
-                guard let closed = note.object as? NSWindow else { return }
-                self?.removeEntry(for: closed)
-            }
-        }
-        closeObservers[window] = token
-    }
-
-    private func removeEntry(for closed: NSWindow) {
-        entries.removeAll { $0.window === closed }
-        if let token = closeObservers[closed] {
-            NotificationCenter.default.removeObserver(token)
-            closeObservers[closed] = nil
-        }
-    }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard let entry = entries.first(where: { $0.window === sender }) else { return true }
-        if entry.model.isProgrammaticClose { return true }
-        return entry.model.confirmDiscard()
-    }
-
-    private static func handleKey(_ event: NSEvent, model: WorkbenchViewModel) -> Bool {
-        if let view = NSApp.keyWindow?.firstResponder as? NSTextView, view.isFieldEditor { return false }
-        guard event.type == .keyDown else { return false }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let command = flags.contains(.command)
-        let shift = flags.contains(.shift)
-        let key = event.charactersIgnoringModifiers ?? ""
-        if command {
-            if key == "z" {
-                if shift { model.redo() } else { model.undo() }
-                return true
-            }
-            return false
-        }
-        switch key {
-        case " ":
-            model.togglePlay()
-            return true
-        case "\u{F702}":   // ←
-            model.seek(to: model.currentTime - (shift ? 1 : 1 / 30.0))
-            return true
-        case "\u{F703}":   // →
-            model.seek(to: model.currentTime + (shift ? 1 : 1 / 30.0))
-            return true
-        case "s", "S":
-            model.splitAtPlayhead()
-            return true
-        case "\u{7F}", "\u{8}":
-            switch model.selection {
-            case .clip(let id): model.deleteClip(id)
-            case .audioGain(let id): model.removeGain(id)
-            default: return false
-            }
-            return true
-        default:
-            return false
-        }
+        MediaEditorWindowPresenter.shared.show(url: url, origin: origin, kind: .audioEditor)
     }
 }
 
