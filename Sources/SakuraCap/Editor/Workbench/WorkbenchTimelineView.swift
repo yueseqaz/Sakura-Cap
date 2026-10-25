@@ -571,14 +571,18 @@ final class WorkbenchTimelineCanvas: NSView {
         case gainEdge(UUID, left: Bool)
         /// 轨道上拖拽创建新段（聚焦 / 标注 / 音量），两端夹点由拖拽范围决定
         case createRange(RowKind)
+        /// 视频轨拖拽框选时间范围：松开后弹出删除/静音/淡入淡出菜单
+        case videoRangeSelect
     }
 
     private var drag: DragMode = .none
     private var dragLastX: CGFloat = 0
     private var dragInsertIndex: Int?
-    /// createRange 的起点时间与当前时间
+    /// createRange / videoRangeSelect 的起点时间与当前时间
     private var createAnchor: Double = 0
     private var createCurrent: Double = 0
+    /// 视频轨框选松开后待操作的选区（菜单动作读取）
+    private var pendingRange: (t0: Double, t1: Double)?
     private var hoverClipID: UUID?
     private var hoverEdge: Bool = false
     private var waveCacheSignature: String?
@@ -682,6 +686,21 @@ final class WorkbenchTimelineCanvas: NSView {
         // 拖拽创建段的预览框
         if case .createRange(let kind) = drag {
             drawCreationPreview(kind: kind, model: model)
+        }
+
+        // 视频轨框选预览：横跨视频轨行高的高亮区域
+        if case .videoRangeSelect = drag {
+            let videoRow = Self.rowYRow(for: .video, laneCount: laneCount, audioOnly: audioOnly)
+            let x0 = x(for: min(createAnchor, createCurrent))
+            let x1 = x(for: max(createAnchor, createCurrent))
+            let rect = NSRect(x: x0, y: videoRow.y + 1, width: max(2, x1 - x0), height: videoRow.height - 2)
+            SettingsAppearance.accent.withAlphaComponent(0.28).setFill()
+            rect.fill()
+            SettingsAppearance.accent.setStroke()
+            let path = NSBezierPath(rect: rect)
+            path.lineWidth = 1.5
+            path.setLineDash([4, 3], count: 2, phase: 0)
+            path.stroke()
         }
 
         // 拖动排序的插入线
@@ -1032,7 +1051,7 @@ final class WorkbenchTimelineCanvas: NSView {
             model.beginScrub()
             model.seek(to: time(forX: p.x))
         case .video:
-            handleVideoMouseDown(p, model: model)
+            handleVideoMouseDown(p, event: event, model: model)
         case .audio(let index):
             handleAudioMouseDown(p, laneIndex: index, model: model)
         case .focusLane:
@@ -1055,7 +1074,7 @@ final class WorkbenchTimelineCanvas: NSView {
         needsDisplay = true
     }
 
-    private func handleVideoMouseDown(_ p: NSPoint, model: WorkbenchViewModel) {
+    private func handleVideoMouseDown(_ p: NSPoint, event: NSEvent, model: WorkbenchViewModel) {
         let document = model.document
         // 找命中片段
         for clip in document.clips {
@@ -1083,8 +1102,18 @@ final class WorkbenchTimelineCanvas: NSView {
                 return
             }
             if t >= start, t <= start + clip.duration {
-                drag = .moveClip(clip.id)
-                dragInsertIndex = nil
+                if event.modifierFlags.contains(.option) {
+                    // ⌥ + 拖动保留原来的排序语义
+                    drag = .moveClip(clip.id)
+                    dragInsertIndex = nil
+                    needsDisplay = true
+                    return
+                }
+                // 普通拖动 = 框选时间范围，松开后弹出删除/静音/淡入淡出菜单
+                drag = .videoRangeSelect
+                createAnchor = time(forX: p.x)
+                createCurrent = createAnchor
+                model.beginScrub() // 拖选中暂停播放
                 needsDisplay = true
                 return
             }
@@ -1218,6 +1247,10 @@ final class WorkbenchTimelineCanvas: NSView {
             createCurrent = max(0, min(model.duration, time(forX: p.x)))
             needsDisplay = true
 
+        case .videoRangeSelect:
+            createCurrent = max(0, min(model.duration, time(forX: p.x)))
+            needsDisplay = true
+
         case .none:
             break
         }
@@ -1240,6 +1273,8 @@ final class WorkbenchTimelineCanvas: NSView {
             needsDisplay = true
         case .createRange(let kind):
             commitCreateRange(kind, model: model)
+        case .videoRangeSelect:
+            commitVideoRangeSelect(event: event, model: model)
         default:
             break
         }
@@ -1262,6 +1297,48 @@ final class WorkbenchTimelineCanvas: NSView {
         default:
             break
         }
+    }
+
+    /// 视频轨框选松开：有效选区则弹出删除/静音/淡入淡出菜单；过短按普通点击处理
+    private func commitVideoRangeSelect(event: NSEvent, model: WorkbenchViewModel) {
+        let a = max(0, min(model.duration, min(createAnchor, createCurrent)))
+        let b = max(0, min(model.duration, max(createAnchor, createCurrent)))
+        guard b - a >= 0.05 else { return } // 视为点击：mousedown 已选中片段
+        pendingRange = (t0: a, t1: b)
+        let muted = model.timelineRangeIsMuted(a, b)
+        let menu = NSMenu()
+        for (title, action) in [
+            (L("删除选区"), #selector(rangeDeleteTapped)),
+            (muted ? L("选区取消静音") : L("选区静音"), #selector(rangeMuteTapped)),
+            (L("选区淡入淡出 0.5 秒"), #selector(rangeFadeTapped)),
+            (L("清除选区淡入淡出"), #selector(rangeClearFadeTapped)),
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func rangeDeleteTapped() {
+        guard let model, let range = pendingRange else { return }
+        model.deleteTimelineRange(range.t0, range.t1)
+    }
+
+    @objc private func rangeMuteTapped() {
+        guard let model, let range = pendingRange else { return }
+        model.setTimelineRangeMuted(range.t0, range.t1,
+                                    muted: !model.timelineRangeIsMuted(range.t0, range.t1))
+    }
+
+    @objc private func rangeFadeTapped() {
+        guard let model, let range = pendingRange else { return }
+        model.setTimelineRangeFade(range.t0, range.t1, value: 0.5)
+    }
+
+    @objc private func rangeClearFadeTapped() {
+        guard let model, let range = pendingRange else { return }
+        model.setTimelineRangeFade(range.t0, range.t1, value: 0)
     }
 
     private func shiftGain(id: UUID, delta: Double, model: WorkbenchViewModel) {

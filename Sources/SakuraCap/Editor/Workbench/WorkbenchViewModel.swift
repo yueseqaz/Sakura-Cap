@@ -285,10 +285,24 @@ final class WorkbenchViewModel: ObservableObject {
     }
 
     func splitAtPlayhead() {
-        guard let (clip, index, start) = document.clip(atTimeline: currentTime) else { return }
-        let local = currentTime - start
-        guard local > 0.05, local < clip.duration - 0.05 else { return }
-        pushUndo()
+        guard let (clip, _, _) = document.clip(atTimeline: currentTime),
+              split(at: currentTime) else { return }
+        selection = .clip(clip.id)
+    }
+
+    /// 在指定时间轴时间处分割（离片段两端 >0.05s 才生效），用于时间轴框选操作
+    @discardableResult
+    func split(at timelineTime: Double) -> Bool {
+        guard splitInPlace(at: timelineTime) else { return false }
+        rebuildTimeline()
+        return true
+    }
+
+    /// 分割本体：不压撤销、不重建（供批量操作共享同一次撤销快照）
+    private func splitInPlace(at timelineTime: Double) -> Bool {
+        guard let (clip, index, start) = document.clip(atTimeline: timelineTime) else { return false }
+        let local = timelineTime - start
+        guard local > 0.05, local < clip.duration - 0.05 else { return false }
         let mid = clip.sourceIn + local
         var left = clip
         left.sourceOut = mid
@@ -297,8 +311,94 @@ final class WorkbenchViewModel: ObservableObject {
         right.fadeIn = 0
         document.clips[index] = left
         document.clips.insert(right, at: index + 1)
-        selection = .clip(left.id)
+        return true
+    }
+
+    /// 完全落在时间轴 [lo, hi] 内的片段（不修改文档；菜单标签用或分割后调用）
+    private func clipIDsInsideTimelineRange(_ lo: Double, _ hi: Double) -> [UUID] {
+        var ids: [UUID] = []
+        var cursor = 0.0
+        for clip in document.clips {
+            let start = cursor
+            cursor += clip.duration
+            if start >= lo - 0.001, cursor <= hi + 0.001 { ids.append(clip.id) }
+        }
+        return ids
+    }
+
+    /// 选区批量变更骨架：两端分割 → 对完全落入选区的片段应用变更 → 选中第一段 → 重建。
+    /// 一次撤销快照；返回受影响片段 id。
+    @discardableResult
+    private func mutateTimelineRange(_ t0: Double, _ t1: Double, mutate: (inout WorkbenchClip) -> Void) -> [UUID] {
+        guard duration > 0 else { return [] }
+        let lo = min(t0, t1), hi = max(t0, t1)
+        guard hi - lo >= 0.05 else { return [] }
+        pushUndo()
+        splitInPlace(at: lo)
+        splitInPlace(at: hi)
+        let ids = clipIDsInsideTimelineRange(lo, hi)
+        guard !ids.isEmpty else {
+            rebuildTimeline()
+            return []
+        }
+        for id in ids {
+            if let index = document.clips.firstIndex(where: { $0.id == id }) {
+                mutate(&document.clips[index])
+            }
+        }
+        selection = .clip(ids[0])
         rebuildTimeline()
+        return ids
+    }
+
+    /// 删除时间轴选区（两端先分割，选区内片段全部移除）
+    func deleteTimelineRange(_ t0: Double, _ t1: Double) {
+        guard duration > 0 else { return }
+        let lo = min(t0, t1), hi = max(t0, t1)
+        guard hi - lo >= 0.05 else { return }
+        pushUndo()
+        splitInPlace(at: lo)
+        splitInPlace(at: hi)
+        let ids = clipIDsInsideTimelineRange(lo, hi)
+        guard !ids.isEmpty else {
+            rebuildTimeline()
+            return
+        }
+        guard document.clips.count > ids.count else {
+            status = L("至少保留一个片段")
+            rebuildTimeline()
+            return
+        }
+        for id in ids {
+            if let index = document.clips.firstIndex(where: { $0.id == id }) {
+                let clip = document.clips.remove(at: index)
+                document.removeEffects(inside: clip.sourceIn, sourceOut: clip.sourceOut)
+            }
+        }
+        if case .clip(let id) = selection, ids.contains(id) {
+            selection = document.clips.first.map { .clip($0.id) }
+        }
+        rebuildTimeline()
+    }
+
+    /// 选区内片段统一（取消）静音
+    func setTimelineRangeMuted(_ t0: Double, _ t1: Double, muted: Bool) {
+        _ = mutateTimelineRange(t0, t1) { $0.muted = muted }
+    }
+
+    /// 选区内片段统一设置淡入淡出（秒）；0 = 清除
+    func setTimelineRangeFade(_ t0: Double, _ t1: Double, value: Double) {
+        _ = mutateTimelineRange(t0, t1) { $0.fadeIn = value; $0.fadeOut = value }
+    }
+
+    /// 选区内片段当前是否全部静音（只读，供菜单标签判断）
+    func timelineRangeIsMuted(_ t0: Double, _ t1: Double) -> Bool {
+        var any = false
+        for id in clipIDsInsideTimelineRange(min(t0, t1), max(t0, t1)) {
+            any = true
+            if let clip = document.clips.first(where: { $0.id == id }), !clip.muted { return false }
+        }
+        return any
     }
 
     func deleteClip(_ id: UUID) {
