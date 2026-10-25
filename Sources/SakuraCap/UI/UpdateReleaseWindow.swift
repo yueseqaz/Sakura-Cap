@@ -3,12 +3,19 @@ import AppKit
 @MainActor
 final class UpdateReleaseWindow: NSWindowController {
     private static var current: UpdateReleaseWindow?
-    private let pageURL: URL?
-    private let onInstall: () -> Void
+    private var pageURL: URL?
+    private var onInstall: () -> Void
 
     static func show(version: String, notes: String, isNewer: Bool, pageURL: URL?, onInstall: @escaping () -> Void) {
-        if let current, current.window?.isVisible == true {
+        // 复用已有窗口时必须原地刷新内容——否则再次检查更新只会把
+        // 上一次的旧版本信息原样顶到前面（窗口没关时尤为明显）
+        if let current {
+            current.pageURL = pageURL
+            current.onInstall = onInstall
+            current.buildPage(version: version, notes: notes, isNewer: isNewer)
+            current.showWindow(nil)
             current.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
             return
         }
         let controller = UpdateReleaseWindow(version: version, notes: notes, isNewer: isNewer,
