@@ -181,17 +181,32 @@ struct PanelView: View {
     /// 下拉框统一收窄宽度，避免被 settingRow 的撑满布局拉成整行长条
     private let pickerWidth: CGFloat = 190
 
+    /// 成对控件自适应排版：宽度够时并排（省纵向空间），不够时自动竖排——
+    /// 任何窗口宽度下都不裁切内容
+    @ViewBuilder
+    private func settingPair<A: View, B: View>(_ first: A, _ second: B) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 24) {
+                first.frame(maxWidth: .infinity)
+                second.frame(maxWidth: .infinity)
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                first
+                second
+            }
+        }
+    }
+
     private var recordSection: some View {
         VStack(alignment: .leading, spacing: 24) {
             group("音频") {
-                HStack(spacing: 24) {
+                settingPair(
                     Toggle("系统声音", isOn: $settings.recordSystemAudio)
-                        .help(L("系统声音与麦克风分开录制，可在播放器中切换。"))
+                        .help(L("系统声音与麦克风分开录制，可在播放器中切换。")),
                     Toggle("麦克风", isOn: $settings.recordMicrophone)
                         .onChange(of: settings.recordMicrophone) { enabled in
                             if enabled { viewModel.ensureMicrophonePermission() }
-                        }
-                }
+                        })
                 if settings.recordMicrophone {
                     settingRow("麦克风设备") {
                         Picker("麦克风设备", selection: $settings.microphoneDeviceID) {
@@ -204,34 +219,28 @@ struct PanelView: View {
                 }
             }
             group("视频") {
-                HStack(spacing: 24) {
+                settingPair(
                     settingRow("画质") {
                         Picker("画质", selection: $settings.quality) {
                             ForEach(VideoQuality.allCases) { q in Text(q.label).tag(q) }
                         }.labelsHidden().frame(width: pickerWidth)
-                    }
-                    .frame(maxWidth: .infinity)
+                    },
                     settingRow("帧率") {
                         Picker("帧率", selection: $settings.fps) {
                             ForEach(FPSOption.allCases) { f in Text(f.label).tag(f) }
                         }.labelsHidden().frame(width: pickerWidth)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                HStack(spacing: 24) {
+                    })
+                settingPair(
                     settingRow("输出分辨率") {
                         Picker("输出分辨率", selection: $settings.outputResolution) {
                             ForEach(OutputResolution.allCases) { r in Text(r.label).tag(r) }
                         }.labelsHidden().frame(width: pickerWidth)
-                    }
-                    .frame(maxWidth: .infinity)
+                    },
                     settingRow("色彩空间") {
                         Picker("色彩空间", selection: $settings.colorSpace) {
                             ForEach(ColorSpaceOption.allCases) { cs in Text(cs.label).tag(cs) }
                         }.labelsHidden().frame(width: pickerWidth)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
+                    })
                 settingRow("视频编码") {
                     Picker("视频编码", selection: $settings.codec) {
                         ForEach(VideoCodec.allCases) { c in Text(c.label).tag(c) }
@@ -244,14 +253,12 @@ struct PanelView: View {
                 }
             }
             group("录制选项") {
-                HStack(spacing: 24) {
-                    Toggle("开始前倒计时 3 秒", isOn: $settings.countdownEnabled)
-                    Toggle("显示鼠标指针", isOn: $settings.showCursor)
-                }
-                HStack(spacing: 24) {
-                    Toggle("显示录制帧率", isOn: $settings.showFPSOverlay)
-                    Toggle("录制提示音", isOn: $settings.soundEnabled)
-                }
+                settingPair(
+                    Toggle("开始前倒计时 3 秒", isOn: $settings.countdownEnabled),
+                    Toggle("显示鼠标指针", isOn: $settings.showCursor))
+                settingPair(
+                    Toggle("显示录制帧率", isOn: $settings.showFPSOverlay),
+                    Toggle("录制提示音", isOn: $settings.soundEnabled))
                 Toggle("所有显示器并行录制（每屏各存一份）", isOn: $settings.allDisplaysParallel)
                     .help(L("开启后「全屏录制」不再点选屏幕，直接同时录制所有显示器，每块屏各存一个文件；系统声音与麦克风只写进主屏文件。想只录某一块屏时，请先关闭本开关再点选。"))
             }
@@ -455,14 +462,13 @@ struct PanelView: View {
                     fieldRow("Endpoint") {
                         TextField("https://xxx.r2.cloudflarestorage.com", text: $settings.imageHostS3Endpoint)
                     }
-                    HStack(spacing: 24) {
+                    settingPair(
                         fieldRow("Region") {
                             TextField("auto", text: $settings.imageHostS3Region)
-                        }.frame(maxWidth: .infinity)
+                        },
                         fieldRow("存储桶") {
                             TextField("my-bucket", text: $settings.imageHostS3Bucket)
-                        }.frame(maxWidth: .infinity)
-                    }
+                        })
                     fieldRow("Access Key ID") {
                         TextField("", text: $settings.imageHostS3AccessKeyID)
                     }
@@ -477,14 +483,13 @@ struct PanelView: View {
                     fieldRow("仓库") {
                         TextField("owner/repo", text: $settings.imageHostGitHubRepo)
                     }
-                    HStack(spacing: 24) {
+                    settingPair(
                         fieldRow("分支") {
                             TextField("main", text: $settings.imageHostGitHubBranch)
-                        }.frame(maxWidth: .infinity)
+                        },
                         fieldRow("Token") {
                             SecureField("ghp_…", text: $settings.imageHostGitHubToken)
-                        }.frame(maxWidth: .infinity)
-                    }
+                        })
                     footnote("图片以 PNG 提交到仓库，链接使用 raw.githubusercontent.com 直连地址；Token 需要仓库写权限，仓库需公开可访问。")
                 case .custom:
                     fieldRow("上传接口") {
@@ -493,14 +498,13 @@ struct PanelView: View {
                     fieldRow("请求头") {
                         TextField("Authorization: Bearer xxx", text: $settings.imageHostCustomHeaders)
                     }
-                    HStack(spacing: 24) {
+                    settingPair(
                         fieldRow("文件字段名") {
                             TextField("file", text: $settings.imageHostCustomFileField)
-                        }.frame(maxWidth: .infinity)
+                        },
                         fieldRow("URL JSON 路径") {
                             TextField("data.url", text: $settings.imageHostCustomURLPath)
-                        }.frame(maxWidth: .infinity)
-                    }
+                        })
                     fieldRow("URL 正则（可选）") {
                         TextField("https://\\S+", text: $settings.imageHostCustomURLRegex)
                     }

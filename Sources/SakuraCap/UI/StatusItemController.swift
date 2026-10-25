@@ -329,10 +329,12 @@ final class StatusItemController: NSObject {
 
     private func ensureSettingsWindow() -> NSWindow {
         if let window = settingsWindow { return window }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 700),
+        // 880 宽让「录制」页的成对控件默认并排显示（不够宽时会自动竖排，不裁切）
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 880, height: 700),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "Sakura-Cap"
+        window.minSize = NSSize(width: 640, height: 520)
         // 平时按普通文档窗口对待；授权弹窗期间由 holdSettingsOnDesktop 临时提悬浮
         window.level = .normal
         window.isReleasedWhenClosed = false

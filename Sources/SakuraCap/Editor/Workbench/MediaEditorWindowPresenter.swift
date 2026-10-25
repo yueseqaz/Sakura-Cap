@@ -46,7 +46,9 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
 
         var minSize: NSSize? {
             switch self {
-            case .workbench: return nil
+            // 与 WorkbenchView 的 frame(minWidth: 980, minHeight: 660) 对齐：
+            // 窗口可缩到内容最小值，但不允许更小——否则内容被裁、要拉大才能看全
+            case .workbench: return NSSize(width: 980, height: 660)
             case .audioEditor: return NSSize(width: 540, height: 400)
             }
         }
