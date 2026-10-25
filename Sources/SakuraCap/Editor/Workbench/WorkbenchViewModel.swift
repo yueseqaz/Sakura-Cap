@@ -65,6 +65,7 @@ final class WorkbenchViewModel: ObservableObject {
     private var undoStack: [WorkbenchDocument] = []
     private var redoStack: [WorkbenchDocument] = []
     private var timeObserver: Any?
+    private var endObserver: NSObjectProtocol?
     private var rebuildTask: Task<Void, Never>?
     private var rebuildToken = 0
 
@@ -89,6 +90,18 @@ final class WorkbenchViewModel: ObservableObject {
                     self.isPlaying = false
                     self.playbackEnded = true
                 }
+            }
+        }
+        // 纯音频的周期回调最后一拍常常到不了 duration-0.05，播放结束后 isPlaying
+        // 仍为 true、按钮停在「暂停」态（要再点两下才能重播）——用系统结束通知兜底复位
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.player.pause()
+                self.isPlaying = false
+                self.playbackEnded = true
             }
         }
     }
