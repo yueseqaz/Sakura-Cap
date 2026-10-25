@@ -233,6 +233,10 @@ struct PanelView: View {
                 Toggle("显示录制帧率", isOn: $settings.showFPSOverlay)
                 Toggle("录制提示音", isOn: $settings.soundEnabled)
             }
+            group("多显示器") {
+                Toggle("所有显示器并行录制（每屏各存一份）", isOn: $settings.allDisplaysParallel)
+                    .help(L("全屏模式下同时录制所有显示器，每块屏各存一个文件；系统声音与麦克风只写进主屏文件。通过菜单「全屏录制」点选具体某块屏时，本次切回单屏。"))
+            }
         }
     }
 
