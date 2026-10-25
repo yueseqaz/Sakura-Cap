@@ -701,3 +701,17 @@
 "左：%@　右：%@　·　完整显示，保持宽高比" = "Left: %@　Right: %@　·　fully visible, aspect preserved";
 "拖入图片，或点击下方「选择」按钮" = "Drop an image here, or click a button below";
 "%d × %d px" = "%d × %d px";
+
+/* 工具：取色器与音频提取 Color picker & audio extract */
+"全局取色器" = "Color Picker";
+"已复制颜色 %@" = "Copied %@";
+"（HEX 已进剪贴板）" = " (HEX copied)";
+"音频提取…" = "Extract Audio…";
+"选择要提取音频的视频" = "Choose a video to extract audio from";
+"提取" = "Extract";
+"未找到音轨" = "No audio track found";
+"无法开始提取" = "Could not start extraction";
+"正在提取音频…" = "Extracting audio…";
+"音频已导出" = "Audio exported";
+"提取失败" = "Extraction failed";
+"未知错误" = "Unknown error";
