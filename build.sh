@@ -12,11 +12,17 @@ set -euo pipefail
 APP_NAME="${APP_NAME:-Sakura-Cap}"
 BUNDLE_ID="${BUNDLE_ID:-com.sakura.sakuracap}"
 EXECUTABLE="SakuraCap"
-VERSION="${VERSION:-2.0.0}"
 BUILD_NUMBER="1"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# 版本默认跟随 Cask 的已发布版本（本地构建不再停留在 2.0.0），仍可用 VERSION 环境变量覆盖；
+# 发版流水线传入的 VERSION（来自 tag）优先级最高
+if [ -z "${VERSION:-}" ]; then
+    VERSION="$(sed -nE 's/^  version "([^"]+)"/\1/p' Casks/sakura-cap.rb | head -1)"
+fi
+VERSION="${VERSION:-2.0.0}"
 
 APP_DIR="build/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
