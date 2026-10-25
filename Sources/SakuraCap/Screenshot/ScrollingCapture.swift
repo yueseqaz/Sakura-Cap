@@ -29,14 +29,15 @@ final class ScrollingCapture {
         // 防重入：已有会话进行中时忽略再次进入。
         // 否则下面的覆盖赋值会让旧 timer / 滚动事件 monitor / HUD 永远失去引用、无法清理。
         guard hud == nil else { return }
-        stopAutoScroll()
         self.region = region
         segments.removeAll()
         stitchedHeight = 0
         lastGray = []
         let hud = ScrollingHUDWindow(onFinish: { [weak self] in self?.finish() },
                                      onCancel: { [weak self] in self?.cancel() },
-                                     onToggleScroll: { [weak self] in self?.toggleAutoScroll() })
+                                     onToggleScroll: { [weak self] in self?.toggleAutoScroll() },
+                                     onChooseAuto: { [weak self] in self?.chooseAuto() },
+                                     onChooseManual: { [weak self] in self?.chooseManual() })
         hud.orderFrontRegardless()
         self.hud = hud
         let preview = ScrollingPreviewWindow(region: region)
@@ -44,7 +45,9 @@ final class ScrollingCapture {
         self.preview = preview
         filter = nil
         config = nil
-        startTimer()
+        exclusionComplete = false
+        placeControls()
+        hud.setChooseMode()
         scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             // Synthetic events carry our marker; a user's wheel/trackpad input pauses automation.
             guard event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.scrollMarker else { return }
@@ -56,19 +59,57 @@ final class ScrollingCapture {
             }
             return event
         }
+        // 预热采集配置；真正的首帧在选择滚动方式之后才拍
+        Task { @MainActor in await prepareCapture() }
     }
 
-    private func startTimer() {
-        timer?.invalidate()
-        let timer = Timer(timeInterval: 0.35, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.captureOnce() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+    // MARK: - 滚动方式选择
+
+    private func chooseAuto() {
+        guard segments.isEmpty, region != nil else { return }
+        hud?.setRunningMode()
         Task { @MainActor in
             await prepareCapture()
             await captureOnce()
             startAutoScroll()
+        }
+    }
+
+    private func chooseManual() {
+        guard segments.isEmpty, region != nil else { return }
+        hud?.setRunningMode()
+        Task { @MainActor in
+            await prepareCapture()
+            await captureOnce()
+            startManualSampling()
+            hud?.setScrollState(L("手动模式：滚动页面即可继续拼接"), running: false)
+        }
+    }
+
+    /// 把控制条/预览窗放到框选所在屏幕上与区域不重叠的位置。
+    /// SCK 的 excludingWindows 过滤在部分系统版本上不生效，物理避开才是可靠兜底。
+    private func placeControls() {
+        guard let region,
+              let screen = NSScreen.screens.first(where: { $0.displayID == region.displayID }) ?? NSScreen.main else { return }
+        var regionRect = ScreenCoordinate.appKitLocalRect(fromSCKRect: region.sckRect, in: screen)
+        regionRect.origin.x += screen.frame.minX
+        regionRect.origin.y += screen.frame.minY
+        let visible = screen.visibleFrame
+        if let hud {
+            let size = hud.frame.size
+            let candidates = [
+                NSPoint(x: visible.midX - size.width / 2, y: visible.minY + 16),
+                NSPoint(x: visible.midX - size.width / 2, y: visible.maxY - size.height - 16),
+            ]
+            hud.setFrameOrigin(candidates.first { CGRect(origin: $0, size: size).intersection(regionRect).isNull } ?? candidates[0])
+        }
+        if let preview {
+            let size = preview.frame.size
+            let candidates = [
+                NSPoint(x: visible.maxX - size.width - 16, y: visible.midY - size.height / 2),
+                NSPoint(x: visible.minX + 16, y: visible.midY - size.height / 2),
+            ]
+            preview.setFrameOrigin(candidates.first { CGRect(origin: $0, size: size).intersection(regionRect).isNull } ?? candidates[0])
         }
     }
 
@@ -77,6 +118,7 @@ final class ScrollingCapture {
     private func startAutoScroll() {
         guard region != nil, !autoScrolling, !segments.isEmpty else { return }
         guard PermissionCenter.accessibilityGranted() || PermissionCenter.requestAccessibility() else {
+            startManualSampling()
             hud?.setScrollState(L("自动滚动需要辅助功能权限，请手动滚动"), running: false)
             PermissionCenter.openAccessibilitySettings()
             return
@@ -89,22 +131,29 @@ final class ScrollingCapture {
         hud?.setScrollState(L("自动滚动中"), running: true)
         autoScrollTask = Task { @MainActor [weak self] in
             while let self, self.autoScrolling, !Task.isCancelled {
-                self.postScroll()
-                try? await Task.sleep(for: .milliseconds(500))
-                guard !Task.isCancelled, self.autoScrolling else { break }
                 var advanced = false
-                // Retry the same scroll position before sending another scroll.
-                // This prevents one late/animated frame from causing the next
-                // successful match to swallow several page segments.
-                for attempt in 0..<3 {
-                    advanced = await self.captureOnce()
-                    if advanced { break }
-                    if attempt < 2 {
-                        try? await Task.sleep(for: .milliseconds(300))
+                // 每步两轮：先常规步长，匹配不到再加大步长重发一次，
+                // 兼容滚动动画慢、对 line 滚动不敏感的页面。
+                for lines in [3, 6] {
+                    guard self.autoScrolling, !Task.isCancelled else { break }
+                    self.postScroll(lines: lines)
+                    try? await Task.sleep(for: .milliseconds(500))
+                    // Retry the same scroll position before sending another scroll.
+                    // This prevents one late/animated frame from causing the next
+                    // successful match to swallow several page segments.
+                    for attempt in 0..<3 {
+                        guard !Task.isCancelled, self.autoScrolling else { break }
+                        advanced = await self.captureOnce()
+                        if advanced { break }
+                        if attempt < 2 {
+                            try? await Task.sleep(for: .milliseconds(300))
+                        }
                     }
+                    if advanced { break }
                 }
                 guard advanced else {
-                    self.stopAutoScroll(message: L("无法确认新的滚动内容，已停止滚动"))
+                    // 放弃自动滚动但不停会话：切入手动模式，滚动页面即可继续拼接。
+                    self.stopAutoScroll(message: L("未确认到新的滚动内容，已切换手动滚动"))
                     break
                 }
                 try? await Task.sleep(for: .milliseconds(350))
@@ -112,12 +161,10 @@ final class ScrollingCapture {
         }
     }
 
-    private var lastAutoHeight = 0
-
-    private func postScroll() {
+    private func postScroll(lines: Int) {
         guard let region, let screen = NSScreen.screens.first(where: { $0.displayID == region.displayID }),
               let event = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
-                                  wheel1: -3, wheel2: 0, wheel3: 0) else { return }
+                                  wheel1: -Int32(lines), wheel2: 0, wheel3: 0) else { return }
         let frame = ScreenCoordinate.cgFrame(of: screen)
         event.location = CGPoint(x: frame.minX + region.sckRect.midX,
                                  y: frame.minY + region.sckRect.midY)
@@ -126,37 +173,66 @@ final class ScrollingCapture {
     }
 
     private func toggleAutoScroll() {
-        if autoScrolling { stopAutoScroll() } else { lastAutoHeight = stitchedHeight; startAutoScroll() }
+        if autoScrolling { stopAutoScroll() } else { startAutoScroll() }
     }
 
     private func stopAutoScroll(message: String? = nil) {
+        guard autoScrolling else { return }
         autoScrolling = false
         autoScrollTask?.cancel()
         autoScrollTask = nil
-        hud?.setScrollState(message ?? L("已暂停自动滚动"), running: false)
+        // 自动滚动停下后切入手动模式：恢复采样，用户滚动页面即可继续拼接。
+        startManualSampling()
+        hud?.setScrollState(message ?? L("已暂停自动滚动，可手动滚动继续"), running: false)
     }
 
-    /// 只构建一次过滤器/配置，之后每帧直接重采样，更跟手也更稳
+    /// 手动模式采样：与进入时的兜底定时器同一套逻辑，只提高频率，
+    /// 让用户滚动时的中间帧尽量少丢重叠区间。
+    private func startManualSampling() {
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.captureOnce() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    /// 只构建一次过滤器/配置，之后每帧直接重采样，更跟手也更稳。
+    /// 注意：SCShareableContent 的窗口列表会滞后于刚 orderFront 的控制窗——
+    /// 若在注册完成前建过滤器，排除列表为空，状态条/预览就会被截进长图
+    /// （且过滤器被缓存后永不重建）。因此重试到两个窗口都出现在列表里再缓存。
+    private var exclusionComplete = false
+
     private func prepareCapture() async {
-        guard #available(macOS 14.0, *), filter == nil, let region else { return }
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
-              let display = content.displays.first(where: { $0.displayID == region.displayID }) else { return }
-        // Keep these controls visible to remote viewers, but out of the long
-        // screenshot itself so they cannot be stitched back into the page.
-        let controlIDs = Set([hud?.windowNumber, preview?.windowNumber].compactMap { $0 })
-        let controls = content.windows.filter { controlIDs.contains(Int($0.windowID)) }
-        let newFilter = SCContentFilter(display: display, excludingWindows: controls)
-        // SCK 配置要真实像素、裁剪要真实缩放；CGDisplayPixelsWide 返回逻辑点，不能用
-        let pixels = DisplayPixelMetrics.size(region.displayID)
-        let (scaleX, scaleY) = DisplayPixelMetrics.scale(region.displayID)
-        let newConfig = SCStreamConfiguration()
-        newConfig.width = pixels.width
-        newConfig.height = pixels.height
-        newConfig.showsCursor = false
-        newConfig.captureResolution = .best
-        filter = newFilter
-        config = newConfig
-        pixelScale = (scaleX, scaleY)
+        guard #available(macOS 14.0, *), let region else { return }
+        guard filter == nil || !exclusionComplete else { return }
+        for _ in 0..<8 {
+            guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+                  let display = content.displays.first(where: { $0.displayID == region.displayID }) else { return }
+            let controlIDs = Set([hud?.windowNumber, preview?.windowNumber].compactMap { $0 })
+            let controls = content.windows.filter { controlIDs.contains(Int($0.windowID)) }
+            if controls.count == controlIDs.count {
+                // Keep these controls visible to remote viewers, but out of the long
+                // screenshot itself so they cannot be stitched back into the page.
+                let newFilter = SCContentFilter(display: display, excludingWindows: controls)
+                // SCK 配置要真实像素、裁剪要真实缩放；CGDisplayPixelsWide 返回逻辑点，不能用
+                let pixels = DisplayPixelMetrics.size(region.displayID)
+                let (scaleX, scaleY) = DisplayPixelMetrics.scale(region.displayID)
+                let newConfig = SCStreamConfiguration()
+                newConfig.width = pixels.width
+                newConfig.height = pixels.height
+                newConfig.showsCursor = false
+                newConfig.captureResolution = .best
+                filter = newFilter
+                config = newConfig
+                pixelScale = (scaleX, scaleY)
+                exclusionComplete = true
+                Log.capture.info("长截图过滤器就绪，排除控制窗 \(controls.count) 个")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        Log.capture.error("长截图过滤器未等到控制窗注册，排除列表可能不完整")
     }
 
     @discardableResult
@@ -181,23 +257,29 @@ final class ScrollingCapture {
             segments = [(frame, CGRect(x: 0, y: 0, width: width, height: height))]
             stitchedHeight = height
             stitchedWidth = width
-            lastGray = gray(frame)
+            lastGray = blurVertical(gray(frame), width: 60, height: height)
             updateHUD()
             return true
         }
 
-        let grayNew = gray(frame)
-        let shift = bestVerticalShift(prev: lastGray, next: grayNew, width: 60, height: height)
-        guard shift >= 3, shift < height - 8 else {
+        let grayNew = blurVertical(gray(frame), width: 60, height: height)
+        let match = bestVerticalShift(prev: lastGray, next: grayNew, width: 60, height: height)
+        Log.capture.debug("长截图匹配 shift=\(match.shift) score=\(match.score) score0=\(match.score0) height=\(height)")
+        guard match.shift >= 3, match.shift < height - 8 else {
             return false // 保留上一帧作为基准，等待同一步的稳定画面重试
+        }
+        // 绝对阈值或相对阈值任一通过：非整数落点靠模糊压低分数；
+        // 懒加载/局部动画靠"远优于静止基线 score0"的相对判定兜底
+        guard match.score <= 10 || match.score < match.score0 - match.score else {
+            return false
         }
         guard stitchedHeight < 60000 else {
             return false // 安全上限，避免长图无限长
         }
         // next 真正新增的部分：next 的底部 shift 行（内容坐标从上一帧底部继续）
-        let newRect = CGRect(x: 0, y: height - shift, width: width, height: shift)
+        let newRect = CGRect(x: 0, y: height - match.shift, width: width, height: match.shift)
         segments.append((frame, newRect))
-        stitchedHeight += shift
+        stitchedHeight += match.shift
         lastGray = grayNew
         updateHUD()
         return true
@@ -280,16 +362,18 @@ final class ScrollingCapture {
         return Array(UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: sampleWidth * height))
     }
 
-    /// 在 next 里找到 prev 底部的重叠，返回滚动量 shift（0 = 没滚动 / 没把握）
-    private func bestVerticalShift(prev: [UInt8], next: [UInt8], width: Int, height: Int) -> Int {
-        guard !prev.isEmpty, !next.isEmpty, prev.count >= width * height, next.count >= width * height else { return 0 }
+    /// 在 next 里找到 prev 底部的重叠。
+    /// 返回 (shift, score, score0)：shift=0 表示没滚动/没把握；score0 是 shift=0 的静止基线。
+    /// 逐行打分后取截尾均值（去掉最差 25% 的行），固定顶栏/悬浮元素不再左右总分。
+    private func bestVerticalShift(prev: [UInt8], next: [UInt8], width: Int, height: Int) -> (shift: Int, score: Int, score0: Int) {
+        guard !prev.isEmpty, !next.isEmpty, prev.count >= width * height, next.count >= width * height else { return (0, .max, .max) }
         let maxShift = Int(Double(height) * 0.75) // 允许更快滚动（至少 25% 重叠）
         var bestShift = 0
         var bestScore = Int.max
-        var shift = 0 // 关键：从 0 开始，静止画面才能正确匹配为 0
+        var score0 = Int.max
+        var shift = 0 // 从 0 开始，静止画面才能正确匹配为 0
         while shift <= maxShift {
-            var diff = 0
-            var samples = 0
+            var rowScores: [Int] = []
             // Ignore the extreme bottom/top bands where fixed toolbars and
             // chat composers commonly stay pinned during scrolling.
             var y = max(shift, Int(Double(height) * 0.10))
@@ -297,32 +381,58 @@ final class ScrollingCapture {
             while y < endY {
                 let py = y * width
                 let ny = (y - shift) * width
+                var diff = 0
                 var x = 0
                 while x < width {
                     diff += abs(Int(prev[py + x]) - Int(next[ny + x]))
                     x += 1
                 }
-                samples += width
+                rowScores.append(diff / width)
                 y += 6
             }
-            if samples > 0 {
-                let score = diff / samples
+            if !rowScores.isEmpty {
+                rowScores.sort()
+                let keep = max(1, rowScores.count * 3 / 4)
+                let score = rowScores.prefix(keep).reduce(0, +) / keep
+                if shift == 0 { score0 = score }
                 if score < bestScore { bestScore = score; bestShift = shift }
             }
             shift += 2
         }
-        // 没把握就不动，避免把静止/无重叠的画面误当滚动而重复拼接
-        return bestScore <= 10 ? bestShift : 0
+        return (bestShift, bestScore, score0)
+    }
+
+    /// 纵向均值模糊（5-tap）：洗掉 Retina 非整数滚动落点造成的亚像素差。
+    /// 不模糊的话，半像素位移的匹配分数会超过阈值、被误判成"没滚动"。
+    private func blurVertical(_ g: [UInt8], width: Int, height: Int, radius: Int = 2) -> [UInt8] {
+        guard height > 2 * radius + 1 else { return g }
+        var out = [UInt8](repeating: 0, count: g.count)
+        for y in 0..<height {
+            let lo = max(0, y - radius)
+            let hi = min(height - 1, y + radius)
+            for x in 0..<width {
+                var sum = 0
+                for yy in lo...hi { sum += Int(g[yy * width + x]) }
+                out[y * width + x] = UInt8(sum / (hi - lo + 1))
+            }
+        }
+        return out
     }
 }
 
-/// 长截图时的悬浮提示条
+/// 长截图时的悬浮提示条：框选后先选「自动/手动滚动」，选定后切换为进度控制
 final class ScrollingHUDWindow: NSPanel {
     private let heightLabel = NSTextField(labelWithString: "")
-    private let stateLabel = NSTextField(labelWithString: L("准备自动滚动…"))
+    private let stateLabel = NSTextField(labelWithString: L("选择滚动方式"))
     private let scrollButton = NSButton(title: L("暂停"), target: nil, action: nil)
+    private let autoChoiceButton = NSButton(title: L("自动滚动"), target: nil, action: nil)
+    private let manualChoiceButton = NSButton(title: L("手动滚动"), target: nil, action: nil)
+    private let finishButton = NSButton(title: L("完成"), target: nil, action: nil)
+    private let cancelButton = NSButton(title: L("取消"), target: nil, action: nil)
+
     init(onFinish: @escaping () -> Void, onCancel: @escaping () -> Void,
-         onToggleScroll: @escaping () -> Void) {
+         onToggleScroll: @escaping () -> Void,
+         onChooseAuto: @escaping () -> Void, onChooseManual: @escaping () -> Void) {
         let size = NSSize(width: 390, height: 52)
         super.init(contentRect: NSRect(origin: .zero, size: size),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -352,18 +462,28 @@ final class ScrollingHUDWindow: NSPanel {
         scrollButton.action = #selector(ClosureTarget.toggleScrollTapped)
         ClosureTarget.shared.toggleScroll = onToggleScroll
 
-        let finish = NSButton(title: L("完成"), target: nil, action: nil)
-        finish.bezelStyle = .rounded
-        finish.target = ClosureTarget.shared
-        finish.action = #selector(ClosureTarget.finishTapped)
+        autoChoiceButton.bezelStyle = .rounded
+        autoChoiceButton.target = ClosureTarget.shared
+        autoChoiceButton.action = #selector(ClosureTarget.chooseAutoTapped)
+        ClosureTarget.shared.chooseAuto = onChooseAuto
+
+        manualChoiceButton.bezelStyle = .rounded
+        manualChoiceButton.target = ClosureTarget.shared
+        manualChoiceButton.action = #selector(ClosureTarget.chooseManualTapped)
+        ClosureTarget.shared.chooseManual = onChooseManual
+
+        finishButton.bezelStyle = .rounded
+        finishButton.target = ClosureTarget.shared
+        finishButton.action = #selector(ClosureTarget.finishTapped)
         ClosureTarget.shared.finish = onFinish
-        let cancel = NSButton(title: L("取消"), target: nil, action: nil)
-        cancel.bezelStyle = .rounded
-        cancel.target = ClosureTarget.shared
-        cancel.action = #selector(ClosureTarget.cancelTapped)
+        cancelButton.bezelStyle = .rounded
+        cancelButton.target = ClosureTarget.shared
+        cancelButton.action = #selector(ClosureTarget.cancelTapped)
         ClosureTarget.shared.cancel = onCancel
 
-        let stack = NSStackView(views: [stateLabel, heightLabel, scrollButton, finish, cancel])
+        let stack = NSStackView(views: [stateLabel, heightLabel, scrollButton,
+                                        autoChoiceButton, manualChoiceButton,
+                                        finishButton, cancelButton])
         stack.orientation = .horizontal
         stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -375,13 +495,38 @@ final class ScrollingHUDWindow: NSPanel {
             stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
         ])
         contentView = container
-        container.layoutSubtreeIfNeeded()
-        let fitted = container.fittingSize
-        if fitted.width > 1 { setContentSize(fitted) }
+        setChooseMode()
         if let screen = NSScreen.main ?? NSScreen.screens.first {
             let visible = screen.visibleFrame
             setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: visible.minY + 24))
         }
+    }
+
+    private func refit() {
+        contentView?.layoutSubtreeIfNeeded()
+        let fitted = contentView?.fittingSize ?? frame.size
+        if fitted.width > 1 { setContentSize(fitted) }
+    }
+
+    /// 框选后的第一步：只展示「自动滚动 / 手动滚动 / 取消」
+    func setChooseMode() {
+        stateLabel.stringValue = L("选择滚动方式")
+        heightLabel.isHidden = true
+        scrollButton.isHidden = true
+        finishButton.isHidden = true
+        autoChoiceButton.isHidden = false
+        manualChoiceButton.isHidden = false
+        refit()
+    }
+
+    /// 选定滚动方式后：展示运行态控件（进度 / 暂停或恢复自动 / 完成 / 取消）
+    func setRunningMode() {
+        autoChoiceButton.isHidden = true
+        manualChoiceButton.isHidden = true
+        heightLabel.isHidden = false
+        scrollButton.isHidden = false
+        finishButton.isHidden = false
+        refit()
     }
 
     func setHeight(_ height: Int) {
@@ -390,10 +535,9 @@ final class ScrollingHUDWindow: NSPanel {
 
     func setScrollState(_ message: String, running: Bool) {
         stateLabel.stringValue = message
-        scrollButton.title = running ? L("暂停") : L("继续")
-        contentView?.layoutSubtreeIfNeeded()
-        let fitted = contentView?.fittingSize ?? frame.size
-        if fitted.width > 1 { setContentSize(fitted) }
+        // running=自动滚动中可暂停；停止后按钮变为恢复自动滚动（手动模式常驻）
+        scrollButton.title = running ? L("暂停") : L("自动滚动")
+        refit()
     }
 
     override var canBecomeKey: Bool { true }
@@ -406,9 +550,13 @@ final class ClosureTarget: NSObject {
     var finish: (() -> Void)?
     var cancel: (() -> Void)?
     var toggleScroll: (() -> Void)?
+    var chooseAuto: (() -> Void)?
+    var chooseManual: (() -> Void)?
     @objc func finishTapped() { finish?() }
     @objc func cancelTapped() { cancel?() }
     @objc func toggleScrollTapped() { toggleScroll?() }
+    @objc func chooseAutoTapped() { chooseAuto?() }
+    @objc func chooseManualTapped() { chooseManual?() }
 }
 
 /// 长截图实时预览：把当前拼接结果缩略显示在旁边

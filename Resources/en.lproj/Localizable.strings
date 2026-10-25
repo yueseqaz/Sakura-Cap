@@ -182,12 +182,14 @@
 "滚动截屏…" = "Scrolling Capture…";
 "滚动到需要的位置，完成后点「完成」" = "Scroll to where you need, then click Finish";
 "已拼接 %d px" = "Stitched %d px";
-"准备自动滚动…" = "Preparing auto-scroll…";
+"选择滚动方式" = "Choose scroll mode";
+"自动滚动" = "Auto-scroll";
+"手动滚动" = "Manual scrolling";
 "自动滚动中" = "Auto-scrolling";
 "自动滚动需要辅助功能权限，请手动滚动" = "Accessibility access required; scroll manually";
 "未检测到新内容，已停止滚动" = "No new content; scrolling stopped";
-"无法确认新的滚动内容，已停止滚动" = "Could not confirm new scrolling content; capture stopped";
-"已暂停自动滚动" = "Auto-scroll paused";
+"未确认到新的滚动内容，已切换手动滚动" = "No new content confirmed; switched to manual scrolling";
+"已暂停自动滚动，可手动滚动继续" = "Auto-scroll paused; keep scrolling manually";
 "辅助功能" = "Accessibility";
 "长截图自动滚动需要。" = "Required for scrolling capture automation.";
 "显示录制帧率角标" = "Show recording FPS overlay";
