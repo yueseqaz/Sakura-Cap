@@ -19,12 +19,8 @@ final class CaptureIntentCoordinator {
         SelectionController.shared.onPicked = { [weak self] result in
             self?.handlePicked(result)
         }
-        // 取消选择不应自行弹出设置窗口；只有对比功能的待截回调需要清理。
-        SelectionController.shared.onCancelled = { _ in
-            if SelectionController.shared.currentPurpose == .compare {
-                CompareController.shared.cancelPendingCapture()
-            }
-        }
+        // 取消选择不需要额外清理
+        SelectionController.shared.onCancelled = { _ in }
     }
 
     private func handlePicked(_ result: SelectionResult) {
@@ -47,11 +43,6 @@ final class CaptureIntentCoordinator {
         // 二维码：框选后识别内容并复制
         if SelectionController.shared.currentPurpose == .qr {
             if case .region(let region) = result { ScreenshotController.shared.qrRegion(region) }
-            return
-        }
-        // 截图对比：框选第二张图
-        if SelectionController.shared.currentPurpose == .compare {
-            if case .region(let region) = result { ScreenshotController.shared.compareRegion(region) }
             return
         }
         // 翻译：框选区域后 OCR + AI 翻译

@@ -60,12 +60,11 @@ Sakura-Cap focuses on doing one thing well: capturing your screen. No Dock icon,
 - Everything you draw stays **re-editable**: select to move, recolor, restroke, redirect arrows, or delete
 - Undo / redo; scroll to zoom, ⌘+scroll to pan, one-click "fit to window"
 - Crop applies instantly (image and annotations together)
-- **Compare**: side-by-side with the original, or capture a second image to diff
 - **Pin**: stick the result cleanly onto your screen (red dashed border, draggable, scroll / button zoom, close button in the corner)
 
 **More**
 - Global hotkeys: fullscreen / window / region recording, fullscreen / region screenshot, OCR, scrolling capture — **blank by default, you decide**
-- Tools menu: **screen annotation** (draw over the whole screen), **camera preview** (floating camera window), annotate image, trim video, edit audio
+- Tools menu: **screen annotation** (draw over the whole screen), **camera preview** (floating camera window), annotate image, trim video, edit audio, **compare** (side-by-side full-view comparison of two images)
 - Camera picture-in-picture has a **scissors button**: capture the current camera frame straight into the annotation editor
 - Pick specific microphone / camera devices (in both Settings and the HUD)
 - All permissions in one "Permissions" tab: screen recording / microphone / input monitoring / camera; the mic permission is only requested when the mic is actually used

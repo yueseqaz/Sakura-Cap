@@ -229,9 +229,6 @@ final class AnnotationEditorWindow: NSWindow {
         let pinButton = NSButton(title: L("定住"), target: self, action: #selector(pinTapped))
         pinButton.bezelStyle = .rounded
         SettingsAppearance.styleToolbarButton(pinButton)
-        let compareButton = NSButton()
-        configure(compareButton, symbol: "rectangle.split.2x1", action: #selector(compareTapped))
-        compareButton.toolTip = L("截图对比：再截一张并排对比")
         let eyedropperButton = NSButton()
         configure(eyedropperButton, symbol: "eyedropper", action: #selector(eyedropperTapped))
         eyedropperButton.toolTip = L("吸管：点击图片取色并复制 HEX")
@@ -267,7 +264,7 @@ final class AnnotationEditorWindow: NSWindow {
                                         widthLabel, widthSlider, widthValue, undoButton, redoButton,
                                         deleteButton, clearButton, spacer,
                                         zoomOutButton, zoomLabel, zoomInButton, fitButton, pinButton,
-                                        compareButton, eyedropperButton, measureButton, magnifierButton,
+                                        eyedropperButton, measureButton, magnifierButton,
                                         copyButton, saveButton,
                                         discardImageButton])
         stack.orientation = .horizontal
@@ -405,12 +402,6 @@ final class AnnotationEditorWindow: NSWindow {
     @objc private func measureTapped() {
         canvas.beginMeasure()
         Toast.show(title: L("点击两个点测量距离（像素）"), detail: L("按 Esc 可取消"))
-    }
-
-    /// 截图对比：用当前底图打开对比窗口
-    @objc private func compareTapped() {
-        guard let image = canvas.baseImage else { return }
-        CompareController.shared.open(original: image)
     }
 
     @objc private func askAITapped() {

@@ -39,15 +39,6 @@ final class ScreenshotController {
         Task { await recognizeCode(displayID: region.displayID, region: region) }
     }
 
-    func compareRegion(_ region: RegionSelection) {
-        Task {
-            guard #available(macOS 14.0, *) else { return }
-            if let image = try? await captureImage(displayID: region.displayID, region: region) {
-                CompareController.shared.deliver(image)
-            }
-        }
-    }
-
     func translateRegion(_ region: RegionSelection) {
         Task { await translate(displayID: region.displayID, region: region) }
     }

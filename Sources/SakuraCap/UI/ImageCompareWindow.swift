@@ -2,8 +2,8 @@ import AppKit
 import UniformTypeIdentifiers
 
 /// 对比工具：菜单「工具 → 对比…」打开，左右两栏各放一张图片，
-/// **原比例 1:1 展示、绝不缩放适配**——图比视口大就只显示一部分，滚动查看；
-/// 两侧滚动位置联动，方便对齐同一区域比较。
+/// 在当前窗口内**完整显示两张图**（只保持宽高比缩放、不变形、不放大超原尺寸），
+/// 用于整图层面的对比。
 @MainActor
 final class ImageCompareToolController: NSObject {
     static let shared = ImageCompareToolController()
@@ -12,8 +12,6 @@ final class ImageCompareToolController: NSObject {
     private var leftPane: ImageComparePane?
     private var rightPane: ImageComparePane?
     private var hintLabel: NSTextField?
-    private var syncLock = false
-    private var boundsObservers: [NSObjectProtocol] = []
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
@@ -32,31 +30,12 @@ final class ImageCompareToolController: NSObject {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.sharingType = .readOnly
 
-        let left = ImageComparePane(title: L("左图"))
-        let right = ImageComparePane(title: L("右图"))
+        let left = ImageComparePane()
+        let right = ImageComparePane()
         left.onImageChange = { [weak self] in self?.refreshHint() }
         right.onImageChange = { [weak self] in self?.refreshHint() }
         leftPane = left
         rightPane = right
-
-        // 滚动联动：一侧滚动，另一侧跟随相同偏移（syncLock 防循环）
-        for (source, target) in [(left, right), (right, left)] {
-            source.scrollView.contentView.postsBoundsChangedNotifications = true
-            let observer = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification,
-                object: source.scrollView.contentView, queue: .main
-            ) { [weak self, weak source, weak target] _ in
-                MainActor.assumeIsolated {
-                    guard let self, let source, let target, !self.syncLock else { return }
-                    self.syncLock = true
-                    defer { self.syncLock = false }
-                    let origin = source.scrollView.contentView.bounds.origin
-                    target.scrollView.contentView.scroll(to: origin)
-                    target.scrollView.reflectScrolledClipView(target.scrollView.contentView)
-                }
-            }
-            boundsObservers.append(observer)
-        }
 
         let chooseLeft = NSButton(title: L("选择左图…"), target: nil, action: nil)
         chooseLeft.bezelStyle = .rounded
@@ -71,7 +50,7 @@ final class ImageCompareToolController: NSObject {
         let clear = NSButton(title: L("清空"), target: self, action: #selector(clearTapped))
         clear.bezelStyle = .rounded
 
-        let hint = NSTextField(labelWithString: L("拖入图片或点击上方按钮，原比例 1:1 对比，滚动自动联动"))
+        let hint = NSTextField(labelWithString: L("拖入图片或点击上方按钮，两张图完整显示、保持宽高比"))
         hint.font = .systemFont(ofSize: 12)
         hint.textColor = .secondaryLabelColor
         hint.lineBreakMode = .byTruncatingTail
@@ -123,7 +102,7 @@ final class ImageCompareToolController: NSObject {
         guard let hintLabel else { return }
         let left = leftPane?.imageDescription() ?? L("未选择")
         let right = rightPane?.imageDescription() ?? L("未选择")
-        hintLabel.stringValue = String(format: L("左：%@　右：%@　·　原比例 1:1，滚动联动"), left, right)
+        hintLabel.stringValue = String(format: L("左：%@　右：%@　·　完整显示，保持宽高比"), left, right)
     }
 
     @objc private func swapTapped() {
@@ -139,52 +118,23 @@ final class ImageCompareToolController: NSObject {
         rightPane?.setImage(nil)
         refreshHint()
     }
-
-    deinit {
-        boundsObservers.forEach { NotificationCenter.default.removeObserver($0) }
-    }
 }
 
-/// 对比窗口的单侧：滚动视图 + 1:1 绘制的图片文档视图，支持拖入文件
+/// 对比窗口的单侧：在自身边界内按宽高比完整绘制图片（不超过原尺寸），支持拖入文件
 @MainActor
 final class ImageComparePane: NSView {
-    let scrollView = NSScrollView()
-    private let imageView = OriginalScaleImageView()
-    private let placeholder: String
+    private(set) var image: CGImage?
     var onImageChange: (() -> Void)?
 
-    init(title: String) {
-        placeholder = String(format: L("%@\n拖入图片，或点击上方「选择」按钮"), title)
+    init() {
         super.init(frame: .zero)
-
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = .windowBackgroundColor
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView = imageView
-        imageView.placeholderText = placeholder
-        addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-
         registerForDraggedTypes([.fileURL])
-        postsFrameChangedNotifications = true
     }
 
     required init?(coder: NSCoder) { nil }
 
-    var image: CGImage? { imageView.image }
-
     func setImage(_ image: CGImage?) {
-        imageView.image = image
-        tileDocumentView()
+        self.image = image
         needsDisplay = true
         onImageChange?()
     }
@@ -194,17 +144,31 @@ final class ImageComparePane: NSView {
         return String(format: L("%d × %d px"), image.width, image.height)
     }
 
-    /// 文档视图尺寸 = max(图片尺寸, 视口尺寸)：大图可滚动，小图居中不放大
-    private func tileDocumentView() {
-        let viewport = scrollView.contentView.bounds.size
-        let imageSize = imageView.image.map { NSSize(width: $0.width, height: $0.height) } ?? .zero
-        imageView.setFrameSize(NSSize(width: max(imageSize.width, viewport.width),
-                                      height: max(imageSize.height, viewport.height)))
-    }
+    override var isFlipped: Bool { true }
 
-    override func layout() {
-        super.layout()
-        tileDocumentView()
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        bounds.fill()
+        guard let image else {
+            let text = L("拖入图片，或点击上方「选择」按钮")
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13),
+                .foregroundColor: NSColor.secondaryLabelColor,
+            ]
+            let size = (text as NSString).size(withAttributes: attributes)
+            (text as NSString).draw(
+                at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
+                withAttributes: attributes)
+            return
+        }
+        // 完整显示：按宽高比缩放到刚好放满可视区域；小图不放大，保持锐利
+        let imageWidth = CGFloat(image.width), imageHeight = CGFloat(image.height)
+        guard imageWidth > 0, imageHeight > 0, bounds.width > 0, bounds.height > 0 else { return }
+        let scale = min(bounds.width / imageWidth, bounds.height / imageHeight, 1)
+        let width = imageWidth * scale, height = imageHeight * scale
+        let rect = NSRect(x: (bounds.width - width) / 2, y: (bounds.height - height) / 2,
+                          width: width, height: height)
+        NSImage(cgImage: image, size: rect.size).draw(in: rect)
     }
 
     // MARK: 拖放
@@ -233,42 +197,5 @@ final class ImageComparePane: NSView {
         guard panel.runModal() == .OK, let url = panel.url,
               let image = NSImage(contentsOf: url)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         setImage(image)
-    }
-}
-
-/// 1:1 绘制图片的文档视图：一个图像像素 = 一个界面点，绝不缩放
-final class OriginalScaleImageView: NSView {
-    var image: CGImage?
-    var placeholderText: String?
-
-    override var isFlipped: Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
-        bounds.fill()
-        guard let image else {
-            guard let placeholderText else { return }
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: NSColor.secondaryLabelColor,
-                .paragraphStyle: {
-                    let style = NSMutableParagraphStyle()
-                    style.alignment = .center
-                    style.lineSpacing = 4
-                    return style
-                }(),
-            ]
-            let size = (placeholderText as NSString).size(withAttributes: attributes)
-            (placeholderText as NSString).draw(
-                at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
-                withAttributes: attributes)
-            return
-        }
-        // 居中绘制原尺寸（图像尺寸即点尺寸，1 图像像素 = 1pt）
-        let rect = NSRect(x: (bounds.width - CGFloat(image.width)) / 2,
-                          y: (bounds.height - CGFloat(image.height)) / 2,
-                          width: CGFloat(image.width),
-                          height: CGFloat(image.height))
-        NSImage(cgImage: image, size: rect.size).draw(in: rect)
     }
 }
