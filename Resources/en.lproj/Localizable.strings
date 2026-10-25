@@ -697,7 +697,7 @@
 "左图" = "Left";
 "右图" = "Right";
 "未选择" = "None";
-"拖入图片或点击上方按钮，两张图完整显示、保持宽高比" = "Drop images or use the buttons above; both images fully visible with aspect ratio preserved";
+"拖入图片或点击下方按钮，两张图完整显示、保持宽高比" = "Drop images or use the buttons below; both images fully visible with aspect ratio preserved";
 "左：%@　右：%@　·　完整显示，保持宽高比" = "Left: %@　Right: %@　·　fully visible, aspect preserved";
-"拖入图片，或点击上方「选择」按钮" = "Drop an image here, or click a button above";
+"拖入图片，或点击下方「选择」按钮" = "Drop an image here, or click a button below";
 "%d × %d px" = "%d × %d px";

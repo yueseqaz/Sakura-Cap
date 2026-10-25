@@ -51,7 +51,7 @@ final class ImageCompareToolController: NSObject {
         let clear = NSButton(title: L("清空"), target: self, action: #selector(clearTapped))
         clear.bezelStyle = .rounded
 
-        let hint = NSTextField(labelWithString: L("拖入图片或点击上方按钮，两张图完整显示、保持宽高比"))
+        let hint = NSTextField(labelWithString: L("拖入图片或点击下方按钮，两张图完整显示、保持宽高比"))
         hint.font = .systemFont(ofSize: 12)
         hint.textColor = .secondaryLabelColor
         hint.lineBreakMode = .byTruncatingTail
@@ -163,7 +163,7 @@ final class ImageComparePane: NSView {
         NSColor.windowBackgroundColor.setFill()
         bounds.fill()
         guard let image else {
-            let text = L("拖入图片，或点击上方「选择」按钮")
+            let text = L("拖入图片，或点击下方「选择」按钮")
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 13),
                 .foregroundColor: NSColor.secondaryLabelColor,
