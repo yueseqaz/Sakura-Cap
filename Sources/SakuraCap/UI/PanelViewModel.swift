@@ -48,6 +48,8 @@ final class PanelViewModel: ObservableObject {
                     AppSettings.shared.recordMicrophone = false
                 }
                 self?.objectWillChange.send()
+                // 系统弹窗夺走焦点后把设置窗口带回前台（仅设置窗可见时生效）
+                StatusItemController.bringSettingsToFront()
             }
         }
     }

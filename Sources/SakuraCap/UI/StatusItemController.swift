@@ -300,6 +300,18 @@ final class StatusItemController: NSObject {
         window.makeKeyAndOrderFront(nil)
     }
 
+    /// 设置窗口的静态引用：TCC 等系统弹窗会夺走激活态，LSUIElement 应用又没有
+    /// Dock 图标，用户很难找回沉到后面的设置窗口——权限回调结束后用它把窗口带回前台。
+    private static weak var activeSettingsWindow: NSWindow?
+
+    static func bringSettingsToFront() {
+        DispatchQueue.main.async {
+            guard let window = activeSettingsWindow, window.isVisible else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+        }
+    }
+
     private func ensureSettingsWindow() -> NSWindow {
         if let window = settingsWindow { return window }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 700),
@@ -314,6 +326,7 @@ final class StatusItemController: NSObject {
         window.contentView = NSHostingView(rootView: PanelView(viewModel: viewModel))
         window.center()
         settingsWindow = window
+        Self.activeSettingsWindow = window
         return window
     }
 
