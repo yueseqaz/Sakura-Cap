@@ -18,9 +18,10 @@ final class PanelViewModel: ObservableObject {
         if PermissionCenter.screenCaptureGranted() {
             refreshContent()
         }
-        if AppSettings.shared.recordMicrophone {
-            ensureMicrophonePermission()
-        }
+        // 麦克风权限不在打开面板/启动时申请：
+        // 1) 开录且勾选麦克风时由 RecordingController 在 startMicrophoneAndGetFormat 里申请；
+        // 2) 用户在面板/HUD 主动打开麦克风开关时由对应开关申请。
+        // 这里只读状态做展示，避免每次启动弹 TCC 窗、点完还会把菜单顶掉。
     }
 
     func refreshPermissions() {
