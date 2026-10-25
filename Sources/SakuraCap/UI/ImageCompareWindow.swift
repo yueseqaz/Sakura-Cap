@@ -66,7 +66,7 @@ final class ImageCompareToolController: NSObject {
         stack.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(stack)
 
-        let split = NSSplitView()
+        let split = EvenSplitView()
         split.isVertical = true
         split.dividerStyle = .thin
         split.addArrangedSubview(left)
@@ -197,5 +197,28 @@ final class ImageComparePane: NSView {
         guard panel.runModal() == .OK, let url = panel.url,
               let image = NSImage(contentsOf: url)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         setImage(image)
+    }
+}
+
+/// 左右两栏默认始终平分（50/50）；用户拖过分隔条后不再自动平分
+final class EvenSplitView: NSSplitView {
+    var keepEven = true
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if isNearDivider(point) { keepEven = false }
+        super.mouseDown(with: event)
+    }
+
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        super.resizeSubviews(withOldSize: oldSize)
+        if keepEven, subviews.count == 2, bounds.width > 0 {
+            setPosition(bounds.width / 2, ofDividerAt: 0)
+        }
+    }
+
+    private func isNearDivider(_ point: NSPoint) -> Bool {
+        guard subviews.count == 2 else { return false }
+        return abs(point.x - subviews[0].frame.maxX) <= max(4, dividerThickness + 2)
     }
 }
