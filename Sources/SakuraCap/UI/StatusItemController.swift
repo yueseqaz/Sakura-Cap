@@ -194,7 +194,15 @@ final class StatusItemController: NSObject {
     @objc private func menuScreenAnnotation() { ScreenAnnotationController.shared.toggle() }
 
     // 菜单项 / 全局快捷键 共用入口
-    func recordFullScreen() { beginSelection(.displayOnly) }
+    func recordFullScreen() {
+        // 并行录制开启时无需点选屏幕（点选流程会把开关改回单屏）：直接待开始，录全部显示器
+        if AppSettings.shared.allDisplaysParallel {
+            AppSettings.shared.captureMode = .display
+            controller.arm()
+            return
+        }
+        beginSelection(.displayOnly)
+    }
     func recordRegionSelection() { beginSelection(.regionOnly) }
     func screenshotFullScreen() { beginSelection(.displayOnly, purpose: .screenshot) }
     func screenshotRegionSelection() { beginSelection(.regionOnly, purpose: .screenshot) }
