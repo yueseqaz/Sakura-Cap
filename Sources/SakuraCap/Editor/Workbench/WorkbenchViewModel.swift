@@ -31,6 +31,9 @@ final class WorkbenchViewModel: ObservableObject {
 
     @Published private(set) var document = WorkbenchDocument()
     @Published var duration: Double = 0
+    /// 剪辑后时间轴的实际时长（当前应用的合成）；合成未重建时回退源媒体时长。
+    /// 播放结束判断与 UI 总时长都必须用它——用源时长会在删片段后失真
+    var timelineDuration: Double { appliedTimeline?.duration ?? duration }
     @Published var currentTime: Double = 0
     @Published var isPlaying = false
     @Published var selection: Selection?
@@ -85,7 +88,7 @@ final class WorkbenchViewModel: ObservableObject {
                 let t = CMTimeGetSeconds(time)
                 guard t.isFinite else { return }
                 self.currentTime = t
-                if self.isPlaying, self.duration > 0, t >= self.duration - 0.05 {
+                if self.isPlaying, self.timelineDuration > 0, t >= self.timelineDuration - 0.05 {
                     self.player.pause()
                     self.isPlaying = false
                     self.playbackEnded = true
@@ -94,8 +97,10 @@ final class WorkbenchViewModel: ObservableObject {
         }
         // 纯音频的周期回调最后一拍常常到不了 duration-0.05，播放结束后 isPlaying
         // 仍为 true、按钮停在「暂停」态（要再点两下才能重播）——用系统结束通知兜底复位
+        // object 传 nil：rebuildTimeline 会替换 player item，固定观察旧对象
+        // 在编辑过的文档上永远等不到结束通知
         endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main
+            forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -684,7 +689,7 @@ final class WorkbenchViewModel: ObservableObject {
         } else {
             if editingAnnotationID != nil { finishAnnotationSelection(commit: true) }
             if editingFocusID != nil { finishFocusEdit() }
-            if playbackEnded || duration <= 0 || currentTime >= duration - 0.15 {
+            if playbackEnded || timelineDuration <= 0 || currentTime >= timelineDuration - 0.15 {
                 seek(to: 0, updateTimeline: true)
             }
             player.play()
@@ -693,7 +698,7 @@ final class WorkbenchViewModel: ObservableObject {
     }
 
     func seek(to seconds: Double, updateTimeline: Bool = true) {
-        let t = max(0, min(duration, seconds))
+        let t = max(0, min(timelineDuration, seconds))
         if updateTimeline, let id = editingAnnotationID,
            let segment = document.annotations.first(where: { $0.id == id }) {
             let s = document.timelineTime(forSource: segment.sourceIn)

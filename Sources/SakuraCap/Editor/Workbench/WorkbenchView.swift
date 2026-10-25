@@ -74,7 +74,7 @@ struct WorkbenchView: View {
 
             Text(CompletionNotifier.format(model.currentTime)).monospacedDigit()
             Text("/").foregroundStyle(.secondary)
-            Text(CompletionNotifier.format(model.duration)).monospacedDigit().foregroundStyle(.secondary)
+            Text(CompletionNotifier.format(model.timelineDuration)).monospacedDigit().foregroundStyle(.secondary)
 
             Spacer()
 
@@ -183,7 +183,7 @@ struct WorkbenchView: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionTitle(L("视频"))
             LabeledRow(label: L("分辨率"), value: "\(Int(videoSizeText.width))×\(Int(videoSizeText.height))")
-            LabeledRow(label: L("时长"), value: CompletionNotifier.format(model.duration))
+            LabeledRow(label: L("时长"), value: CompletionNotifier.format(model.timelineDuration))
             if !model.document.lanes.isEmpty {
                 sectionTitle(L("音轨"))
                 ForEach(model.document.lanes.indices, id: \.self) { index in

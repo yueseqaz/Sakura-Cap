@@ -59,7 +59,7 @@ struct AudioEditorView: View {
             .buttonStyle(.bordered).help(L("播放 / 暂停 空格"))
             Text(CompletionNotifier.format(model.currentTime)).monospacedDigit()
             Text("/").foregroundStyle(.secondary)
-            Text(CompletionNotifier.format(model.duration)).monospacedDigit().foregroundStyle(.secondary)
+            Text(CompletionNotifier.format(model.timelineDuration)).monospacedDigit().foregroundStyle(.secondary)
             Spacer()
             if model.isExporting { ProgressView().controlSize(.small) }
             if let status = model.status {
