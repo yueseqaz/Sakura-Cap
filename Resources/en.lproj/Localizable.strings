@@ -718,3 +718,24 @@
 
 /* 全局取色器 v2 Color picker overlay */
 "点击屏幕任意位置取色" = "Click anywhere on screen to pick a color";
+
+/* 图片格式转换 Image format conversion */
+"图片格式转换…" = "Convert Image Format…";
+"图片格式转换" = "Convert Image Format";
+"输出格式" = "Output format";
+"长边限制" = "Long edge limit";
+"不限制" = "No limit";
+"转换" = "Convert";
+"移除所选" = "Remove selected";
+"文件" = "File";
+"拖入图片到这里，或点击「添加图片」" = "Drop images here, or click Add Images";
+"已添加 %d 张，输出格式 %@" = "%d image(s) added; output format %@";
+"转换中 %d / %d…" = "Converting %d / %d…";
+"已转换 %d 张图片" = "Converted %d image(s)";
+"已转换 %d 张，失败 %d 张" = "Converted %d, failed %d";
+"没有可转换的图片" = "No images to convert";
+"选择要转换的图片" = "Choose images to convert";
+"无法读取图片" = "Could not read image";
+"写入文件失败" = "Failed to write file";
+"此设备不支持该输出格式" = "This device does not support the output format";
+"转换后的图片保存在原文件旁边，不会覆盖已有文件" = "Converted images are saved next to the originals; existing files are never overwritten";
