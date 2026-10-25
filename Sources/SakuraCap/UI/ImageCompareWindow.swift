@@ -12,6 +12,7 @@ final class ImageCompareToolController: NSObject {
     private var leftPane: ImageComparePane?
     private var rightPane: ImageComparePane?
     private var hintLabel: NSTextField?
+    private var resizeObserver: NSObjectProtocol?
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
@@ -94,6 +95,14 @@ final class ImageCompareToolController: NSObject {
         ])
         window.contentView = container
         self.window = window
+        // 初始 50/50（自动布局对两栏的初始分配不确定，显式定位）
+        split.layoutSubtreeIfNeeded()
+        split.evenOut()
+        resizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification, object: window, queue: .main
+        ) { [weak split] _ in
+            MainActor.assumeIsolated { split?.evenOut() }
+        }
         window.center()
         window.makeKeyAndOrderFront(nil)
     }
@@ -117,6 +126,10 @@ final class ImageCompareToolController: NSObject {
         leftPane?.setImage(nil)
         rightPane?.setImage(nil)
         refreshHint()
+    }
+
+    deinit {
+        if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
     }
 }
 
@@ -200,7 +213,9 @@ final class ImageComparePane: NSView {
     }
 }
 
-/// 左右两栏默认始终平分（50/50）；用户拖过分隔条后不再自动平分
+/// 左右两栏默认始终平分（50/50）；用户拖过分隔条后不再自动平分。
+/// 平分由控制器在布局完成/窗口缩放时显式 setPosition（在 resizeSubviews 里改
+/// 会被随后的自动布局覆盖，时序不可靠）。
 final class EvenSplitView: NSSplitView {
     var keepEven = true
 
@@ -210,11 +225,9 @@ final class EvenSplitView: NSSplitView {
         super.mouseDown(with: event)
     }
 
-    override func resizeSubviews(withOldSize oldSize: NSSize) {
-        super.resizeSubviews(withOldSize: oldSize)
-        if keepEven, subviews.count == 2, bounds.width > 0 {
-            setPosition(bounds.width / 2, ofDividerAt: 0)
-        }
+    func evenOut() {
+        guard keepEven, subviews.count == 2, bounds.width > 0 else { return }
+        setPosition(bounds.width / 2, ofDividerAt: 0)
     }
 
     private func isNearDivider(_ point: NSPoint) -> Bool {
