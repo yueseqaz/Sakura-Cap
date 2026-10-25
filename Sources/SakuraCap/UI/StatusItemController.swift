@@ -134,6 +134,7 @@ final class StatusItemController: NSObject {
         toolsMenu.addItem(makeItem(L("标注图片…"), #selector(annotateImage)))
         toolsMenu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
         toolsMenu.addItem(makeItem(L("编辑音频…"), #selector(menuEditAudio)))
+        toolsMenu.addItem(makeItem(L("对比…"), #selector(menuImageCompare)))
         tools.submenu = toolsMenu
         menu.addItem(tools)
         menu.addItem(makeItem(L("设置…"), #selector(menuSettings)))
@@ -168,6 +169,8 @@ final class StatusItemController: NSObject {
               let source = AudioRecorderController.Source(rawValue: raw) else { return }
         AudioRecorderController.shared.start(source)
     }
+
+    @objc private func menuImageCompare() { ImageCompareToolController.shared.show() }
 
     @objc private func menuEditAudio() {
         let panel = NSOpenPanel()
