@@ -1,0 +1,4 @@
+module CWebP {
+    header "../src/webp/encode.h"
+    export *
+}

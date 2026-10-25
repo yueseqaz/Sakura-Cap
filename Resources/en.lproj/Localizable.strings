@@ -718,6 +718,10 @@
 
 /* 全局取色器 v2 Color picker overlay */
 "点击屏幕任意位置取色" = "Click anywhere on screen to pick a color";
+"按 Esc 取消" = "Press Esc to cancel";
+"打开设置" = "Open Settings";
+"无法读取屏幕颜色" = "Could not read the screen color";
+"请检查屏幕录制权限后重试" = "Check Screen Recording permission and try again";
 
 /* 图片格式转换 Image format conversion */
 "图片格式转换…" = "Convert Image Format…";
@@ -728,6 +732,8 @@
 "转换" = "Convert";
 "移除所选" = "Remove selected";
 "文件" = "File";
+"添加图片…" = "Add Images…";
+"质量" = "Quality";
 "拖入图片到这里，或点击「添加图片」" = "Drop images here, or click Add Images";
 "已添加 %d 张，输出格式 %@" = "%d image(s) added; output format %@";
 "转换中 %d / %d…" = "Converting %d / %d…";
@@ -739,3 +745,15 @@
 "写入文件失败" = "Failed to write file";
 "此设备不支持该输出格式" = "This device does not support the output format";
 "转换后的图片保存在原文件旁边，不会覆盖已有文件" = "Converted images are saved next to the originals; existing files are never overwritten";
+"原始大小" = "Original size";
+"预计输出大小" = "Estimated size";
+"添加图片以预览输出大小" = "Add images to preview the output size";
+"正在计算输出大小…" = "Calculating output size…";
+"预计合计：%@ → %@" = "Estimated total: %@ → %@";
+"减少 %.0f%%" = "%.0f%% smaller";
+"增加 %.0f%%" = "%.0f%% larger";
+"无法估算" = "Unavailable";
+"部分图片无法估算，请检查源文件或更换格式" = "Some sizes are unavailable; check the source files or choose another format";
+"GIF 为静态图片" = "GIF output is a still image";
+"WebP 的宽高不能超过 16383 像素，请设置长边限制" = "WebP dimensions cannot exceed 16383 pixels; set a long-edge limit";
+"动画及多页图片仅转换首帧；GIF 输出为静态图片" = "Only the first frame/page is converted; GIF output is a still image";

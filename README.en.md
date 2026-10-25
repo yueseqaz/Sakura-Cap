@@ -64,7 +64,7 @@ Sakura-Cap focuses on doing one thing well: capturing your screen. No Dock icon,
 
 **More**
 - Global hotkeys: fullscreen / window / region recording, fullscreen / region screenshot, OCR, scrolling capture — **blank by default, you decide**
-- Tools menu: **screen annotation** (draw over the whole screen), **camera preview** (floating camera window), annotate image, trim video, edit audio, **compare** (side-by-side full-view comparison of two images), **color picker** (sample any screen pixel), **extract audio** (video audio track to m4a), **image format conversion** (batch PNG/JPEG/HEIC with quality & size options)
+- Tools menu: **screen annotation** (draw over the whole screen), **camera preview** (floating camera window), annotate image, trim video, edit audio, **compare** (side-by-side full-view comparison of two images), **color picker** (crosshair targeting; click to copy HEX and exit), **extract audio** (video audio track to m4a), **image format conversion** (PNG/JPEG/HEIC/TIFF/BMP/GIF/JPEG 2000/AVIF/WebP, subject to device support; batch conversion, quality and size controls, live output-size estimates)
 - Camera picture-in-picture has a **scissors button**: capture the current camera frame straight into the annotation editor
 - Pick specific microphone / camera devices (in both Settings and the HUD)
 - All permissions in one "Permissions" tab: screen recording / microphone / input monitoring / camera; the mic permission is only requested when the mic is actually used
@@ -109,7 +109,7 @@ cd Sakura-Cap
 Tech stack, build steps, signing & permissions, internal conventions and known pitfalls → **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** (in Chinese)
 
 - Swift 5.9 + SwiftUI / AppKit; capture via ScreenCaptureKit; encoding via AVFoundation; OCR via Vision
-- Zero third-party dependencies, system frameworks only; built purely with Command Line Tools — no `.xcodeproj` anywhere
+- System frameworks plus bundled, statically linked libwebp for WebP encoding; no extra tools to install. Built purely with Command Line Tools — no `.xcodeproj` anywhere
 
 ## Links
 

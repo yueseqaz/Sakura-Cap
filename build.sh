@@ -67,6 +67,10 @@ iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/AppIcon.icns"
 # ---- 本地化资源（*.lproj/Localizable.strings）----
 find Resources -maxdepth 1 -name '*.lproj' -exec cp -R {} "$CONTENTS/Resources/" \;
 
+# WebP 静态链接进主程序，随包保留上游版权与专利授权声明。
+mkdir -p "$CONTENTS/Resources/ThirdParty/libwebp"
+cp ThirdParty/libwebp/{COPYING,PATENTS,AUTHORS} "$CONTENTS/Resources/ThirdParty/libwebp/"
+
 # ---- 签名 ----
 SIGN_IDENTITY="${SIGN_IDENTITY:-auto}"
 if [ "$SIGN_IDENTITY" = "auto" ]; then

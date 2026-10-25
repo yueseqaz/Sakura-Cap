@@ -2,8 +2,7 @@ import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 
-/// 图片格式转换：批量把图片转成 PNG / JPEG / HEIC，
-/// 可调压缩质量（JPEG/HEIC）、可限制长边；输出保存在原文件旁边，绝不覆盖。
+/// 批量图片格式转换：质量滑块、实际编码大小预览；输出保存在原文件旁边，绝不覆盖。
 @MainActor
 final class ImageConvertToolController: NSObject {
     static let shared = ImageConvertToolController()
@@ -12,34 +11,13 @@ final class ImageConvertToolController: NSObject {
     private var items: [ConvertItem] = []
     private var converting = false
 
-    private enum OutputFormat: Int, CaseIterable {
-        case png = 0, jpeg, heic
-
-        var title: String {
-            switch self {
-            case .png: return "PNG"
-            case .jpeg: return "JPEG"
-            case .heic: return "HEIC"
-            }
-        }
-        var utType: UTType {
-            switch self {
-            case .png: return .png
-            case .jpeg: return .jpeg
-            case .heic: return .heic
-            }
-        }
-        var pathExtension: String {
-            switch self {
-            case .png: return "png"
-            case .jpeg: return "jpg"
-            case .heic: return "heic"
-            }
-        }
-        var supportsQuality: Bool { self != .png }
-    }
-
-    private var format: OutputFormat = .jpeg
+    private let formats = ImageOutputFormat.available
+    private let worker = ImageConversionWorker()
+    private var estimateTask: Task<Void, Never>?
+    private var estimateID = UUID()
+    private var estimatedSizes: [URL: Int] = [:]
+    private var estimateFailures = Set<URL>()
+    private var format: ImageOutputFormat = .jpeg
     private var quality = 0.9
     private var longEdgeLimit: Int = 0 // 0 = 不限制
 
@@ -51,37 +29,49 @@ final class ImageConvertToolController: NSObject {
     private var convertButton: NSButton!
     private var formatPopup: NSPopUpButton!
     private var longEdgePopup: NSPopUpButton!
+    private var estimateLabel: NSTextField!
+
+    private var options: ImageConversionOptions {
+        ImageConversionOptions(format: format, quality: quality, longEdgeLimit: longEdgeLimit)
+    }
 
     func show() {
         NSApp.activate(ignoringOtherApps: true)
         if let window {
             window.makeKeyAndOrderFront(nil)
+            refreshUI()
             return
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480),
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
         window.title = L("图片格式转换")
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 560, height: 400)
+        window.minSize = NSSize(width: 640, height: 400)
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.sharingType = .readOnly
+        window.delegate = self
 
         // 列表
         tableView = NSTableView()
         let nameColumn = NSTableColumn(identifier: .init("name"))
         nameColumn.title = L("文件")
-        nameColumn.width = 380
+        nameColumn.width = 260
+        nameColumn.minWidth = 120
         let sizeColumn = NSTableColumn(identifier: .init("size"))
         sizeColumn.title = L("尺寸")
-        sizeColumn.width = 120
+        sizeColumn.width = 100
         let bytesColumn = NSTableColumn(identifier: .init("bytes"))
-        bytesColumn.title = L("大小")
+        bytesColumn.title = L("原始大小")
         bytesColumn.width = 100
-        for column in [nameColumn, sizeColumn, bytesColumn] {
+        let estimatedColumn = NSTableColumn(identifier: .init("estimated"))
+        estimatedColumn.title = L("预计输出大小")
+        estimatedColumn.width = 120
+        for column in [nameColumn, sizeColumn, bytesColumn, estimatedColumn] {
             tableView.addTableColumn(column)
         }
+        tableView.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
         tableView.rowHeight = 26
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.allowsMultipleSelection = true
@@ -109,14 +99,15 @@ final class ImageConvertToolController: NSObject {
         removeButton.bezelStyle = .rounded
 
         formatPopup = NSPopUpButton()
-        for item in OutputFormat.allCases { formatPopup.addItem(withTitle: item.title) }
-        formatPopup.selectItem(at: OutputFormat.jpeg.rawValue)
+        for item in formats { formatPopup.addItem(withTitle: item.title) }
+        formatPopup.selectItem(at: formats.firstIndex(of: format) ?? 0)
         formatPopup.target = self
         formatPopup.action = #selector(formatChanged)
         let formatLabel = NSTextField(labelWithString: L("输出格式"))
 
         qualitySlider = NSSlider(value: 0.9, minValue: 0.1, maxValue: 1.0, target: self, action: #selector(qualityChanged))
         qualitySlider.controlSize = .small
+        qualitySlider.isContinuous = true
         qualityLabel = NSTextField(labelWithString: "90%")
         qualityLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         qualityTitleLabel = NSTextField(labelWithString: L("质量"))
@@ -135,6 +126,15 @@ final class ImageConvertToolController: NSObject {
         hintLabel.textColor = .secondaryLabelColor
         hintLabel.lineBreakMode = .byTruncatingTail
         hintLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        hintLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        estimateLabel = NSTextField(labelWithString: L("添加图片以预览输出大小"))
+        estimateLabel.identifier = .init("conversionEstimateSummary")
+        estimateLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        estimateLabel.textColor = .secondaryLabelColor
+        estimateLabel.lineBreakMode = .byTruncatingTail
+        estimateLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        estimateLabel.translatesAutoresizingMaskIntoConstraints = false
 
         convertButton = NSButton(title: L("转换"), target: self, action: #selector(convertTapped))
         convertButton.bezelStyle = .rounded
@@ -144,22 +144,35 @@ final class ImageConvertToolController: NSObject {
         let bar = NSVisualEffectView()
         bar.material = .windowBackground
         bar.blendingMode = .withinWindow
-        let stack = NSStackView(views: [addButton, removeButton,
-                                        formatLabel, formatPopup,
-                                        qualityTitleLabel, qualitySlider, qualityLabel,
-                                        longEdgeLabel, longEdgePopup,
-                                        hintLabel, convertButton])
-        stack.orientation = .horizontal
-        stack.spacing = 8
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        bar.addSubview(stack)
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(estimateLabel)
+        let fileRow = NSStackView(views: [addButton, removeButton, hintLabel])
+        let qualityRow = NSStackView(views: [qualitySlider, qualityLabel])
+        qualityRow.spacing = 6
+        let formatGroup = NSStackView(views: [formatLabel, formatPopup])
+        let qualityGroup = NSStackView(views: [qualityTitleLabel, qualityRow])
+        let longEdgeGroup = NSStackView(views: [longEdgeLabel, longEdgePopup])
+        for group in [formatGroup, qualityGroup, longEdgeGroup] {
+            group.orientation = .vertical
+            group.alignment = .leading
+            group.spacing = 4
+        }
+        let settingsRow = NSStackView(views: [formatGroup, qualityGroup, longEdgeGroup, NSView(), convertButton])
+        for row in [fileRow, settingsRow] {
+            row.orientation = .horizontal
+            row.spacing = 8
+            row.translatesAutoresizingMaskIntoConstraints = false
+            bar.addSubview(row)
+        }
 
         let footnote = NSTextField(labelWithString: L("转换后的图片保存在原文件旁边，不会覆盖已有文件"))
         footnote.font = .systemFont(ofSize: 11)
         footnote.textColor = .secondaryLabelColor
+        footnote.lineBreakMode = .byTruncatingTail
+        footnote.toolTip = L("动画及多页图片仅转换首帧；GIF 输出为静态图片")
         footnote.translatesAutoresizingMaskIntoConstraints = false
 
-        let container = NSView()
+        let container = NSView(frame: NSRect(origin: .zero, size: window.contentLayoutRect.size))
         container.addSubview(dropArea)
         container.addSubview(bar)
         container.addSubview(footnote)
@@ -175,26 +188,35 @@ final class ImageConvertToolController: NSObject {
             bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             bar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             bar.bottomAnchor.constraint(equalTo: footnote.topAnchor),
-            bar.heightAnchor.constraint(equalToConstant: 48),
-            stack.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
-            stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
-            qualitySlider.widthAnchor.constraint(equalToConstant: 90),
-            formatPopup.widthAnchor.constraint(equalToConstant: 92),
-            longEdgePopup.widthAnchor.constraint(equalToConstant: 100),
+            bar.heightAnchor.constraint(equalToConstant: 136),
+            fileRow.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
+            fileRow.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
+            fileRow.topAnchor.constraint(equalTo: bar.topAnchor, constant: 8),
+            settingsRow.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
+            settingsRow.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
+            settingsRow.bottomAnchor.constraint(equalTo: estimateLabel.topAnchor, constant: -8),
+            estimateLabel.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
+            estimateLabel.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
+            estimateLabel.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -8),
+            qualitySlider.widthAnchor.constraint(equalToConstant: 100),
+            qualityLabel.widthAnchor.constraint(equalToConstant: 38),
+            formatPopup.widthAnchor.constraint(equalToConstant: 120),
+            longEdgePopup.widthAnchor.constraint(equalToConstant: 92),
             footnote.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
             footnote.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
             footnote.centerXAnchor.constraint(equalTo: container.centerXAnchor),
         ])
         window.contentView = container
         self.window = window
-        refreshUI()
         window.center()
         window.makeKeyAndOrderFront(nil)
+        refreshUI()
     }
 
     // MARK: - 数据
 
     private func add(urls: [URL]) {
+        guard !converting else { return }
         let imageUrls = urls.filter { $0.isFileURL && (UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) ?? false) }
         guard !imageUrls.isEmpty else { return }
         for url in imageUrls where !items.contains(where: { $0.url == url }) {
@@ -211,22 +233,82 @@ final class ImageConvertToolController: NSObject {
 
     private func refreshUI() {
         tableView?.reloadData()
-        let isJPEGLike = format.supportsQuality
-        setQualityVisible(isJPEGLike)
-        qualitySlider.isEnabled = isJPEGLike
+        setQualityVisible(format.supportsQuality)
+        qualitySlider.isEnabled = format.supportsQuality && !converting
+        formatPopup.isEnabled = !converting
+        longEdgePopup.isEnabled = !converting
         convertButton.isEnabled = !items.isEmpty && !converting
         if !converting {
             hintLabel.stringValue = items.isEmpty
                 ? L("拖入图片到这里，或点击「添加图片」")
                 : String(format: L("已添加 %d 张，输出格式 %@"), items.count, format.title)
+            if format == .gif { hintLabel.stringValue += " · " + L("GIF 为静态图片") }
+            scheduleEstimates()
         }
     }
 
     private func setQualityVisible(_ visible: Bool) {
-        // PNG 无损，隐藏质量控件
+        // 无损/固定压缩格式不提供有损质量滑块。
         qualityTitleLabel.isHidden = !visible
         qualitySlider.isHidden = !visible
         qualityLabel.isHidden = !visible
+    }
+
+    // MARK: - 编码大小预览
+
+    private func scheduleEstimates() {
+        estimateTask?.cancel()
+        let id = UUID()
+        estimateID = id
+        estimatedSizes.removeAll()
+        estimateFailures.removeAll()
+        tableView.reloadData()
+        guard !items.isEmpty else {
+            estimateLabel.stringValue = L("添加图片以预览输出大小")
+            return
+        }
+        guard window?.isVisible == true else { return }
+        estimateLabel.stringValue = L("正在计算输出大小…")
+        let snapshot = items
+        let settings = options
+        estimateTask = Task { @MainActor in
+            do {
+                // 连续拖动时只编码最新设置，避免每一个鼠标事件都重新压缩整批图片。
+                try await Task.sleep(nanoseconds: 200_000_000)
+                for item in snapshot {
+                    do {
+                        let size = try await worker.estimatedSize(source: item.url, options: settings)
+                        guard !Task.isCancelled, self.estimateID == id else { return }
+                        self.estimatedSizes[item.url] = size
+                    } catch is CancellationError { return }
+                    catch {
+                        guard !Task.isCancelled, self.estimateID == id else { return }
+                        self.estimateFailures.insert(item.url)
+                    }
+                    self.tableView.reloadData()
+                }
+                self.updateEstimateSummary()
+            } catch { /* A newer slider value or a closed window cancels this preview. */ }
+        }
+    }
+
+    private func updateEstimateSummary() {
+        let original = items.reduce(Int64(0)) { $0 + Int64($1.fileSize) }
+        let output = estimatedSizes.values.reduce(Int64(0)) { $0 + Int64($1) }
+        guard estimateFailures.isEmpty else {
+            estimateLabel.stringValue = L("部分图片无法估算，请检查源文件或更换格式")
+            return
+        }
+        var text = String(format: L("预计合计：%@ → %@"), Self.byteString(original), Self.byteString(output))
+        if original > 0 {
+            let change = (Double(output) / Double(original) - 1) * 100
+            text += " · " + String(format: change > 0 ? L("增加 %.0f%%") : L("减少 %.0f%%"), abs(change))
+        }
+        estimateLabel.stringValue = text
+    }
+
+    private static func byteString(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     // MARK: - 转换
@@ -238,11 +320,15 @@ final class ImageConvertToolController: NSObject {
             return
         }
         converting = true
-        convertButton.isEnabled = false
-        Task { await runConversion() }
+        estimateTask?.cancel()
+        estimateID = UUID()
+        let snapshot = items
+        let settings = options
+        refreshUI()
+        Task { await runConversion(items: snapshot, options: settings) }
     }
 
-    private func runConversion() async {
+    private func runConversion(items: [ConvertItem], options: ImageConversionOptions) async {
         let total = items.count
         var outputs: [URL] = []
         var failures = 0
@@ -251,7 +337,7 @@ final class ImageConvertToolController: NSObject {
                 hintLabel.stringValue = String(format: L("转换中 %d / %d…"), index + 1, total)
             }
             do {
-                let output = try await convertOne(item)
+                let output = try await worker.convert(source: item.url, options: options)
                 outputs.append(output)
             } catch {
                 failures += 1
@@ -268,95 +354,6 @@ final class ImageConvertToolController: NSObject {
             }
             if !outputs.isEmpty {
                 NSWorkspace.shared.activateFileViewerSelecting(outputs)
-            }
-        }
-    }
-
-    private func convertOne(_ item: ConvertItem) async throws -> URL {
-        let source = try require(CGImageSourceCreateWithURL(item.url as CFURL, nil),
-                                 message: L("无法读取图片"))
-        let cg = try require(CGImageSourceCreateImageAtIndex(source, 0, nil),
-                             message: L("无法读取图片"))
-        // 长边限制：等比缩小（只缩不放大）
-        var image = cg
-        if longEdgeLimit > 0, max(cg.width, cg.height) > longEdgeLimit {
-            let scale = CGFloat(longEdgeLimit) / CGFloat(max(cg.width, cg.height))
-            let newSize = CGSize(width: (CGFloat(cg.width) * scale).rounded(),
-                                 height: (CGFloat(cg.height) * scale).rounded())
-            guard let ctx = CGContext(data: nil, width: Int(newSize.width), height: Int(newSize.height),
-                                      bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-                throw ConvertError.write
-            }
-            ctx.interpolationQuality = .high
-            ctx.draw(cg, in: CGRect(origin: .zero, size: newSize))
-            guard let scaled = ctx.makeImage() else { throw ConvertError.write }
-            image = scaled
-        }
-        // JPEG 不支持透明：铺白底
-        if format == .jpeg, hasAlpha(image) {
-            guard let white = CGContext(data: nil, width: image.width, height: image.height,
-                                        bitsPerComponent: 8, bytesPerRow: 0,
-                                        space: CGColorSpaceCreateDeviceRGB(),
-                                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-                throw ConvertError.write
-            }
-            NSColor.white.setFill()
-            white.fill(CGRect(x: 0, y: 0, width: image.width, height: image.height))
-            white.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-            guard let flattened = white.makeImage() else { throw ConvertError.write }
-            image = flattened
-        }
-
-        let output = uniqueOutputURL(for: item.url)
-        guard let destination = CGImageDestinationCreateWithURL(output as CFURL,
-                                                                format.utType.identifier as CFString, 1, nil) else {
-            throw ConvertError.unsupported
-        }
-        var properties: [CFString: Any] = [:]
-        if format.supportsQuality {
-            properties[kCGImageDestinationLossyCompressionQuality] = quality
-        }
-        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { throw ConvertError.write }
-        return output
-    }
-
-    private func hasAlpha(_ image: CGImage) -> Bool {
-        let alpha = image.alphaInfo
-        return alpha == .premultipliedFirst || alpha == .premultipliedLast || alpha == .first || alpha == .last
-    }
-
-    /// 输出与源文件同目录、同名换扩展名；重名自动追加序号
-    private func uniqueOutputURL(for source: URL) -> URL {
-        let directory = source.deletingPathExtension()
-        let base = directory.lastPathComponent
-        let folder = source.deletingLastPathComponent()
-        var output = folder.appendingPathComponent("\(base).\(format.pathExtension)")
-        var counter = 2
-        while FileManager.default.fileExists(atPath: output.path) {
-            output = folder.appendingPathComponent("\(base) \(counter).\(format.pathExtension)")
-            counter += 1
-        }
-        return output
-    }
-
-    private func require<T>(_ value: T?, message: String) throws -> T {
-        guard let value else { throw ConvertError.read(message) }
-        return value
-    }
-
-    private enum ConvertError: LocalizedError {
-        case read(String)
-        case write
-        case unsupported
-
-        var errorDescription: String? {
-            switch self {
-            case .read(let message): return message
-            case .write: return L("写入文件失败")
-            case .unsupported: return L("此设备不支持该输出格式")
             }
         }
     }
@@ -382,23 +379,33 @@ final class ImageConvertToolController: NSObject {
     }
 
     @objc private func formatChanged() {
-        format = OutputFormat(rawValue: formatPopup.indexOfSelectedItem) ?? .jpeg
+        guard !converting, formats.indices.contains(formatPopup.indexOfSelectedItem) else { return }
+        format = formats[formatPopup.indexOfSelectedItem]
         refreshUI()
     }
 
     @objc private func qualityChanged() {
-        quality = qualitySlider.doubleValue
+        guard !converting else { return }
+        quality = (qualitySlider.doubleValue * 100).rounded() / 100
         qualityLabel.stringValue = "\(Int((quality * 100).rounded()))%"
+        scheduleEstimates()
     }
 
     @objc private func longEdgeChanged() {
+        guard !converting else { return }
         longEdgeLimit = longEdgePopup.selectedItem?.representedObject as? Int ?? 0
+        scheduleEstimates()
     }
 }
 
 // MARK: - 列表数据源
 
-extension ImageConvertToolController: NSTableViewDataSource, NSTableViewDelegate {
+extension ImageConvertToolController: NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        estimateTask?.cancel()
+        estimateID = UUID()
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int { items.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -414,8 +421,15 @@ extension ImageConvertToolController: NSTableViewDataSource, NSTableViewDelegate
         case "size":
             cell.stringValue = "\(item.pixelWidth) × \(item.pixelHeight)"
             cell.textColor = .secondaryLabelColor
+        case "estimated":
+            if let size = estimatedSizes[item.url] {
+                cell.stringValue = Self.byteString(Int64(size))
+            } else {
+                cell.stringValue = estimateFailures.contains(item.url) ? L("无法估算") : "…"
+            }
+            cell.textColor = .secondaryLabelColor
         default:
-            cell.stringValue = ByteCountFormatter.string(fromByteCount: Int64(item.fileSize), countStyle: .file)
+            cell.stringValue = Self.byteString(Int64(item.fileSize))
             cell.textColor = .secondaryLabelColor
         }
         return cell
@@ -447,7 +461,7 @@ final class ImageConvertDropView: NSView {
     }
 }
 
-struct ConvertItem {
+struct ConvertItem: Sendable {
     let url: URL
     let pixelWidth: Int
     let pixelHeight: Int

@@ -19,3 +19,6 @@ jobs:
 
       - name: Coordinate assertions
         run: swift Scripts/verify_coordinates.swift
+
+      - name: Tool window and color picker regressions
+        run: bash Scripts/verify_tools.sh
