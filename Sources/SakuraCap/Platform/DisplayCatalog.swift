@@ -22,13 +22,16 @@ final class DisplayCatalog: ObservableObject {
 
         var infos: [DisplayInfo] = []
         var displayMap: [CGDirectDisplayID: SCDisplay] = [:]
-        for display in content.displays {
+        for (index, display) in content.displays.enumerated() {
             let screen = NSScreen.screens.first { $0.displayID == display.displayID }
             let scale = screen?.backingScaleFactor ?? 2
             // SCDisplay.width/height 是逻辑点；录制缓冲与分辨率展示都需要真实像素
             let pixels = DisplayPixelMetrics.size(display.displayID)
+            // 部分外接屏 localizedName 返回空串（EDID 无名，非 nil），
+            // 空串兜底到序号名，否则并行录制的文件名会出现 "… - .mp4" 空后缀
+            let localName = screen?.localizedName ?? ""
             let info = DisplayInfo(id: display.displayID,
-                                   name: screen?.localizedName ?? (L("显示器") + " \(display.displayID)"),
+                                   name: localName.isEmpty ? String(format: L("显示器 %d"), index + 1) : localName,
                                    widthPx: pixels.width,
                                    heightPx: pixels.height,
                                    widthPt: CGFloat(display.width),

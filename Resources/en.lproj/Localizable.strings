@@ -188,6 +188,7 @@
 "自动滚动中" = "Auto-scrolling";
 "自动滚动需要辅助功能权限，请手动滚动" = "Accessibility access required; scroll manually";
 "所有显示器并行录制（每屏各存一份）" = "Record all displays in parallel (one file each)";
+"显示器 %d" = "Display %d";
 "开启后「全屏录制」不再点选屏幕，直接同时录制所有显示器，每块屏各存一个文件；系统声音与麦克风只写进主屏文件。想只录某一块屏时，请先关闭本开关再点选。" = "When on, \"Fullscreen Recording\" skips screen picking and records every display at once, saving one file per display; system audio and the mic only go into the main display's file. To record a single display, turn this off first and pick one.";
 "未检测到新内容，已停止滚动" = "No new content; scrolling stopped";
 "未确认到新的滚动内容，已切换手动滚动" = "No new content confirmed; switched to manual scrolling";
