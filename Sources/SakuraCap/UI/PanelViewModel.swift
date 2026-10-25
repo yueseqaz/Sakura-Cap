@@ -42,14 +42,14 @@ final class PanelViewModel: ObservableObject {
 
     func ensureMicrophonePermission() {
         guard PermissionCenter.microphoneUndetermined else { return }
+        StatusItemController.holdSettingsOnDesktop()
         PermissionCenter.requestMicrophone { [weak self] granted in
             Task { @MainActor in
                 if !granted {
                     AppSettings.shared.recordMicrophone = false
                 }
                 self?.objectWillChange.send()
-                // 系统弹窗夺走焦点后把设置窗口带回前台（仅设置窗可见时生效）
-                StatusItemController.bringSettingsToFront()
+                StatusItemController.releaseSettingsFromDesktop()
             }
         }
     }

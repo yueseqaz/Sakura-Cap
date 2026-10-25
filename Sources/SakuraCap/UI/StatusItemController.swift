@@ -300,13 +300,28 @@ final class StatusItemController: NSObject {
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// 设置窗口的静态引用：TCC 等系统弹窗会夺走激活态，LSUIElement 应用又没有
-    /// Dock 图标，用户很难找回沉到后面的设置窗口——权限回调结束后用它把窗口带回前台。
+    /// 设置窗口的静态引用：TCC 授权弹窗会夺走焦点，系统可能顺势把普通窗口从桌面
+    /// 收走（切 Space / 窗口收纳），菜单栏应用又没有 Dock 图标可以找回。
+    /// 授权期间临时把窗口提为悬浮 + 跟随所有空间（不受收纳机制影响），
+    /// 授权结束立刻恢复普通层级——平时它就是个正常的文档窗口。
     private static weak var activeSettingsWindow: NSWindow?
+    private static weak var heldSettingsWindow: NSWindow?
 
-    static func bringSettingsToFront() {
+    static func holdSettingsOnDesktop() {
         DispatchQueue.main.async {
-            guard let window = activeSettingsWindow, window.isVisible else { return }
+            guard let window = activeSettingsWindow, window.isVisible, heldSettingsWindow == nil else { return }
+            window.level = .floating
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            heldSettingsWindow = window
+        }
+    }
+
+    static func releaseSettingsFromDesktop() {
+        DispatchQueue.main.async {
+            guard let window = heldSettingsWindow else { return }
+            heldSettingsWindow = nil
+            window.level = .normal
+            window.collectionBehavior = []
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
         }
@@ -318,8 +333,7 @@ final class StatusItemController: NSObject {
                               styleMask: [.titled, .closable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "Sakura-Cap"
-        // Settings should behave like a normal document window, not stay above
-        // every other app while the menu-bar utility remains running.
+        // 平时按普通文档窗口对待；授权弹窗期间由 holdSettingsOnDesktop 临时提悬浮
         window.level = .normal
         window.isReleasedWhenClosed = false
         window.sharingType = .readOnly

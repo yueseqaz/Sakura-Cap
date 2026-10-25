@@ -450,11 +450,11 @@ struct PanelView: View {
 
     private func requestMicrophonePermission() {
         if PermissionCenter.microphoneAccess == .notDetermined {
+            StatusItemController.holdSettingsOnDesktop()
             PermissionCenter.requestMicrophone { _ in
                 Task { @MainActor in
                     viewModel.refreshPermissions()
-                    // 系统弹窗夺走焦点后把设置窗口带回前台，否则用户以为设置“消失”了
-                    StatusItemController.bringSettingsToFront()
+                    StatusItemController.releaseSettingsFromDesktop()
                 }
             }
         } else {
@@ -463,12 +463,12 @@ struct PanelView: View {
     }
 
     private func requestCameraPermission() {
+        StatusItemController.holdSettingsOnDesktop()
         camera.requestPermission {
             viewModel.refreshPermissions()
+            StatusItemController.releaseSettingsFromDesktop()
             if PermissionCenter.cameraAccess != .authorized {
                 PermissionCenter.openCameraSettings()
-            } else {
-                StatusItemController.bringSettingsToFront()
             }
         }
     }
