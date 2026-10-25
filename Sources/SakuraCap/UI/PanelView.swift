@@ -175,15 +175,20 @@ struct PanelView: View {
 
     // MARK: - 录制
 
+    /// 下拉框统一收窄宽度，避免被 settingRow 的撑满布局拉成整行长条
+    private let pickerWidth: CGFloat = 190
+
     private var recordSection: some View {
         VStack(alignment: .leading, spacing: 24) {
             group("音频") {
-                Toggle("系统声音", isOn: $settings.recordSystemAudio)
-                    .help(L("系统声音与麦克风分开录制，可在播放器中切换。"))
-                Toggle("麦克风", isOn: $settings.recordMicrophone)
-                    .onChange(of: settings.recordMicrophone) { enabled in
-                        if enabled { viewModel.ensureMicrophonePermission() }
-                    }
+                HStack(spacing: 24) {
+                    Toggle("系统声音", isOn: $settings.recordSystemAudio)
+                        .help(L("系统声音与麦克风分开录制，可在播放器中切换。"))
+                    Toggle("麦克风", isOn: $settings.recordMicrophone)
+                        .onChange(of: settings.recordMicrophone) { enabled in
+                            if enabled { viewModel.ensureMicrophonePermission() }
+                        }
+                }
                 if settings.recordMicrophone {
                     settingRow("麦克风设备") {
                         Picker("麦克风设备", selection: $settings.microphoneDeviceID) {
@@ -191,24 +196,38 @@ struct PanelView: View {
                             ForEach(CaptureDevices.microphones(), id: \.uniqueID) { device in
                                 Text(device.localizedName).tag(device.uniqueID)
                             }
-                        }.labelsHidden()
+                        }.labelsHidden().frame(width: pickerWidth)
                     }
                 }
             }
             group("视频") {
-                settingRow("画质") {
-                    Picker("画质", selection: $settings.quality) {
-                        ForEach(VideoQuality.allCases) { q in Text(q.label).tag(q) }
-                    }.labelsHidden()
+                HStack(spacing: 24) {
+                    settingRow("画质") {
+                        Picker("画质", selection: $settings.quality) {
+                            ForEach(VideoQuality.allCases) { q in Text(q.label).tag(q) }
+                        }.labelsHidden().frame(width: pickerWidth)
+                    }
+                    .frame(maxWidth: .infinity)
+                    settingRow("帧率") {
+                        Picker("帧率", selection: $settings.fps) {
+                            ForEach(FPSOption.allCases) { f in Text(f.label).tag(f) }
+                        }.labelsHidden().frame(width: pickerWidth)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                if settings.quality == .custom {
-                    sliderRow("码率", value: $settings.customBitrateMbps, range: 2...80, step: 2,
-                              text: "\(Int(settings.customBitrateMbps)) Mbps", width: 72)
-                }
-                settingRow("输出分辨率") {
-                    Picker("输出分辨率", selection: $settings.outputResolution) {
-                        ForEach(OutputResolution.allCases) { r in Text(r.label).tag(r) }
-                    }.labelsHidden()
+                HStack(spacing: 24) {
+                    settingRow("输出分辨率") {
+                        Picker("输出分辨率", selection: $settings.outputResolution) {
+                            ForEach(OutputResolution.allCases) { r in Text(r.label).tag(r) }
+                        }.labelsHidden().frame(width: pickerWidth)
+                    }
+                    .frame(maxWidth: .infinity)
+                    settingRow("色彩空间") {
+                        Picker("色彩空间", selection: $settings.colorSpace) {
+                            ForEach(ColorSpaceOption.allCases) { cs in Text(cs.label).tag(cs) }
+                        }.labelsHidden().frame(width: pickerWidth)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 settingRow("视频编码") {
                     Picker("视频编码", selection: $settings.codec) {
@@ -216,24 +235,20 @@ struct PanelView: View {
                     }.pickerStyle(.segmented).labelsHidden()
                         .help(L("HEVC 文件更小，H.264 兼容性更广。"))
                 }
-                settingRow("帧率") {
-                    Picker("帧率", selection: $settings.fps) {
-                        ForEach(FPSOption.allCases) { f in Text(f.label).tag(f) }
-                    }.labelsHidden()
-                }
-                settingRow("色彩空间") {
-                    Picker("色彩空间", selection: $settings.colorSpace) {
-                        ForEach(ColorSpaceOption.allCases) { cs in Text(cs.label).tag(cs) }
-                    }.labelsHidden()
+                if settings.quality == .custom {
+                    sliderRow("码率", value: $settings.customBitrateMbps, range: 2...80, step: 2,
+                              text: "\(Int(settings.customBitrateMbps)) Mbps", width: 72)
                 }
             }
             group("录制选项") {
-                Toggle("开始前倒计时 3 秒", isOn: $settings.countdownEnabled)
-                Toggle("显示鼠标指针", isOn: $settings.showCursor)
-                Toggle("显示录制帧率", isOn: $settings.showFPSOverlay)
-                Toggle("录制提示音", isOn: $settings.soundEnabled)
-            }
-            group("多显示器") {
+                HStack(spacing: 24) {
+                    Toggle("开始前倒计时 3 秒", isOn: $settings.countdownEnabled)
+                    Toggle("显示鼠标指针", isOn: $settings.showCursor)
+                }
+                HStack(spacing: 24) {
+                    Toggle("显示录制帧率", isOn: $settings.showFPSOverlay)
+                    Toggle("录制提示音", isOn: $settings.soundEnabled)
+                }
                 Toggle("所有显示器并行录制（每屏各存一份）", isOn: $settings.allDisplaysParallel)
                     .help(L("开启后「全屏录制」不再点选屏幕，直接同时录制所有显示器，每块屏各存一个文件；系统声音与麦克风只写进主屏文件。想只录某一块屏时，请先关闭本开关再点选。"))
             }
