@@ -41,6 +41,7 @@ final class SelectionController: NSObject {
     private var keyMonitor: Any?
     private var hoverTimer: Timer?
     private var hoveredDisplayID: CGDirectDisplayID = 0
+    private var previousApp: NSRunningApplication?
 
     var isActive: Bool { !windows.isEmpty }
 
@@ -49,6 +50,7 @@ final class SelectionController: NSObject {
         guard windows.isEmpty else { return }
         currentIntent = intent
         currentPurpose = purpose
+        previousApp = NSWorkspace.shared.frontmostApplication
         NSApp.activate(ignoringOtherApps: true)
         for screen in NSScreen.screens {
             let window = SelectionOverlayWindow(screen: screen, controller: self)
@@ -82,10 +84,28 @@ final class SelectionController: NSObject {
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll()
         hoveredDisplayID = 0
+        restoreFocusIfNeeded()
         if let result {
             onPicked?(result)
         } else {
             onCancelled?(currentIntent)
+        }
+    }
+
+    /// 框选覆盖层需要应用激活才能接收鼠标事件（begin 里 NSApp.activate）。
+    /// 结束后把激活状态还给原应用，否则系统会把 SakuraCap 自己的窗口
+    /// （更新弹窗、菜单面板等）顶到用户正在操作的页面前面，非常割裂。
+    /// 后续流程中真正需要用户注意的窗口（编辑器/结果窗）都会自行 NSApp.activate。
+    private func restoreFocusIfNeeded() {
+        NSApp.deactivate()
+        let previous = previousApp
+        previousApp = nil
+        // deactivate 偶发不生效：轻推原应用补位（框选前就是自己则交给系统处理）
+        guard let previous, previous.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            if NSApp.isActive, !previous.isActive {
+                _ = previous.activate()
+            }
         }
     }
 
