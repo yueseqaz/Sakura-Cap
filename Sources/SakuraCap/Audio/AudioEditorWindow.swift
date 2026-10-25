@@ -79,37 +79,57 @@ struct AudioEditorView: View {
             switch model.selection {
             case .clip(let id):
                 if let clip = model.document.clips.first(where: { $0.id == id }) {
-                    HStack(spacing: 14) {
-                        Text(L("音频片段")).font(SettingsAppearance.detailFont.weight(.semibold)).foregroundStyle(.secondary)
-                        fadeSlider(label: L("声音淡入"), value: clip.fadeIn) { model.setClipFade(.in, $0, forClip: id) }
-                        fadeSlider(label: L("声音淡出"), value: clip.fadeOut) { model.setClipFade(.out, $0, forClip: id) }
-                        Text(L("音量")).font(SettingsAppearance.detailFont)
-                        Slider(value: Binding(get: { clip.volume },
-                                              set: { model.setClipVolume($0, forClip: id) }), in: 0...2)
-                            .controlSize(.small).frame(width: 90)
-                        Text("\(Int(clip.volume * 100))%").monospacedDigit()
-                            .font(SettingsAppearance.detailFont).frame(width: 40)
-                        Toggle(L("片段静音"), isOn: Binding(get: { clip.muted }, set: { _ in model.toggleClipMute(id) }))
-                            .font(SettingsAppearance.detailFont)
-                        Spacer()
-                        Button(L("删除片段"), role: .destructive) { model.deleteClip(id) }
-                            .buttonStyle(.bordered)
-                            .disabled(model.document.clips.count <= 1)
+                    // 控件一行放不下时自动换成两行，避免「片段静音/删除片段」被裁出视野
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 14) {
+                            clipHeader
+                            fadeSlider(label: L("声音淡入"), value: clip.fadeIn) { model.setClipFade(.in, $0, forClip: id) }
+                            fadeSlider(label: L("声音淡出"), value: clip.fadeOut) { model.setClipFade(.out, $0, forClip: id) }
+                            clipVolumeControls(clip: clip, id: id)
+                            clipMuteToggle(clip: clip, id: id)
+                            Spacer(minLength: 12)
+                            clipDeleteButton(id: id)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 14) {
+                                clipHeader
+                                fadeSlider(label: L("声音淡入"), value: clip.fadeIn) { model.setClipFade(.in, $0, forClip: id) }
+                                fadeSlider(label: L("声音淡出"), value: clip.fadeOut) { model.setClipFade(.out, $0, forClip: id) }
+                            }
+                            HStack(spacing: 14) {
+                                clipVolumeControls(clip: clip, id: id)
+                                clipMuteToggle(clip: clip, id: id)
+                                Spacer(minLength: 12)
+                                clipDeleteButton(id: id)
+                            }
+                        }
                     }
                 }
             case .audioGain(let id):
                 if let gain = model.document.audioGains.first(where: { $0.id == id }) {
-                    HStack(spacing: 14) {
-                        Text(L("音量段")).font(SettingsAppearance.detailFont.weight(.semibold)).foregroundStyle(.secondary)
-                        Text(L("音量")).font(SettingsAppearance.detailFont)
-                        Slider(value: Binding(get: { gain.volume }, set: { model.setGainVolume($0, id: id) }), in: 0...1)
-                            .frame(width: 140)
-                        Text("\(Int(gain.volume * 100))%").monospacedDigit().font(SettingsAppearance.detailFont).frame(width: 40)
-                        Button(gain.volume == 0 ? L("恢复音量") : L("静音此段")) { model.toggleGainMute(id) }
-                            .buttonStyle(.bordered)
-                        Spacer()
-                        Button(L("删除音量段"), role: .destructive) { model.removeGain(id) }
-                            .buttonStyle(.bordered)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 14) {
+                            gainHeader
+                            gainVolumeControls(gain: gain, id: id)
+                            Button(gain.volume == 0 ? L("恢复音量") : L("静音此段")) { model.toggleGainMute(id) }
+                                .buttonStyle(.bordered)
+                            Spacer(minLength: 12)
+                            Button(L("删除音量段"), role: .destructive) { model.removeGain(id) }
+                                .buttonStyle(.bordered)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 14) {
+                                gainHeader
+                                gainVolumeControls(gain: gain, id: id)
+                            }
+                            HStack(spacing: 14) {
+                                Button(gain.volume == 0 ? L("恢复音量") : L("静音此段")) { model.toggleGainMute(id) }
+                                    .buttonStyle(.bordered)
+                                Spacer(minLength: 12)
+                                Button(L("删除音量段"), role: .destructive) { model.removeGain(id) }
+                                    .buttonStyle(.bordered)
+                            }
+                        }
                     }
                 }
             default:
@@ -135,6 +155,45 @@ struct AudioEditorView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(minHeight: 54, alignment: .center)
+    }
+
+    private var clipHeader: some View {
+        Text(L("音频片段")).font(SettingsAppearance.detailFont.weight(.semibold)).foregroundStyle(.secondary)
+    }
+
+    private var gainHeader: some View {
+        Text(L("音量段")).font(SettingsAppearance.detailFont.weight(.semibold)).foregroundStyle(.secondary)
+    }
+
+    private func clipVolumeControls(clip: WorkbenchClip, id: UUID) -> some View {
+        HStack(spacing: 6) {
+            Text(L("音量")).font(SettingsAppearance.detailFont)
+            Slider(value: Binding(get: { clip.volume },
+                                  set: { model.setClipVolume($0, forClip: id) }), in: 0...2)
+                .controlSize(.small).frame(width: 90)
+            Text("\(Int(clip.volume * 100))%").monospacedDigit()
+                .font(SettingsAppearance.detailFont).frame(width: 40)
+        }
+    }
+
+    private func clipMuteToggle(clip: WorkbenchClip, id: UUID) -> some View {
+        Toggle(L("片段静音"), isOn: Binding(get: { clip.muted }, set: { _ in model.toggleClipMute(id) }))
+            .font(SettingsAppearance.detailFont)
+    }
+
+    private func clipDeleteButton(id: UUID) -> some View {
+        Button(L("删除片段"), role: .destructive) { model.deleteClip(id) }
+            .buttonStyle(.bordered)
+            .disabled(model.document.clips.count <= 1)
+    }
+
+    private func gainVolumeControls(gain: WorkbenchAudioGain, id: UUID) -> some View {
+        HStack(spacing: 6) {
+            Text(L("音量")).font(SettingsAppearance.detailFont)
+            Slider(value: Binding(get: { gain.volume }, set: { model.setGainVolume($0, id: id) }), in: 0...1)
+                .frame(width: 140)
+            Text("\(Int(gain.volume * 100))%").font(SettingsAppearance.detailFont).frame(width: 40)
+        }
     }
 
     private func fadeSlider(label: String, value: Double, onChange: @escaping (Double) -> Void) -> some View {
