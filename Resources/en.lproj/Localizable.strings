@@ -715,3 +715,6 @@
 "音频已导出" = "Audio exported";
 "提取失败" = "Extraction failed";
 "未知错误" = "Unknown error";
+
+/* 全局取色器 v2 Color picker overlay */
+"点击屏幕任意位置取色" = "Click anywhere on screen to pick a color";

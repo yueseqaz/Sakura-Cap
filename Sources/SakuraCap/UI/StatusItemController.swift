@@ -173,7 +173,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func menuImageCompare() { ImageCompareToolController.shared.show() }
-    @objc private func menuColorSampler() { ColorSamplerTool.sample() }
+    @objc private func menuColorSampler() { ColorPickerSession.shared.start() }
     @objc private func menuAudioExtract() { AudioExtractTool.pickAndExtract() }
 
     @objc private func menuEditAudio() {
