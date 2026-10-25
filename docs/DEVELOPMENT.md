@@ -5,12 +5,14 @@
 ## 构建与运行
 
 ```bash
-./build.sh          # swift build -c release → 组装 .app → codesign
+./build.sh          # swift build -c release → 组装 .app → codesign；版本号默认读 Casks 里的已发布版本
 ./run.sh            # 构建并启动；./run.sh --log 附带实时日志
 ./clean.sh          # 清理 .build 与 build
 swift Scripts/verify_coordinates.swift   # 坐标换算断言（CLT 无 XCTest，用零依赖脚本）
 ./verify.sh [录像.mp4]                    # 用 ffprobe 校验输出文件的分辨率/码率/色彩标注
 ```
+
+版本号来源优先级：`VERSION` 环境变量 > `Casks/sakura-cap.rb` 的 `version` > 兜底 `2.0.0`——本地构建自动跟随已发版本，不再停留在 2.0.0。
 
 不使用 Xcode / Interface Builder / xcassets：Info.plist 由 `Config/Info.plist.template` 模板生成，图标由 `Resources/AppIcon.png`（1024×1024）经 `sips` + `iconutil` 生成；把自定义 PNG 放到该路径重新构建即可。
 
@@ -46,15 +48,16 @@ tccutil reset ListenEvent   com.sakura.sakuracap   # 输入监控（点击标记
 
 ## 发版（Homebrew）
 
-1. 改 `build.sh` 的 `VERSION`。
-2. `./build.sh`，然后打包并发布：
+发版已全自动化（`.github/workflows/release.yml`，打 tag 触发）：
+
+1. 确认改动已合入 `main`（CI 门禁通过）。
+2. 写 `ReleaseNotes/<版本>.md`（将作为 Release 正文），提交推送，提交信息惯例 `docs: x.x.x 发版说明`。
+3. 打**轻量 tag**（不要 annotated）并推送：
    ```bash
-   ZIP="Sakura-Cap-$VERSION.zip"
-   ditto -c -k --keepParent build/Sakura-Cap.app "$ZIP"
-   gh release create "v$VERSION" "$ZIP" --title "Sakura-Cap v$VERSION" --notes "..."
-   shasum -a 256 "$ZIP"
+   git tag v2.5.0 && git push origin v2.5.0
    ```
-3. 更新 `Casks/sakura-cap.rb` 的 `version` 与 `sha256`，提交推送。
+4. 流水线自动完成：构建 `.app` → 打 zip → 创建 GitHub Release（正文取 ReleaseNotes、附件 zip）→ 更新 `Casks/sakura-cap.rb` 的 `version` / `sha256` 并以 bot 提交推回 `main`。
+5. 本地 `git pull --ff-only origin main` 同步即可；之后本地构建的版本号自动跟上。
 
 ## 调试
 
@@ -85,13 +88,16 @@ atos -o build/Sakura-Cap.app/Contents/MacOS/SakuraCap -arch arm64 -l <loadAddres
 5. **Retina / 混合 DPI**：输出缓冲用「像素」，按每屏 `pointPixelScale` 独立推导。
 6. **音画同步**：SCK 的视频与音频样本同源于 hostTimeClock，天然同轴；writer `startSession(atSourceTime:)` 锚在最早样本，起点之前的样本丢弃。
 7. **暂停/继续的时间轴**：暂停期间丢帧，续录时按视频 PTS 间隔累加偏移，并用 `CMSampleBufferCreateCopyWithNewTiming` 重定时，把暂停时段从时间轴剔除。
-8. **覆盖层与录制**：只有录制 HUD 使用 `sharingType = .none`，不进入录屏、截图或远程共享；其余可见窗口使用 `.readOnly`。截图选择层在采集前撤下，倒计时在 writer arm 前结束；长截图的控制条与预览仅从自身的拼接采样中排除，远程共享仍可见。
+8. **覆盖层与录制**：只有录制 HUD 使用 `sharingType = .none`，不进入录屏、截图或远程共享；其余可见窗口使用 `.readOnly`。截图选择层在采集前撤下，倒计时在 writer arm 前结束。注意：**SCK 的显示器采集不理会 `sharingType = .none`**（探针实测：声明 .none 的窗口照样进画面）；长截图的控制条/预览靠 `SCContentFilter(excludingWindows:)` 排除（实测有效）+ 物理避开选区双保险。另一个坑：`SCShareableContent` 的窗口列表**滞后**于刚 `orderFront` 的窗口，太早建过滤器会拿到空排除列表且被缓存——`ScrollingCapture.prepareCapture` 会重试等到控制窗注册完成再缓存。
 9. **崩溃时 MP4 未 finalize 不可播放**：处理了应用正常退出（`willTerminateNotification` 同步尽力收尾，最多等 2s）；硬崩溃仍会丢文件，属已知限制。
 10. **AVAssetWriter 轨道必须预建**：`startWriting()` 之后再 `addInput` 会抛 NSException 闪退；音轨在创建 `FileWriter` 时全部建好，麦克风先 `start()` 拿到实测格式再建 writer。
 11. **长录制内存**：`queueDepth` + `isReadyForMoreMediaData` 背压（过载直接丢帧，绝不排队堆积）；`SCFrameStatus != .complete` 的 idle 帧跳过。
 12. **CLT 工具链限制**：见上文「构建与运行」的注意点。
 13. **API Key 脱敏存 UserDefaults（base64）**：翻译/AI 的 API Key 以 base64 编码存 UserDefaults（键 `translateAPIKey.b64` / `translateCustomAPIKey.b64`；脱敏 ≠ 加密，防的是偏好文件/备份里直接读到明文）。≤2.3.0 的旧明文键在启动时自动迁移。2.4.0–2.4.1 曾用 Keychain，因 ad-hoc 签名每次构建都变、访问旧条目频繁弹授权框而移除——那两个版本写入 Keychain 的值不再读取，受影响用户需重填一次。
 14. **更新器强制 sha256**：自动更新要求 Release 资产带 `sha256:` 摘要（GitHub API 的 `digest` 字段）。被限流走的重定向回退路径拿不到摘要时会拒绝自动安装、引导手动下载——这是有意为之（ad-hoc 签名无法 pin 开发者身份，摘要是唯一强校验）。
+15. **框选与焦点**：选区覆盖层必须 `NSApp.activate` 才能接收鼠标事件，但框选结束时若不归还激活态，系统会把应用自己的窗口（更新弹窗、菜单面板）顶到用户正在操作的页面前。`SelectionController.restoreFocusIfNeeded()` 在每次框选结束（含 Esc 取消）后 `NSApp.deactivate` + 必要时轻推原应用；后续真正需要用户注意的窗口（编辑器/结果窗）各自 `NSApp.activate`，互不冲突。
+16. **麦克风权限按需申请**：不要在启动或面板出现时 `requestAccess`（抢跑弹 TCC 框还会顶掉菜单）。只在两处申请：开录且勾选麦克风（`RecordingController.startMicrophoneAndGetFormat`，拒绝则本次无麦克风继续录）与用户主动打开麦克风开关。
+17. **长截图拼接匹配**：Retina 滚动落点几乎必为非整数像素，逐像素直接比对会把半像素位移误判成「没滚动」（2.4.x 自动手动全失败的根因）。现流程：60 列灰度 → 纵向 5-tap 均值模糊（洗亚像素差）→ 逐行打分取**截尾均值**（去最差 25% 行，抗固定顶栏/懒加载）→ 接受条件 `shift ≥ 3` 且 `score ≤ 10` 或 `score < score0/2`（score0 = shift 0 静止基线）。调试看 `log stream --predicate 'process == "SakuraCap"' --level debug` 的 `长截图匹配` 行。
 
 ## 本地化
 
@@ -106,22 +112,32 @@ atos -o build/Sakura-Cap.app/Contents/MacOS/SakuraCap -arch arm64 -l <loadAddres
 ```
 SakuraCap/
 ├── Package.swift / build.sh / run.sh / clean.sh / verify.sh
-├── Casks/       sakura-cap.rb（Homebrew Cask）
-├── Config/      Info.plist.template, SakuraCap.entitlements
-├── Scripts/     make_default_icon.swift, verify_coordinates.swift
-├── Resources/   AppIcon.png
+├── Casks/        sakura-cap.rb（Homebrew Cask，发版流水线自动升 version/sha256）
+├── Config/       Info.plist.template, SakuraCap.entitlements
+├── ReleaseNotes/ 各版本发布说明（发版时作为 GitHub Release 正文）
+├── Scripts/      make_default_icon.swift, verify_coordinates.swift
+├── Resources/    AppIcon.png, en.lproj / zh-Hans.lproj 本地化
 └── Sources/SakuraCap/
-    ├── main.swift, Main/AppDelegate.swift
-    ├── UI/          PanelView/ViewModel, StatusItemController, RecordingHUD,
-    │                AboutWindow, HotKeyRecorder, RegionSelection/, CountdownOverlay
-    ├── Editor/      TrimWindow（裁剪：时间轴 + 预览 + 导出）
-    ├── Capture/     RecordingController, StreamSession, StreamPlanner, FileWriter, MicCapture
-    ├── Camera/      CameraPiP（摄像头画中画）
+    ├── main.swift
+    ├── Main/         AppDelegate, CaptureIntentCoordinator（选区结果按用途路由）
+    ├── UI/           PanelView/ViewModel, StatusItemController, RecordingHUD, AudioHUD,
+    │                 RegionSelection/（SelectionController 选区覆盖层）, OnboardingWindow,
+    │                 UpdateReleaseWindow, CompareWindow, TranslationWindow,
+    │                 HotKeyRecorder, CountdownOverlay, FPSOverlay, SettingsAppearance
+    ├── Screenshot/   ScreenshotController（截图/OCR/二维码/对比入口）, ScrollingCapture（长截图）
+    ├── Editor/       Workbench（视频工作台/裁剪）, VideoAnnotation
+    ├── Capture/      RecordingController, StreamSession, StreamPlanner, FileWriter, MicCapture
+    ├── Annotation/   AnnotationEditor, AnnotationCanvas, PinnedImage（定住）, ScreenAnnotation
+    ├── OCR/          OCR, Barcode
+    ├── AI/           AIChatWindow/Client/Models/History, Markdown, AIChatPresenter
+    ├── Audio/        AudioRecorder, AudioEditorWindow/Views
+    ├── Camera/       CameraPiP（摄像头画中画）
     ├── ClickIndicator/  ClickMonitor(CGEventTap), IndicatorEngine, IndicatorWindow
-    ├── KeyDisplay/  KeyboardMonitor(CGEventTap), KeyDisplay
-    ├── Platform/    ScreenCoordinateKit, RecordingTarget, DisplayCatalog,
-    │                PermissionCenter, HotKeyManager(Carbon), ScreenChangeMonitor
-    ├── Model/       AppSettings, RecordingModels, DisplayInfo
-    └── Support/     Logger, CompletionNotifier, OutputDirectoryPicker, SoundCue,
-                     FocusMode, AppInfo
+    ├── KeyDisplay/   KeyboardMonitor(CGEventTap), KeyDisplay
+    ├── Platform/     ScreenCoordinateKit, RecordingTarget, DisplayCatalog,
+    │                 PermissionCenter, HotKeyManager(Carbon), ScreenChangeMonitor
+    ├── Model/        AppSettings, RecordingModels, DisplayInfo
+    └── Support/      Logger, Localization, UpdateChecker/Installer, Toast, ModalAlert,
+                      CompletionNotifier, OutputDirectoryPicker, SoundCue, FocusMode, AppInfo,
+                      FileName, CaptureDevices, TranslationService
 ```
