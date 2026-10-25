@@ -350,6 +350,8 @@ final class StatusItemController: NSObject {
 
     private func refreshIcon() {
         guard let button = item.button else { return }
+        // 彩色轮换只在录制中生效；任何其它状态先停掉轮换定时器
+        if controller.state != .recording || controller.isPaused { stopRainbowIcon() }
         switch controller.state {
         case .idle:
             RegionFrameOverlay.shared.hide()
@@ -368,10 +370,56 @@ final class StatusItemController: NSObject {
             button.contentTintColor = nil
             button.image = baseIcon(tint: .systemOrange)
         case .recording:
-            button.contentTintColor = nil
-            button.image = baseIcon(tint: controller.isPaused ? .systemOrange : .systemRed)
+            if controller.isPaused {
+                button.contentTintColor = nil
+                button.image = baseIcon(tint: .systemOrange)
+            } else {
+                startRainbowIcon()
+            }
         }
         item.button?.title = ""
+    }
+
+    // MARK: - 录制中的彩色轮换图标
+
+    /// 录制时菜单栏图标在光谱色间轮流变换，作为「正在录制」的醒目提示
+    private static let rainbowPalette: [NSColor] = [
+        .systemPink, .systemRed, .systemOrange, .systemYellow, .systemGreen,
+        .systemTeal, .systemBlue, .systemIndigo, .systemPurple,
+    ]
+    private var rainbowIcons: [NSImage] = []
+    private var rainbowTimer: Timer?
+    private var rainbowIndex = 0
+
+    private func startRainbowIcon() {
+        guard rainbowTimer == nil else { return }
+        if rainbowIcons.isEmpty {
+            rainbowIcons = Self.rainbowPalette.compactMap { baseIcon(tint: $0) }
+        }
+        guard !rainbowIcons.isEmpty, let button = item.button else { return }
+        rainbowIndex = 0
+        button.contentTintColor = nil
+        button.image = rainbowIcons[0]
+        // .common 模式：菜单展开时也继续轮换
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.stepRainbowIcon() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        rainbowTimer = timer
+    }
+
+    private func stepRainbowIcon() {
+        guard !rainbowIcons.isEmpty, item.button != nil else { return }
+        rainbowIndex = (rainbowIndex + 1) % rainbowIcons.count
+        item.button?.image = rainbowIcons[rainbowIndex]
+    }
+
+    private func stopRainbowIcon() {
+        rainbowTimer?.invalidate()
+        rainbowTimer = nil
+        if controller.state == .idle || controller.state == .ready {
+            rainbowIndex = 0
+        }
     }
 
     static func mmss(_ interval: TimeInterval) -> String {
