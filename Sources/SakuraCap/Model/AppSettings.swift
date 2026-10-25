@@ -59,6 +59,24 @@ final class AppSettings: ObservableObject {
         static let translateCustomAPIKeyObf = "translateCustomAPIKey.b64"
         static let translateSourceLang = "translateSourceLang"
         static let translateTargetLang = "translateTargetLang"
+        // 图床
+        static let imageHostProvider = "imageHostProvider"
+        static let imageHostLinkFormat = "imageHostLinkFormat"
+        static let imageHostPathPattern = "imageHostPathPattern"
+        static let imageHostS3Endpoint = "imageHostS3Endpoint"
+        static let imageHostS3Region = "imageHostS3Region"
+        static let imageHostS3Bucket = "imageHostS3Bucket"
+        static let imageHostS3AccessKeyID = "imageHostS3AccessKeyID"
+        static let imageHostS3SecretKeyObf = "imageHostS3SecretKey.b64"
+        static let imageHostS3PublicPrefix = "imageHostS3PublicPrefix"
+        static let imageHostGitHubRepo = "imageHostGitHubRepo"
+        static let imageHostGitHubBranch = "imageHostGitHubBranch"
+        static let imageHostGitHubTokenObf = "imageHostGitHubToken.b64"
+        static let imageHostCustomURL = "imageHostCustomURL"
+        static let imageHostCustomHeaders = "imageHostCustomHeaders"
+        static let imageHostCustomFileField = "imageHostCustomFileField"
+        static let imageHostCustomURLPath = "imageHostCustomURLPath"
+        static let imageHostCustomURLRegex = "imageHostCustomURLRegex"
     }
 
     private let d = UserDefaults.standard
@@ -137,6 +155,25 @@ final class AppSettings: ObservableObject {
     @Published var translateSourceLang = TranslateLanguage.auto.rawValue { didSet { d.set(translateSourceLang, forKey: Keys.translateSourceLang) } }
     @Published var translateTargetLang = TranslateLanguage.zhHans.rawValue { didSet { d.set(translateTargetLang, forKey: Keys.translateTargetLang) } }
 
+    // 图床（密钥与 Token 同 API Key 一样 base64 脱敏存 UserDefaults）
+    @Published var imageHostProvider: ImageHostProvider = .s3 { didSet { d.set(imageHostProvider.rawValue, forKey: Keys.imageHostProvider) } }
+    @Published var imageHostLinkFormat: ImageLinkFormat = .url { didSet { d.set(imageHostLinkFormat.rawValue, forKey: Keys.imageHostLinkFormat) } }
+    @Published var imageHostPathPattern = ImageHost.defaultPathPattern { didSet { d.set(imageHostPathPattern, forKey: Keys.imageHostPathPattern) } }
+    @Published var imageHostS3Endpoint = "" { didSet { d.set(imageHostS3Endpoint, forKey: Keys.imageHostS3Endpoint) } }
+    @Published var imageHostS3Region = "auto" { didSet { d.set(imageHostS3Region, forKey: Keys.imageHostS3Region) } }
+    @Published var imageHostS3Bucket = "" { didSet { d.set(imageHostS3Bucket, forKey: Keys.imageHostS3Bucket) } }
+    @Published var imageHostS3AccessKeyID = "" { didSet { d.set(imageHostS3AccessKeyID, forKey: Keys.imageHostS3AccessKeyID) } }
+    @Published var imageHostS3SecretKey = "" { didSet { storeObfuscated(imageHostS3SecretKey, key: Keys.imageHostS3SecretKeyObf) } }
+    @Published var imageHostS3PublicPrefix = "" { didSet { d.set(imageHostS3PublicPrefix, forKey: Keys.imageHostS3PublicPrefix) } }
+    @Published var imageHostGitHubRepo = "" { didSet { d.set(imageHostGitHubRepo, forKey: Keys.imageHostGitHubRepo) } }
+    @Published var imageHostGitHubBranch = "main" { didSet { d.set(imageHostGitHubBranch, forKey: Keys.imageHostGitHubBranch) } }
+    @Published var imageHostGitHubToken = "" { didSet { storeObfuscated(imageHostGitHubToken, key: Keys.imageHostGitHubTokenObf) } }
+    @Published var imageHostCustomURL = "" { didSet { d.set(imageHostCustomURL, forKey: Keys.imageHostCustomURL) } }
+    @Published var imageHostCustomHeaders = "" { didSet { d.set(imageHostCustomHeaders, forKey: Keys.imageHostCustomHeaders) } }
+    @Published var imageHostCustomFileField = "file" { didSet { d.set(imageHostCustomFileField, forKey: Keys.imageHostCustomFileField) } }
+    @Published var imageHostCustomURLPath = "data.url" { didSet { d.set(imageHostCustomURLPath, forKey: Keys.imageHostCustomURLPath) } }
+    @Published var imageHostCustomURLRegex = "" { didSet { d.set(imageHostCustomURLRegex, forKey: Keys.imageHostCustomURLRegex) } }
+
     /// 开机自启（登录项）。真实状态以系统 SMAppService 为准。
     @Published var launchAtLogin: Bool = false { didSet { applyLaunchAtLogin() } }
     private var applyingLaunchAtLogin = false
@@ -197,6 +234,24 @@ final class AppSettings: ObservableObject {
         translateCustomAPIKey = loadObfuscated(legacyKey: Keys.translateCustomAPIKey, obfKey: Keys.translateCustomAPIKeyObf)
         if let s = d.string(forKey: Keys.translateSourceLang) { translateSourceLang = s }
         if let s = d.string(forKey: Keys.translateTargetLang) { translateTargetLang = s }
+        // 图床
+        if let raw = d.string(forKey: Keys.imageHostProvider), let p = ImageHostProvider(rawValue: raw) { imageHostProvider = p }
+        if let raw = d.string(forKey: Keys.imageHostLinkFormat), let f = ImageLinkFormat(rawValue: raw) { imageHostLinkFormat = f }
+        if let s = d.string(forKey: Keys.imageHostPathPattern), !s.isEmpty { imageHostPathPattern = s }
+        imageHostS3Endpoint = d.string(forKey: Keys.imageHostS3Endpoint) ?? ""
+        if let s = d.string(forKey: Keys.imageHostS3Region) { imageHostS3Region = s }
+        imageHostS3Bucket = d.string(forKey: Keys.imageHostS3Bucket) ?? ""
+        imageHostS3AccessKeyID = d.string(forKey: Keys.imageHostS3AccessKeyID) ?? ""
+        imageHostS3SecretKey = loadObfuscated(legacyKey: "", obfKey: Keys.imageHostS3SecretKeyObf)
+        imageHostS3PublicPrefix = d.string(forKey: Keys.imageHostS3PublicPrefix) ?? ""
+        imageHostGitHubRepo = d.string(forKey: Keys.imageHostGitHubRepo) ?? ""
+        imageHostGitHubBranch = d.string(forKey: Keys.imageHostGitHubBranch) ?? "main"
+        imageHostGitHubToken = loadObfuscated(legacyKey: "", obfKey: Keys.imageHostGitHubTokenObf)
+        imageHostCustomURL = d.string(forKey: Keys.imageHostCustomURL) ?? ""
+        imageHostCustomHeaders = d.string(forKey: Keys.imageHostCustomHeaders) ?? ""
+        imageHostCustomFileField = d.string(forKey: Keys.imageHostCustomFileField) ?? "file"
+        imageHostCustomURLPath = d.string(forKey: Keys.imageHostCustomURLPath) ?? "data.url"
+        imageHostCustomURLRegex = d.string(forKey: Keys.imageHostCustomURLRegex) ?? ""
         launchAtLogin = SMAppService.mainApp.status == .enabled
         if let data = d.data(forKey: Keys.hotKeys),
            let raw = try? JSONDecoder().decode([String: HotKeyCombo].self, from: data) {

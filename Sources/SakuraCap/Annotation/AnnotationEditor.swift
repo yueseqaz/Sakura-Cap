@@ -47,9 +47,11 @@ final class AnnotationEditorWindow: NSWindow {
     private let barcodeButton = NSButton()
     private let translateButton = NSButton()
     private let askAIButton = NSButton()
+    private let uploadButton = NSButton()
     private var isOCRBusy = false
     private var isBarcodeBusy = false
     private var isTranslationBusy = false
+    private var isUploadBusy = false
 
     override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -292,6 +294,7 @@ final class AnnotationEditorWindow: NSWindow {
             (barcodeButton, "qrcode.viewfinder", L("二维码"), #selector(barcodeTapped)),
             (translateButton, "character.bubble", L("翻译"), #selector(translateTapped)),
             (askAIButton, "sparkles", L("问 AI"), #selector(askAITapped)),
+            (uploadButton, "icloud.and.arrow.up", L("上传图床"), #selector(uploadTapped)),
         ] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular))
@@ -310,7 +313,8 @@ final class AnnotationEditorWindow: NSWindow {
         barcodeButton.toolTip = L("拖拽框选要识别的二维码")
         translateButton.toolTip = L("拖拽框选要翻译的文字")
         askAIButton.toolTip = L("把这张图片发给 AI（或先 OCR）")
-        let stack = NSStackView(views: [ocrButton, barcodeButton, translateButton, askAIButton])
+        uploadButton.toolTip = L("上传整图（含标注）到图床，链接按设置格式复制到剪贴板")
+        let stack = NSStackView(views: [ocrButton, barcodeButton, translateButton, askAIButton, uploadButton])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 8
@@ -541,6 +545,37 @@ final class AnnotationEditorWindow: NSWindow {
                     model.error = error.localizedDescription
                 }
                 model.isLoading = false
+            }
+        }
+    }
+
+    /// 上传整图（含标注）到图床，成功后按设置格式复制链接
+    @objc private func uploadTapped() {
+        guard !isUploadBusy else { return }
+        guard ImageHost.isConfigured else {
+            Toast.show(title: L("图床未配置"), detail: L("请到 设置 → 图床 配置后再上传"))
+            return
+        }
+        guard let cg = canvas.renderedImage(),
+              let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) else { return }
+        isUploadBusy = true
+        uploadButton.isEnabled = false
+        Toast.show(title: L("正在上传图床…"), detail: nil)
+        Task { @MainActor in
+            defer {
+                isUploadBusy = false
+                uploadButton.isEnabled = true
+            }
+            do {
+                let link = try await ImageHost.upload(png: data)
+                let text = AppSettings.shared.imageHostLinkFormat.text(url: link)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                Toast.show(title: L("已上传，链接已复制"), detail: link)
+            } catch {
+                let detail = (error as? ImageHostError)?.errorDescription ?? error.localizedDescription
+                Log.app.error("图床上传失败: \(detail, privacy: .public)")
+                Toast.show(title: L("上传失败"), detail: detail)
             }
         }
     }

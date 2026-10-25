@@ -15,7 +15,7 @@ struct PanelView: View {
     @ObservedObject private var help = SettingsHelpState()
 
     private enum Section: String, CaseIterable, Identifiable {
-        case record, assist, hotkeys, translate, permissions, general, about
+        case record, assist, hotkeys, translate, imageHost, permissions, general, about
 
         var id: String { rawValue }
         var label: String {
@@ -24,6 +24,7 @@ struct PanelView: View {
             case .assist: return L("辅助")
             case .hotkeys: return L("快捷键")
             case .translate: return L("翻译与 AI")
+            case .imageHost: return L("图床")
             case .permissions: return L("权限")
             case .general: return L("通用")
             case .about: return L("关于")
@@ -35,6 +36,7 @@ struct PanelView: View {
             case .assist: return "cursorarrow.rays"
             case .hotkeys: return "keyboard"
             case .translate: return "character.bubble"
+            case .imageHost: return "cloud"
             case .permissions: return "lock.shield"
             case .general: return "gearshape"
             case .about: return "info.circle"
@@ -167,6 +169,7 @@ struct PanelView: View {
         case .assist: assistSection
         case .hotkeys: hotkeysSection
         case .translate: translateSection
+        case .imageHost: imageHostSection
         case .permissions: permissionsSection
         case .general: generalSection
         case .about: aboutSection
@@ -433,6 +436,88 @@ struct PanelView: View {
                 Toast.show(title: L("已获取模型"), detail: "\(models.count)")
             } catch {
                 Toast.show(title: L("获取模型失败"), detail: error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - 图床
+
+    private var imageHostSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            group("服务") {
+                settingRow("图床类型") {
+                    Picker("图床类型", selection: $settings.imageHostProvider) {
+                        ForEach(ImageHostProvider.allCases) { p in Text(p.label).tag(p) }
+                    }.labelsHidden().frame(width: pickerWidth)
+                }
+                switch settings.imageHostProvider {
+                case .s3:
+                    fieldRow("Endpoint") {
+                        TextField("https://xxx.r2.cloudflarestorage.com", text: $settings.imageHostS3Endpoint)
+                    }
+                    HStack(spacing: 24) {
+                        fieldRow("Region") {
+                            TextField("auto", text: $settings.imageHostS3Region)
+                        }.frame(maxWidth: .infinity)
+                        fieldRow("存储桶") {
+                            TextField("my-bucket", text: $settings.imageHostS3Bucket)
+                        }.frame(maxWidth: .infinity)
+                    }
+                    fieldRow("Access Key ID") {
+                        TextField("", text: $settings.imageHostS3AccessKeyID)
+                    }
+                    fieldRow("Secret Access Key") {
+                        SecureField("", text: $settings.imageHostS3SecretKey)
+                    }
+                    fieldRow("公开 URL 前缀") {
+                        TextField("https://cdn.example.com", text: $settings.imageHostS3PublicPrefix)
+                    }
+                    footnote("适用于 Cloudflare R2 / MinIO / 各云厂商的 S3 兼容接口（路径风格）。Region 填 auto 或实际区域。公开 URL 前缀是拼接访问链接用的地址（如绑定的 CDN 或桶的公开域名），不是上传接口。")
+                case .github:
+                    fieldRow("仓库") {
+                        TextField("owner/repo", text: $settings.imageHostGitHubRepo)
+                    }
+                    HStack(spacing: 24) {
+                        fieldRow("分支") {
+                            TextField("main", text: $settings.imageHostGitHubBranch)
+                        }.frame(maxWidth: .infinity)
+                        fieldRow("Token") {
+                            SecureField("ghp_…", text: $settings.imageHostGitHubToken)
+                        }.frame(maxWidth: .infinity)
+                    }
+                    footnote("图片以 PNG 提交到仓库，链接使用 raw.githubusercontent.com 直连地址；Token 需要仓库写权限，仓库需公开可访问。")
+                case .custom:
+                    fieldRow("上传接口") {
+                        TextField("https://api.example.com/upload", text: $settings.imageHostCustomURL)
+                    }
+                    fieldRow("请求头") {
+                        TextField("Authorization: Bearer xxx", text: $settings.imageHostCustomHeaders)
+                    }
+                    HStack(spacing: 24) {
+                        fieldRow("文件字段名") {
+                            TextField("file", text: $settings.imageHostCustomFileField)
+                        }.frame(maxWidth: .infinity)
+                        fieldRow("URL JSON 路径") {
+                            TextField("data.url", text: $settings.imageHostCustomURLPath)
+                        }.frame(maxWidth: .infinity)
+                    }
+                    fieldRow("URL 正则（可选）") {
+                        TextField("https://\\S+", text: $settings.imageHostCustomURLRegex)
+                    }
+                    footnote("POST multipart 上传；请求头多个用分号分隔，格式 Key: Value。链接先按 JSON 路径取（如 data.url），取不到再按正则匹配响应文本。")
+                }
+            }
+            group("上传") {
+                fieldRow("存储路径") {
+                    TextField("sakura-cap/{date}/{time}-{rand}", text: $settings.imageHostPathPattern)
+                }
+                footnote("占位符：{date} 日期、{time} 时间、{rand} 5 位随机数；扩展名 .png 自动追加。")
+                settingRow("剪贴板格式") {
+                    Picker("剪贴板格式", selection: $settings.imageHostLinkFormat) {
+                        ForEach(ImageLinkFormat.allCases) { f in Text(f.label).tag(f) }
+                    }.labelsHidden().frame(width: pickerWidth)
+                }
+                footnote("在标注编辑器右侧点「上传图床」，成功后按此格式复制到剪贴板。")
             }
         }
     }
