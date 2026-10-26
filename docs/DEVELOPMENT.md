@@ -17,6 +17,20 @@ bash Scripts/verify_inline_screenshot.sh # 截图标注：设置、工具对齐�
 
 版本号来源优先级：`VERSION` 环境变量 > `Casks/sakura-cap.rb` 的 `version` > 兜底 `2.0.0`——本地构建自动跟随已发版本，不再停留在 2.0.0。
 
+### 官网
+
+GitHub Pages 从 `main` 的 `docs/` 发布。`docs/index.html` 为中文入口，`docs/en.html` 为英文入口，
+通过导航栏语言链接切换；两者共用 `site.css`、`site.js` 和界面截图，无框架或新增运行依赖。
+更新文案时同步维护两种语言；截图来源与隐私检查要求见 `docs/assets/screenshots/README.md`。
+
+```bash
+python3 -m http.server 8819 --bind 127.0.0.1 --directory docs
+python3 Scripts/verify_website.py
+node --check docs/site.js
+```
+
+网站检查涵盖双语结构、内部链接、图片属性、标签页关系及 WebP 隐私元数据，并纳入 CI。
+
 不使用 Xcode / Interface Builder / xcassets：Info.plist 由 `Config/Info.plist.template` 模板生成，图标由 `Resources/AppIcon.png`（1024×1024）经 `sips` + `iconutil` 生成；把自定义 PNG 放到该路径重新构建即可。
 
 ### 截图标注模式

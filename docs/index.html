@@ -4,15 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f7f9">
-  <meta name="description" content="Sakura-Cap 是一款为 Mac 设计的轻巧屏幕工具。录屏、截图、长截图、OCR、翻译、实时标注与视频编辑，从捕捉到表达，一气呵成。">
+  <meta name="description" content="Sakura-Cap 是一款为 Mac 设计的轻巧屏幕工具。录屏、录音、原地标注、长截图、图片拼接、OCR、AI 与音视频编辑，从捕捉到表达，一气呵成。">
   <meta property="og:title" content="Sakura-Cap — 把屏幕上的想法，清楚地留下">
-  <meta property="og:description" content="录屏、截图、标注、识别和视频编辑。一个安静而完整的 Mac 菜单栏工具。">
+  <meta property="og:description" content="录屏、截图、原地标注、图片拼接与 AI。一个轻巧原生的 Mac 菜单栏工具。">
   <meta property="og:type" content="website">
-  <meta property="og:image" content="assets/app-icon.png">
+  <meta property="og:image" content="https://yueseqaz.github.io/Sakura-Cap/assets/screenshots/inline.webp">
   <title>Sakura-Cap — 把屏幕上的想法，清楚地留下</title>
+  <link rel="alternate" hreflang="zh-CN" href="https://yueseqaz.github.io/Sakura-Cap/">
+  <link rel="alternate" hreflang="en" href="https://yueseqaz.github.io/Sakura-Cap/en.html">
+  <link rel="canonical" href="https://yueseqaz.github.io/Sakura-Cap/">
   <link rel="icon" href="assets/app-icon.png">
-  <link rel="stylesheet" href="site.css">
-  <script src="site.js" defer></script>
+  <link rel="stylesheet" href="site.css?v=2.9.0">
+  <script src="site.js?v=2.9.0" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到内容</a>
@@ -20,67 +23,109 @@
     <div class="container nav-inner">
       <a class="brand" href="#top" aria-label="Sakura-Cap 首页"><img src="assets/app-icon.png" alt="" width="28" height="28"><span>Sakura-Cap</span></a>
       <div class="nav-links"><a href="#experience">产品体验</a><a href="#features">功能</a><a href="#performance">轻巧设计</a><a href="#download">安装</a></div>
+      <a class="language-switch" href="en.html" lang="en" hreflang="en" aria-label="Switch to English" data-language-link>EN</a>
       <a class="nav-download" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener noreferrer">免费下载 <span aria-hidden="true">↗</span></a>
     </div>
   </nav>
   <main id="main">
-    <section class="hero" id="top" aria-labelledby="hero-title">
+        <section class="hero" id="top" aria-labelledby="hero-title">
       <div class="container hero-content">
         <p class="eyebrow entrance">SAKURA-CAP <span class="eyebrow-line"></span> FOR MAC</p>
         <h1 id="hero-title" class="entrance">看见的，<br><span>都能好好表达。</span></h1>
-        <p class="hero-lede entrance">一张截图，一段录屏，一个需要被说清楚的细节。<br class="desktop-only">从捕捉、标注到分享，Sakura-Cap 让想法不必停下来。</p>
+        <p class="hero-lede entrance">一张截图，一段录屏，一个需要被说清楚的细节。<br class="desktop-only">从原地标注、图片拼接到音视频剪辑，顺着你的思路完成。</p>
         <div class="hero-actions entrance"><a class="button button-primary" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener noreferrer">下载 Sakura-Cap <span aria-hidden="true">↗</span></a><a class="quiet-link" href="#experience">看看它如何工作 <span aria-hidden="true">↓</span></a></div>
         <p class="hero-note entrance">免费开源 <span>·</span> macOS 13+ <span>·</span> 常驻菜单栏</p>
       </div>
-      <div class="hero-stage entrance" aria-hidden="true">
-        <div class="stage-glow"></div>
-        <div class="desktop-scene">
-          <div class="desktop-menu"><span>● &nbsp; Sakura-Cap</span><span>⌘ &nbsp; ◉ &nbsp; 09:41</span></div>
-          <div class="scene-window">
-            <div class="window-top"><span class="traffic"><i></i><i></i><i></i></span><span>今天的工作 · 设计提案</span><span>•••</span></div>
-            <div class="scene-body"><div class="scene-rail"><span>概览</span><span class="active">灵感收集</span><span>共享文件</span><span>最近项目</span></div><div class="scene-document"><span class="doc-kicker">PROJECT / 024</span><h2>让每一个细节<br>都恰到好处。</h2><p>好的表达，始于把重要的部分准确地呈现出来。</p><div class="doc-rule"></div><div class="doc-blocks"><span></span><span></span><span></span></div><div class="doc-swatch"><i></i><i></i><i></i></div></div></div>
-          </div>
-          <div class="selection-frame"><span class="selection-label">区域截图 <b>1280 × 720</b></span><span class="selection-handle a"></span><span class="selection-handle b"></span><span class="selection-handle c"></span><span class="selection-handle d"></span></div>
-          <div class="annotation-mark">重点在这里<span>↗</span></div>
-          <div class="floating-hud"><span class="hud-status"><i></i> 就绪</span><span class="hud-divider"></span><span>⌖</span><span>▧</span><span>✎</span><span class="hud-divider"></span><span class="hud-capture">●</span></div>
-        </div>
-        <div class="stage-label">SCREEN CAPTURE, MADE CONSIDERATE <span>01 / 04</span></div>
+        <figure class="hero-stage entrance">
+        <a class="screenshot-link" href="assets/screenshots/inline.webp" target="_blank" rel="noopener" aria-label="查看原地标注实机截图大图"><img src="assets/screenshots/inline.webp" alt="Sakura-Cap 原地标注：桌面上的可调整选框、底部标注工具栏和右侧快捷操作" fetchpriority="high" width="2200" height="1431"></a>
+        <figcaption><span>原地标注 · 真实软件界面</span><span>不离开画面，也能把重点说清楚 ↗</span></figcaption>
+      </figure>
+    </section>
+
+        <section class="intro-band" aria-label="产品概览"><div class="container intro-grid"><p>一个工具。<br><strong>完整的表达路径。</strong></p><div><span>捕捉</span><b>→</b><span>理解</span><b>→</b><span>标注</span><b>→</b><span>分享</span></div></div></section>
+
+        <section class="experience section-pad" id="experience" aria-labelledby="experience-title">
+      <div class="container"><div class="section-heading reveal"><p class="eyebrow">THE EXPERIENCE / 01</p>
+        <h2 id="experience-title">复杂留在背后。<br><span>顺手，留给你。</span></h2>
+        <p>不是把功能堆进一个窗口，而是让每一步自然接上下一步。</p></div>
+        <div class="experience-shell reveal"><div class="experience-tabs" role="tablist" aria-label="体验不同的工作流"><button class="experience-tab active" role="tab" id="tab-annotate" aria-selected="true" aria-controls="panel-annotate" data-panel="annotate" tabindex="0" type="button"><span>01</span> 原地标注</button><button class="experience-tab" role="tab" id="tab-stitch" aria-selected="false" aria-controls="panel-stitch" data-panel="stitch" tabindex="-1" type="button"><span>02</span> 图片拼接</button><button class="experience-tab" role="tab" id="tab-finish" aria-selected="false" aria-controls="panel-finish" data-panel="finish" tabindex="-1" type="button"><span>03</span> 视频剪辑</button></div><div class="experience-panels"><div class="experience-panel active" id="panel-annotate" role="tabpanel" tabindex="0" aria-labelledby="tab-annotate"><div class="experience-copy"><span class="mini-label">STAY IN THE MOMENT</span>
+        <h3>不换一个窗口。<br>也不打断思路。</h3>
+        <p>截图后仍留在冻结的桌面上，继续调整选框、标注、复制或保存。习惯独立编辑窗口？在设置中随时切换。</p>
+        <ul>
+        <li>底部工具栏，右侧快捷操作</li>
+        <li>与独立编辑器共用标注能力</li>
+        <li>选框可调，标注可二次编辑</li>
+        </ul>
+        </div><a class="experience-art screenshot-link" href="assets/screenshots/inline.webp" target="_blank" rel="noopener" aria-label="查看原地标注实机截图大图"><img src="assets/screenshots/inline.webp" alt="原地标注的选区和完整工具栏" loading="lazy" width="2200" height="1431"><span class="photo-note">实机截图 · 点击查看大图 ↗</span></a></div><div class="experience-panel" id="panel-stitch" role="tabpanel" tabindex="0" aria-labelledby="tab-stitch" hidden><div class="experience-copy"><span class="mini-label">A LITTLE MORE ROOM</span>
+        <h3>几张图片。<br>一块自由画布。</h3>
+        <p>拖入图片，自由摆放、等比缩放，靠近边缘时自动吸附。也可以一键横拼、竖拼，设置间距后再微调。</p>
+        <ul>
+        <li>独立原生窗口，无新增依赖</li>
+        <li>支持撤销、层级与背景选择</li>
+        <li>导出 PNG，或直接复制</li>
+        </ul>
+        </div><a class="experience-art screenshot-link" href="assets/screenshots/stitch.webp" target="_blank" rel="noopener" aria-label="查看图片拼接实机截图大图"><img src="assets/screenshots/stitch.webp" alt="图片拼接独立窗口，展示真实画布、缩放控制和图片属性" loading="lazy" width="2120" height="1504"><span class="photo-note">实机截图 · 点击查看大图 ↗</span></a></div><div class="experience-panel" id="panel-finish" role="tabpanel" tabindex="0" aria-labelledby="tab-finish" hidden><div class="experience-copy"><span class="mini-label">FINISH WITH CLARITY</span>
+        <h3>录完之后，<br>也一样从容。</h3>
+        <p>在多轨时间轴分割、裁剪和重排片段，添加画面聚焦与视频标注。系统声音和麦克风分别调节，最后导出 MP4、GIF 或关键帧。</p>
+        <ul>
+        <li>分割、拖边裁剪与磁吸</li>
+        <li>分音轨音量、静音与淡入淡出</li>
+        <li>无编辑时支持 MP4 直通导出</li>
+        </ul>
+        </div><a class="experience-art screenshot-link" href="assets/screenshots/workbench.webp" target="_blank" rel="noopener" aria-label="查看视频剪辑实机截图大图"><img src="assets/screenshots/workbench.webp" alt="视频剪辑工作台的真实预览、时间轴与属性面板" loading="lazy" width="2200" height="1380"><span class="photo-note">实机截图 · 点击查看大图 ↗</span></a></div></div></div>
+        <p class="capture-note">界面实拍来自 2.9.0 代码构建；桌面素材仅含壁纸，不含其他应用、桌面文件或个人消息。图片拼接为 2.9.0 新增功能。</p>
       </div>
     </section>
 
-    <section class="intro-band" aria-label="产品概览"><div class="container intro-grid"><p>一个工具。<br><strong>完整的表达路径。</strong></p><div><span>捕捉</span><b>→</b><span>理解</span><b>→</b><span>标注</span><b>→</b><span>分享</span></div></div></section>
-
-    <section class="experience section-pad" id="experience" aria-labelledby="experience-title">
-      <div class="container"><div class="section-heading reveal"><p class="eyebrow">THE EXPERIENCE / 01</p><h2 id="experience-title">复杂留在背后。<br><span>顺手，留给你。</span></h2><p>不是把功能堆进一个窗口，而是让每一步自然接上下一步。</p></div>
-        <div class="experience-shell reveal"><div class="experience-tabs" role="tablist" aria-label="体验不同的工作流"><button class="experience-tab active" role="tab" id="tab-capture" aria-selected="true" aria-controls="panel-capture" data-panel="capture" type="button"><span>01</span> 录制</button><button class="experience-tab" role="tab" id="tab-annotate" aria-selected="false" aria-controls="panel-annotate" data-panel="annotate" tabindex="-1" type="button"><span>02</span> 标注</button><button class="experience-tab" role="tab" id="tab-finish" aria-selected="false" aria-controls="panel-finish" data-panel="finish" tabindex="-1" type="button"><span>03</span> 收尾</button></div>
-          <div class="experience-panels">
-            <div class="experience-panel active" id="panel-capture" role="tabpanel" aria-labelledby="tab-capture"><div class="experience-copy"><span class="mini-label">START WITH ONE CLICK</span><h3>只管开始。<br>不必先整理一切。</h3><p>全屏、区域、窗口，选好范围就能录。系统声音、麦克风、摄像头和画质在底部控制条就地调整。</p><ul><li>多屏并行录制</li><li>暂停 / 继续与倒计时</li><li>录制 HUD 不进入画面</li></ul></div><div class="experience-art art-capture" aria-label="录制界面示意"><div class="art-browser"><div class="art-browser-bar"><span class="traffic"><i></i><i></i><i></i></span><span>untitled-project.design</span></div><div class="art-browser-body"><span>把灵感，<br>变成作品。</span><div class="art-shape"></div></div></div><div class="art-hud"><i></i><b>00:18</b><em></em><span>♫</span><span>▣</span><strong>Ⅱ</strong><strong>■</strong></div></div></div>
-            <div class="experience-panel" id="panel-annotate" role="tabpanel" aria-labelledby="tab-annotate" hidden><div class="experience-copy"><span class="mini-label">MAKE IT CLEAR</span><h3>重点，<br>一眼就看见。</h3><p>画笔、箭头、序号、文字、放大镜与三种马赛克。截图后直接标注；也可以不截图，在桌面实时画给别人看。</p><ul><li>选中后继续编辑</li><li>撤销 / 重做与测量</li><li>OCR、二维码与框选翻译</li></ul></div><div class="experience-art art-annotate" aria-label="图片标注界面示意"><div class="annotate-paper"><span>会议纪要</span><div class="paper-lines"><i></i><i></i><i></i><i></i></div><div class="paper-card">下一步：确认最终方案 <b>↗</b></div><div class="paper-number">1</div><div class="paper-ring"></div></div><div class="art-tools"><span>⌖</span><span>✎</span><span>↗</span><span>▭</span><span>A</span><span class="chosen">①</span><span>▦</span><span>↶</span></div></div></div>
-            <div class="experience-panel" id="panel-finish" role="tabpanel" aria-labelledby="tab-finish" hidden><div class="experience-copy"><span class="mini-label">FINISH BEAUTIFULLY</span><h3>录完之后，<br>也一样从容。</h3><p>在时间轴裁剪片段、分别调整系统音与麦克风音量，添加聚焦与视频标注段。导出视频、GIF，或截取关键帧。</p><ul><li>画面聚焦与视频标注</li><li>分音轨调音量 / 静音段</li><li>导出 MP4 或 GIF</li></ul></div><div class="experience-art art-finish" aria-label="视频编辑时间轴示意"><div class="edit-preview"><span>画面聚焦</span><div class="focus-box">+</div></div><div class="edit-timeline"><div class="time-ruler">00:00 <span>00:08</span><span>00:16</span><span>00:24</span></div><div class="time-track track-video"><span>视频</span><i></i></div><div class="time-track track-audio"><span>系统声音</span><i></i></div><div class="time-track track-mic"><span>麦克风</span><i></i></div><div class="time-playhead"></div></div></div></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="feature-section section-pad" id="features" aria-labelledby="features-title">
+        <section class="feature-section section-pad" id="features" aria-labelledby="features-title">
       <div class="container">
-        <div class="section-heading reveal"><p class="eyebrow">THE TOOLKIT / 02</p><h2 id="features-title">工具很多。<br><span>操作，依然简单。</span></h2><p>从一张截图到一段完整的讲解视频，每个阶段都有恰好的工具。</p></div>
+        <div class="section-heading reveal"><p class="eyebrow">THE TOOLKIT / 02</p>
+        <h2 id="features-title">工具很多。<br><span>操作，依然简单。</span></h2>
+        <p>从一张截图到一段完整的讲解视频，每个阶段都有恰好的工具。</p></div>
         <div class="feature-list">
-          <article class="feature-row reveal"><div class="feature-ordinal">01 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">RECORD / 录屏</p><h3>范围由你定，<br>节奏也由你定。</h3><p>全屏、框选区域或单独录制窗口；多屏可并行各存一份。录制前在悬浮 HUD 调好分辨率、系统声音、麦克风和摄像头，录制中随时暂停、继续或结束。</p><div class="feature-tags"><span>原始 / 1080p / 720p</span><span>30 / 60 fps</span><span>点击与按键显示</span><span>摄像头画中画</span><span>倒计时</span><span>帧率角标</span></div></div><div class="feature-visual visual-record" aria-hidden="true"><div class="visual-window"><i></i><i></i><i></i><div class="visual-selection"><span>REC</span><b>00:12</b></div><div class="visual-hud"><span>●</span> 00:12 <small>Ⅱ</small> <small>■</small></div></div></div></article>
-          <article class="feature-row reveal"><div class="feature-ordinal">02 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">CAPTURE / 截图</p><h3>只截需要的。<br>长图也不费力。</h3><p>全屏、区域截图后直接进入编辑。滚动长截图会自动向下滚动并拼接，遇到需要停下的地方，你可以随时打断。小范围仍按显示器原生像素捕捉。</p><div class="feature-tags"><span>自动滚动长截图</span><span>手动中断</span><span>区域截图</span><span>定住图片</span><span>截图对比</span></div></div><div class="feature-visual visual-scroll" aria-hidden="true"><div class="long-page"><div class="long-page-head"></div><span></span><span></span><div class="page-photo"></div><span></span><span></span><div class="page-photo second"></div></div><div class="scroll-indicator">↓ <small>滚动拼接</small></div></div></article>
-          <article class="feature-row reveal"><div class="feature-ordinal">03 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">ANNOTATE / 标注</p><h3>指出重点，<br>不破坏画面。</h3><p>图片编辑器支持选中后移动和修改标注，缩放、平移也不会让图片外的空白变成画布。不想先截图？打开实时屏幕标注，直接在桌面上绘制和测量。</p><div class="feature-tags"><span>画笔 / 箭头 / 形状</span><span>文字 / 序号</span><span>三种马赛克</span><span>局部放大镜</span><span>撤销 / 重做</span><span>鼠标穿透</span></div></div><div class="feature-visual visual-annotate" aria-hidden="true"><div class="annotate-sheet"><span>把重点放在这里。</span><i></i><i></i><b>01</b><em>↗</em></div><div class="annotate-pen">✎ &nbsp; ↗ &nbsp; ▭ &nbsp; ① &nbsp; ▦</div></div></article>
-          <article class="feature-row reveal"><div class="feature-ordinal">04 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">RECOGNIZE / 识别</p><h3>画面里的信息，<br>不必重新输入。</h3><p>在图片中框选文字，使用 macOS Vision 离线 OCR；框选二维码即可识别内容。翻译也从选区开始，不用先手动摘录文字。</p><div class="feature-tags"><span>离线 OCR</span><span>二维码识别</span><span>框选翻译</span><span>文字复制</span></div></div><div class="feature-visual visual-recognize" aria-hidden="true"><div class="recognize-source"><span>会议安排已更新</span><i></i></div><div class="recognize-arrow">→</div><div class="recognize-result"><small>识别结果</small><span>会议安排已更新</span><b>复制文字 ↗</b></div></div></article>
-          <article class="feature-row reveal"><div class="feature-ordinal">05 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">EDIT / 视频编辑</p><h3>把讲解，<br>剪得更明白。</h3><p>录制结束后进入裁剪面板。拖动时间轴保留需要的片段、添加画面聚焦或限定时间的标注；系统声音和麦克风分别调音量，或只让某段静音。</p><div class="feature-tags"><span>裁剪 / 聚焦</span><span>视频标注段</span><span>分音轨音量</span><span>静音段</span><span>截帧</span><span>MP4 / GIF</span></div></div><div class="feature-visual visual-edit" aria-hidden="true"><div class="edit-mini-preview">画面聚焦 <span>+</span></div><div class="edit-mini-track"><i></i><i></i><i></i><b></b></div></div></article>
-          <article class="feature-row reveal"><div class="feature-ordinal">06 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">EVERYDAY / 日常</p><h3>需要它时，很近。<br>不需要时，很轻。</h3><p>镜头预览可自由调整窗口大小；截图可定住在桌面，也能再截一张做对比。快捷键自行设置，权限集中管理。常驻菜单栏，不另开一个项目库。</p><div class="feature-tags"><span>镜头预览</span><span>图片定住</span><span>截图对比</span><span>全局快捷键</span><span>权限管理</span><span>中英双语</span></div></div><div class="feature-visual visual-everyday" aria-hidden="true"><div class="menu-fragment"><div><img src="assets/app-icon.png" alt=""> Sakura-Cap</div><span>⌖ &nbsp; 截图</span><span>● &nbsp; 录屏</span><span>✎ &nbsp; 屏幕标注</span><span>◉ &nbsp; 镜头预览</span></div></div></article>
+        <article class="feature-row reveal"><div class="feature-ordinal">01 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">RECORD / 录屏</p>
+        <h3>范围由你定，<br>节奏也由你定。</h3>
+        <p>全屏、区域或单独窗口录制，多屏可并行各存一份。悬浮控制条就地调整声源与画质，支持暂停、继续和倒计时。控制条本身不进入录像。</p><div class="feature-tags"><span>系统声音 / 麦克风</span><span>摄像头画中画</span><span>30 / 60 fps</span><span>点击与按键显示</span></div></div><a class="feature-visual screenshot-link" href="assets/screenshots/recorder.webp" target="_blank" rel="noopener" aria-label="查看真实录制准备控制条大图"><img src="assets/screenshots/recorder.webp" alt="真实录制准备控制条" loading="lazy" width="1230" height="336"><span class="photo-note">真实界面 ↗</span></a></article>
+        <article class="feature-row reveal"><div class="feature-ordinal">02 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">CAPTURE / 截图</p>
+        <h3>只截需要的。<br>操作方式，也由你选。</h3>
+        <p>全屏或区域截图，可选独立编辑窗口或原地标注。滚动长截图支持自动滚动、手动滚动和实时预览，拼好后继续标注、复制或保存。</p><div class="feature-tags"><span>原地 / 独立窗口</span><span>自动 / 手动长截图</span><span>原生像素</span><span>图片定住</span></div></div><a class="feature-visual screenshot-link" href="assets/screenshots/inline.webp" target="_blank" rel="noopener" aria-label="查看桌面上的原地截图选框和标注工具大图"><img src="assets/screenshots/inline.webp" alt="桌面上的原地截图选框和标注工具" loading="lazy" width="2200" height="1431"><span class="photo-note">真实界面 ↗</span></a></article>
+        <article class="feature-row reveal"><div class="feature-ordinal">03 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">ANNOTATE / 标注</p>
+        <h3>指出重点，<br>不破坏画面。</h3>
+        <p>画笔、箭头、矩形、文字、序号、三种马赛克，以及局部放大镜与测量。已有标注可再次选中、移动和修改；也可以开启屏幕标注，不截图直接讲解。</p><div class="feature-tags"><span>二次编辑</span><span>撤销 / 重做</span><span>取色 / 测量</span><span>图床上传</span></div></div><a class="feature-visual screenshot-link" href="assets/screenshots/editor.webp" target="_blank" rel="noopener" aria-label="查看原生图片编辑器的底部工具栏和右侧操作大图"><img src="assets/screenshots/editor.webp" alt="原生图片编辑器的底部工具栏和右侧操作" loading="lazy" width="2200" height="1317"><span class="photo-note">真实界面 ↗</span></a></article>
+        <article class="feature-row reveal"><div class="feature-ordinal">04 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">STITCH / 图片拼接</p>
+        <h3>不是只有长图。<br>也可以自由组合。</h3>
+        <p>多张图片放在同一块画布上，自由拖动、等比缩放和调整前后顺序。横排、竖排与间距一键设置，导出范围自动包住所有图片。</p><div class="feature-tags"><span>对齐吸附</span><span>透明 / 白 / 黑背景</span><span>PNG / 剪贴板</span><span>2.9.0 新增</span></div></div><a class="feature-visual screenshot-link" href="assets/screenshots/stitch.webp" target="_blank" rel="noopener" aria-label="查看图片拼接工具中的两张系统壁纸和属性面板大图"><img src="assets/screenshots/stitch.webp" alt="图片拼接工具中的两张系统壁纸和属性面板" loading="lazy" width="2120" height="1504"><span class="photo-note">真实界面 ↗</span></a></article>
+        <article class="feature-row reveal"><div class="feature-ordinal">05 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">EDIT / 视频编辑</p>
+        <h3>把讲解，<br>剪得更明白。</h3>
+        <p>录制完成后进入视频工作台。分割、删除、拖边裁剪和重排，按时间添加聚焦与标注；系统声和麦克风分轨调节，音量段、淡入淡出都能直接编辑。</p><div class="feature-tags"><span>多轨时间轴</span><span>画面聚焦 / 视频标注</span><span>MP4 / GIF</span><span>逐帧 / 截帧</span></div></div><a class="feature-visual screenshot-link" href="assets/screenshots/workbench.webp" target="_blank" rel="noopener" aria-label="查看视频工作台的真实时间轴和预览大图"><img src="assets/screenshots/workbench.webp" alt="视频工作台的真实时间轴和预览" loading="lazy" width="2200" height="1380"><span class="photo-note">真实界面 ↗</span></a></article>
+        <article class="feature-row reveal"><div class="feature-ordinal">06 <span>/ 06</span></div><div class="feature-main"><p class="feature-category">TOOLS / 日常工具</p>
+        <h3>顺手多做一步。<br>不必再开一个软件。</h3>
+        <p>图片对比、全局取色、音频提取和批量图片格式转换，都在工具菜单里。转换时可调质量和长边，实时预估体积；输出另存，不覆盖已有文件。</p><div class="feature-tags"><span>PNG / JPEG / HEIC / WebP 等</span><span>批量转换</span><span>预计输出体积</span><span>原生独立窗口</span></div></div><a class="feature-visual screenshot-link" href="assets/screenshots/convert.webp" target="_blank" rel="noopener" aria-label="查看图片格式转换工具显示真实输入尺寸和编码体积预估大图"><img src="assets/screenshots/convert.webp" alt="图片格式转换工具显示真实输入尺寸和编码体积预估" loading="lazy" width="1520" height="1024"><span class="photo-note">真实界面 ↗</span></a></article>
         </div>
       </div>
     </section>
 
-    <section class="clarity-section section-pad" aria-labelledby="clarity-title"><div class="container clarity-layout"><div class="clarity-copy reveal"><p class="eyebrow">BEFORE / AFTER</p><h2 id="clarity-title">同一张画面。<br><span>多一点说明，少一点误解。</span></h2><p>拖动分割线，看看一处标注如何把需要注意的位置说清楚。编辑完成后，可保存、复制、定住在桌面，或放弃本次编辑。</p><label for="compare-range">拖动查看标注效果 <span aria-hidden="true">↔</span></label></div><div class="comparison reveal" style="--split:50%"><div class="comparison-base"><div class="comparison-sheet"><small>PRODUCT / REVIEW</small><h3>本周的设计方案</h3><p>设计评审 · 版本 03</p><div class="comparison-lines"><i></i><i></i><i></i></div><div class="comparison-highlight">请确认这里的交互细节</div><div class="comparison-lines lower"><i></i><i></i></div></div></div><div class="comparison-after"><div class="comparison-sheet"><small>PRODUCT / REVIEW</small><h3>本周的设计方案</h3><p>设计评审 · 版本 03</p><div class="comparison-lines"><i></i><i></i><i></i></div><div class="comparison-highlight">请确认这里的交互细节 <b>01</b></div><div class="comparison-lines lower"><i></i><i></i></div><div class="comparison-arrow">↗</div></div></div><div class="comparison-divider"><span>↔</span></div><span class="comparison-label before">原图</span><span class="comparison-label after">标注后</span><input id="compare-range" type="range" min="0" max="100" value="50" aria-label="查看标注前后效果"></div></div></section>
+        <section class="more-section section-pad" aria-labelledby="more-title"><div class="container"><div class="section-heading reveal"><p class="eyebrow">BEYOND THE PICTURE</p>
+        <h2 id="more-title">留下画面。<br><span>也读懂画面。</span></h2>
+        <p>取字在本机完成；需要翻译和 AI 时，再连接你配置的服务。</p></div><div class="more-grid">
+        <article class="reveal"><span>01 / READ</span>
+        <h3>识别与翻译</h3>
+        <p>框选文字，用系统 Vision 离线识别并复制；二维码与条形码也能直接读取。文字翻译和屏幕翻译共用服务配置。</p></article>
+        <article class="reveal"><span>02 / ASK</span>
+        <h3>截屏问 AI</h3>
+        <p>把截图交给视觉模型，或先 OCR 再发文字。支持流式聊天、图片附件和会话历史，兼容 OpenAI Chat / Responses 与 Anthropic 接口。</p></article>
+        <article class="reveal"><span>03 / LISTEN</span>
+        <h3>录音与音频编辑</h3>
+        <p>只录系统声音、麦克风，或同时分轨录下两者。暂停后继续，录完进入音频编辑器，裁剪、分割、调音量，再导出 m4a。</p></article>
+        </div><p class="capture-note">OCR 无需联网。翻译、AI 和图床上传会将对应内容发送至你配置的服务，请在使用前确认服务商与隐私设置。</p></div></section>
 
-    <section class="performance section-pad" id="performance" aria-labelledby="performance-title"><div class="container performance-layout"><div class="reveal"><p class="eyebrow">LIGHT BY DESIGN / 03</p><h2 id="performance-title">存在感很低。<br><span>完成度很高。</span></h2><p class="performance-lede">常驻菜单栏，不占用 Dock。底层使用 macOS 的 ScreenCaptureKit、AVFoundation 与 Vision；无需第三方运行依赖。只有开始工作时，才认真投入资源。</p><a class="quiet-link" href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener noreferrer">了解开源项目 <span aria-hidden="true">↗</span></a></div><div class="performance-metrics reveal"><div><strong>≈ 41 <small>MiB</small></strong><span>本机空闲时进程内存 RSS 参考值</span></div><div><strong>0</strong><span>第三方运行依赖</span></div><div><strong>13<span class="plus">+</span></strong><span>支持的 macOS 版本</span></div><p>内存数值为当前版本在一台 Mac 上的短时空闲采样；设备、系统状态与使用中的功能会改变实际占用。录制及导出性能未包含在内。</p></div></div></section>
+        <section class="performance section-pad" id="performance" aria-labelledby="performance-title"><div class="container performance-layout"><div class="reveal"><p class="eyebrow">LIGHT BY DESIGN / 03</p>
+        <h2 id="performance-title">存在感很低。<br><span>完成度很高。</span></h2>
+        <p class="performance-lede">常驻菜单栏，不占用 Dock。使用 AppKit / SwiftUI 构建原生界面，录制、编码与识别由 ScreenCaptureKit、AVFoundation 和 Vision 支持。无需额外安装运行时；WebP 编码库随应用静态打包。</p><a class="quiet-link" href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener noreferrer">了解开源项目 <span aria-hidden="true">↗</span></a></div><div class="performance-metrics reveal"><div><strong>原生</strong><span>AppKit / SwiftUI · 按需工作</span></div><div><strong>0</strong><span>需要额外安装的运行依赖</span></div><div><strong>13<span class="plus">+</span></strong><span>支持的 macOS 版本</span></div><p>图片拼接编辑时仅保留缩略预览，导出再逐张读取原图，关闭窗口释放画布。实际资源占用随图片尺寸、录制分辨率和使用中的功能变化。</p></div></div></section>
 
-    <section class="download-section section-pad" id="download" aria-labelledby="download-title"><div class="container download-layout"><div class="reveal"><p class="eyebrow">MAKE SPACE FOR IDEAS / 04</p><h2 id="download-title">下一次灵感，<br>从这里开始。</h2><p>免费、开源，为 Mac 而生。下载后，Sakura-Cap 会安静地待在菜单栏。</p><div class="download-actions"><a class="button button-light" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener noreferrer">下载最新版 <span aria-hidden="true">↗</span></a><a class="download-source" href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener noreferrer">查看 GitHub ↗</a></div></div><div class="install-card reveal"><span class="install-title">或者，通过 Homebrew 安装</span><div class="terminal"><code>brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap<br>brew trust yueseqaz/sakura-cap<br>brew install --cask sakura-cap</code><button type="button" class="copy-button" data-copy="brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap&#10;brew trust yueseqaz/sakura-cap&#10;brew install --cask sakura-cap" aria-label="复制 Homebrew 安装命令">复制</button></div><p>macOS 13 或更新版本。应用尚未经过 Apple 公证；首次打开若被拦截，请在「系统设置 → 隐私与安全性」中允许。屏幕录制等权限按需授予。</p></div></div></section>
+        <section class="download-section section-pad" id="download" aria-labelledby="download-title"><div class="container download-layout"><div class="reveal"><p class="eyebrow">MAKE SPACE FOR IDEAS / 04</p>
+        <h2 id="download-title">下一次灵感，<br>从这里开始。</h2>
+        <p>免费、开源，为 Mac 而生。DMG 安装包，下载后将应用拖入「应用程序」，从菜单栏开始。</p><div class="download-actions"><a class="button button-light" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener noreferrer">下载最新版 <span aria-hidden="true">↗</span></a><a class="download-source" href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener noreferrer">查看 GitHub ↗</a></div></div><div class="install-card reveal"><span class="install-title">或者，通过 Homebrew 安装</span><div class="terminal"><code>brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap<br>brew trust yueseqaz/sakura-cap<br>brew install --cask sakura-cap</code><button type="button" class="copy-button" data-copy="brew tap yueseqaz/sakura-cap https://github.com/yueseqaz/Sakura-Cap&#10;brew trust yueseqaz/sakura-cap&#10;brew install --cask sakura-cap" aria-label="复制 Homebrew 安装命令">复制</button></div><p>macOS 13 或更新版本；截图及窗口录制需要 macOS 14+，部分图片格式取决于系统编码能力。预编译安装包适用于 Apple Silicon。应用尚未经过 Apple 公证；首次打开若被拦截，请在「系统设置 → 隐私与安全性」中允许。屏幕录制等权限按需授予。</p></div></div></section>
   </main>
   <footer><div class="container footer-inner"><a class="brand" href="#top"><img src="assets/app-icon.png" alt="" width="25" height="25"><span>Sakura-Cap</span></a><p>好好捕捉，好好表达。<br><small>© 2026 Sakura-Cap</small></p><div class="footer-links"><a href="https://github.com/yueseqaz/Sakura-Cap/releases" target="_blank" rel="noopener noreferrer">版本发布 ↗</a><a href="https://github.com/yueseqaz/Sakura-Cap" target="_blank" rel="noopener noreferrer">GitHub ↗</a><a href="https://github.com/yueseqaz/Sakura-Cap/blob/main/docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">开发文档 ↗</a></div></div></footer>
 </body>

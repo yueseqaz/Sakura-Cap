@@ -1,5 +1,13 @@
 document.documentElement.classList.add('js');
 
+const english = document.documentElement.lang.startsWith('en');
+document.querySelector('[data-language-link]')?.addEventListener('click', event => {
+  const link = event.currentTarget;
+  const destination = new URL(link.href);
+  destination.hash = location.hash;
+  link.href = destination.href;
+});
+
 const tabs = [...document.querySelectorAll('.experience-tab')];
 const panels = [...document.querySelectorAll('.experience-panel')];
 
@@ -58,17 +66,11 @@ copyButton?.addEventListener('click', async () => {
       if (!document.execCommand('copy')) throw new Error('Copy failed');
       field.remove();
     }
-    copyButton.textContent = '已复制';
+    copyButton.textContent = english ? 'Copied' : '已复制';
   } catch {
-    copyButton.textContent = '复制失败';
+    copyButton.textContent = english ? 'Copy failed' : '复制失败';
   }
   setTimeout(() => { copyButton.textContent = original; }, 1800);
-});
-
-const compare = document.querySelector('.comparison');
-const compareRange = document.querySelector('#compare-range');
-compareRange?.addEventListener('input', () => {
-  compare.style.setProperty('--split', `${compareRange.value}%`);
 });
 
 const nav = document.querySelector('.nav');
