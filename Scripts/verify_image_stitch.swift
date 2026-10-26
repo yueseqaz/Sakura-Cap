@@ -181,6 +181,15 @@ enum StitchChecks {
         preconditionFailure("Async operation timed out")
     }
 
+    private static func fittingContentSize(_ requested: NSSize, window: NSWindow) -> NSSize {
+        guard let screen = window.screen ?? NSScreen.main else { return requested }
+        // AppKit limits live windows to the runner's display; CI may have a smaller
+        // virtual screen than a developer machine. Still check the real minimum size.
+        let available = window.contentRect(forFrameRect: screen.visibleFrame).size
+        return NSSize(width: min(requested.width, max(window.contentMinSize.width, available.width)),
+                      height: min(requested.height, max(window.contentMinSize.height, available.height)))
+    }
+
     private static func verifyWindow(_ folder: URL) async throws {
         let tool = ImageStitchToolController.shared
         tool.show()
@@ -189,10 +198,12 @@ enum StitchChecks {
         check(window.isVisible, "Tool opens its own native window")
         check(!canvas.document.canExport, "Empty canvas starts clean")
         for size in [NSSize(width: 860, height: 548), NSSize(width: 860, height: 580), NSSize(width: 1060, height: 720), NSSize(width: 1280, height: 800)] {
-            window.setContentSize(size)
+            let expected = fittingContentSize(size, window: window)
+            window.setContentSize(expected)
             try await Task.sleep(nanoseconds: 30_000_000)
             window.contentView!.layoutSubtreeIfNeeded()
-            check(abs(window.contentView!.frame.height - size.height) < 1, "Sidebar must not force the window to its preferred height")
+            check(abs(window.contentView!.frame.height - expected.height) < 1,
+                  "Sidebar must not force the window to its preferred height: requested \(size), screen-fitted \(expected), actual \(window.contentView!.frame), screen \(String(describing: window.screen?.visibleFrame))")
             check(canvas.frame.width >= 600 && canvas.frame.height >= 430,
                   "Canvas remains usable at every window size: requested \(size), actual \(canvas.frame), content \(window.contentView!.bounds)")
             for control in descendants(window.contentView!).compactMap({ $0 as? NSControl }) where !control.isHiddenOrHasHiddenAncestor {
@@ -271,13 +282,14 @@ enum StitchChecks {
         canvas.fit()
         // Exercise actual AppKit drawing at several window sizes, including selected handles.
         for size in [NSSize(width: 860, height: 580), NSSize(width: 1060, height: 720)] {
-            window.setContentSize(size)
+            let expected = fittingContentSize(size, window: window)
+            window.setContentSize(expected)
             window.contentView!.layoutSubtreeIfNeeded()
             canvas.fit()
             let view = window.contentView!
             let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
             view.cacheDisplay(in: view.bounds, to: bitmap)
-            check(bitmap.pixelsWide >= Int(size.width), "Canvas draws successfully with native controls")
+            check(bitmap.pixelsWide >= Int(expected.width), "Canvas draws successfully with native controls")
             if let path = ProcessInfo.processInfo.environment["SAKURA_STITCH_PREVIEW_DIR"] {
                 let directory = URL(fileURLWithPath: path)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
