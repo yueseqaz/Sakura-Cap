@@ -135,6 +135,7 @@ final class StatusItemController: NSObject {
         toolsMenu.addItem(makeItem(L("裁剪视频…"), #selector(menuTrim)))
         toolsMenu.addItem(makeItem(L("编辑音频…"), #selector(menuEditAudio)))
         toolsMenu.addItem(makeItem(L("对比…"), #selector(menuImageCompare)))
+        toolsMenu.addItem(makeItem(L("图片拼接…"), #selector(menuImageStitch)))
         toolsMenu.addItem(makeItem(L("全局取色器"), #selector(menuColorSampler)))
         toolsMenu.addItem(makeItem(L("音频提取…"), #selector(menuAudioExtract)))
         toolsMenu.addItem(makeItem(L("图片格式转换…"), #selector(menuImageConvert)))
@@ -174,6 +175,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func menuImageCompare() { ImageCompareToolController.shared.show() }
+    @objc private func menuImageStitch() { ImageStitchToolController.shared.show() }
     @objc private func menuColorSampler() { ColorPickerSession.shared.start() }
     @objc private func menuAudioExtract() { AudioExtractTool.pickAndExtract() }
     @objc private func menuImageConvert() { ImageConvertToolController.shared.show() }
