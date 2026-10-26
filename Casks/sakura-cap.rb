@@ -1,8 +1,8 @@
 cask "sakura-cap" do
-  version "2.6.0"
-  sha256 "85cb62a9947be127afac0e778284e56f3f5dc9c2054cd22ce44d99be21b8da09"
+  version "2.7.0"
+  sha256 "6b5441749282b1478c54919402b2b47f11a8cb4fead3f4becfc2ad52177c431b"
 
-  url "https://github.com/yueseqaz/Sakura-Cap/releases/download/v#{version}/Sakura-Cap-#{version}.zip"
+  url "https://github.com/yueseqaz/Sakura-Cap/releases/download/v#{version}/Sakura-Cap-#{version}.dmg"
   name "Sakura-Cap"
   desc "菜单栏极简录屏 / 截图 / 标注工具"
   homepage "https://github.com/yueseqaz/Sakura-Cap"
