@@ -17,6 +17,7 @@ enum InlineScreenshotChecks {
             verifySetting()
             verifyGeometry()
             verifySelectionAndAnnotations()
+            verifyCropScaling()
             await verifySession()
             let result = "In-place screenshot regressions passed: \(checks) assertions"
             if let completion = ProcessInfo.processInfo.environment["SAKURA_UI_TEST_COMPLETION"] {
@@ -169,6 +170,29 @@ enum InlineScreenshotChecks {
         check(AnnotationCanvas(frame: .zero).allowsImageNavigation, "Independent editors retain their zoom behavior")
     }
 
+    private static func verifyCropScaling() {
+        for size in [CGSize(width: 400, height: 300), CGSize(width: 601, height: 427), CGSize(width: 763, height: 501)] {
+            let canvas = AnnotationCanvas(frame: CGRect(origin: .zero, size: size))
+            canvas.baseImage = image()
+            let window = NSWindow(contentRect: canvas.bounds, styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = canvas
+            canvas.tool = .crop
+            let start = canvas.viewPoint(CGPoint(x: 100.25, y: 100.25))
+            let end = canvas.viewPoint(CGPoint(x: 499.75, y: 399.75))
+            canvas.mouseDown(with: event(.leftMouseDown, start, in: canvas))
+            canvas.mouseDragged(with: event(.leftMouseDragged, end, in: canvas))
+            canvas.mouseUp(with: event(.leftMouseUp, end, in: canvas))
+            check(canvas.baseImage?.width == 400 && canvas.baseImage?.height == 300,
+                  "Outward crop rounding is stable at fit size \(size)")
+            canvas.undo()
+            check(canvas.baseImage?.width == 800, "Undo crop at fit size \(size)")
+            canvas.redo()
+            check(canvas.renderedImage()?.height == 300, "Export redo crop at fit size \(size)")
+            window.close()
+        }
+    }
+
     private static func descendants(_ view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants($0) }
     }
@@ -195,8 +219,10 @@ enum InlineScreenshotChecks {
         ocr.sendAction(ocr.action!, to: ocr.target)
         check(canvas.recognitionAction == nil, "Independent editor can cancel OCR selection")
         canvas.tool = .crop
-        let start = canvas.viewPoint(CGPoint(x: 100, y: 100))
-        let end = canvas.viewPoint(CGPoint(x: 500, y: 400))
+        // Keep endpoints away from integer boundaries: outward pixel rounding must
+        // not depend on floating-point round trips through the runner's fit scale.
+        let start = canvas.viewPoint(CGPoint(x: 100.25, y: 100.25))
+        let end = canvas.viewPoint(CGPoint(x: 499.75, y: 399.75))
         canvas.mouseDown(with: event(.leftMouseDown, start, in: canvas))
         canvas.mouseDragged(with: event(.leftMouseDragged, end, in: canvas))
         canvas.mouseUp(with: event(.leftMouseUp, end, in: canvas))
