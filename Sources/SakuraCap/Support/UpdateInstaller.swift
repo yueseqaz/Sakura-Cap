@@ -62,7 +62,7 @@ enum UpdateInstaller {
     private static func prepare(assetURL: URL, version: String, digest: String?) async throws -> URL {
         guard assetURL.scheme == "https", version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#,
                                                        options: .regularExpression) != nil,
-              ["dmg", "zip"].contains(assetURL.pathExtension.lowercased()) else {
+              assetURL.pathExtension.lowercased() == "dmg" else {
             throw UpdateError.invalidPackage
         }
         // 应用为 ad-hoc 签名，codesign 只能证明包完整、无法 pin 开发者身份，
@@ -87,7 +87,7 @@ enum UpdateInstaller {
         guard (response as? HTTPURLResponse)?.statusCode == 200, size > 0, size < 500_000_000 else {
             throw UpdateError.invalidPackage
         }
-        let archive = work.appendingPathComponent("update.\(assetURL.pathExtension.lowercased())")
+        let archive = work.appendingPathComponent("update.dmg")
         try FileManager.default.moveItem(at: download, to: archive)
         try await Task.detached(priority: .utility) {
             guard SHA256.hash(data: try Data(contentsOf: archive, options: .mappedIfSafe))

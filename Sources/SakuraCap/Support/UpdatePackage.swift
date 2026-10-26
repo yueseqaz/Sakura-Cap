@@ -3,12 +3,9 @@ import Foundation
 /// Shared package selection and extraction, independent of the update UI.
 enum UpdatePackage {
     static func preferredAsset(in assets: [[String: Any]], version: String) -> [String: Any]? {
-        for ext in ["dmg", "zip"] {
-            if let asset = assets.first(where: { $0["name"] as? String == "Sakura-Cap-\(version).\(ext)" }) {
-                return asset
-            }
+        assets.first {
+            $0["name"] as? String == "Sakura-Cap-\(version).dmg"
         }
-        return nil
     }
 
     static func caskRelease(_ text: String) -> (version: String, url: URL, digest: String)? {
@@ -28,15 +25,17 @@ enum UpdatePackage {
               hash.range(of: #"^[0-9a-fA-F]{64}$"#, options: .regularExpression) != nil,
               let template = quoted("url"),
               let url = URL(string: template.replacingOccurrences(of: "#{version}", with: version)),
-              ["dmg", "zip"].contains(url.pathExtension.lowercased()),
-              url.absoluteString == "https://github.com/yueseqaz/Sakura-Cap/releases/download/v\(version)/Sakura-Cap-\(version).\(url.pathExtension)" else {
+              url.absoluteString == "https://github.com/yueseqaz/Sakura-Cap/releases/download/v\(version)/Sakura-Cap-\(version).dmg" else {
             return nil
         }
-        // Read the URL as well as the hash: a DMG hash must never validate a ZIP.
+        // Keep the download URL paired with the checksum from the same Cask.
         return (version, url, "sha256:\(hash)")
     }
 
     static func stage(archive: URL, work: URL, destination: URL, version: String) throws {
+        guard archive.pathExtension.lowercased() == "dmg" else {
+            throw PackageError.invalidPackage
+        }
         let extracted = work.appendingPathComponent("extracted", isDirectory: true)
         try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
         var mounted = false
@@ -47,16 +46,9 @@ enum UpdatePackage {
                 }
             }
         }
-        switch archive.pathExtension.lowercased() {
-        case "dmg":
-            try run("/usr/bin/hdiutil", ["attach", archive.path, "-readonly", "-nobrowse", "-noautoopen",
-                                       "-mountpoint", extracted.path, "-quiet"])
-            mounted = true
-        case "zip":
-            try run("/usr/bin/ditto", ["-x", "-k", archive.path, extracted.path])
-        default:
-            throw PackageError.invalidPackage
-        }
+        try run("/usr/bin/hdiutil", ["attach", archive.path, "-readonly", "-nobrowse", "-noautoopen",
+                                   "-mountpoint", extracted.path, "-quiet"])
+        mounted = true
         let unpacked = extracted.appendingPathComponent("Sakura-Cap.app")
         guard (try unpacked.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true,
               let bundle = Bundle(url: unpacked),

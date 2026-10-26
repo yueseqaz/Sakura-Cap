@@ -22,9 +22,7 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           SIGN_IDENTITY=- VERSION="$VERSION" ./build.sh
           ./Scripts/package_dmg.sh
-          # Legacy builds only understand ZIP; keep one during the DMG migration.
-          ditto -c -k --keepParent build/Sakura-Cap.app "Sakura-Cap-$VERSION.zip"
-          ls -la "build/Sakura-Cap-$VERSION.dmg" "Sakura-Cap-$VERSION.zip"
+          ls -la "build/Sakura-Cap-$VERSION.dmg" "build/Sakura-Cap-$VERSION.dmg.sha256"
 
       - name: Verify DMG and updater compatibility
         run: ./Scripts/verify_dmg.sh "build/Sakura-Cap-$VERSION.dmg"
@@ -35,7 +33,6 @@ jobs:
           files: |
             build/Sakura-Cap-${{ env.VERSION }}.dmg
             build/Sakura-Cap-${{ env.VERSION }}.dmg.sha256
-            Sakura-Cap-${{ env.VERSION }}.zip
           body_path: ReleaseNotes/${{ env.VERSION }}.md
 
       - name: Update Homebrew Cask
@@ -45,7 +42,6 @@ jobs:
           git checkout main
           sed -i '' -E "s/version \"[^\"]+\"/version \"${VERSION}\"/" Casks/sakura-cap.rb
           sed -i '' -E "s/sha256 \"[^\"]+\"/sha256 \"${SHA}\"/" Casks/sakura-cap.rb
-          sed -i '' 's/\.zip"/.dmg"/' Casks/sakura-cap.rb
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/sakura-cap.rb

@@ -27,47 +27,59 @@ enum UpdatePackageChecks {
 
         let assets = ["zip", "dmg"].map { ["name": "Sakura-Cap-\(version).\($0)"] }
         check(UpdatePackage.preferredAsset(in: assets, version: version)?["name"] as? String
-              == "Sakura-Cap-\(version).dmg", "Prefer DMG regardless of API order")
-        check(UpdatePackage.preferredAsset(in: [assets[0]], version: version)?["name"] as? String
-              == "Sakura-Cap-\(version).zip", "Support old ZIP-only releases")
+              == "Sakura-Cap-\(version).dmg", "Select only DMG regardless of API order")
+        check(UpdatePackage.preferredAsset(in: [assets[0]], version: version) == nil,
+              "Reject ZIP-only releases")
+        check(UpdatePackage.preferredAsset(in: [assets[1]], version: version) != nil,
+              "Support DMG-only releases")
         check(UpdatePackage.preferredAsset(in: assets, version: "999.0.0") == nil,
               "Do not choose assets for another version")
 
         let hash = String(repeating: "a", count: 64)
-        for ext in ["zip", "dmg"] {
-            let cask = """
-            cask "sakura-cap" do
-              version "\(version)"
-              sha256 "\(hash)"
-              url "https://github.com/yueseqaz/Sakura-Cap/releases/download/v#{version}/Sakura-Cap-#{version}.\(ext)"
-            end
-            """
-            let parsed = UpdatePackage.caskRelease(cask)
-            check(parsed?.url.pathExtension == ext, "Cask digest must match the actual package format")
-            check(parsed?.digest == "sha256:\(hash)" && parsed?.version == version,
-                  "Parse the Cask version and hash")
-            check(UpdatePackage.caskRelease(cask.replacingOccurrences(of: hash, with: "invalid")) == nil,
-                  "Reject invalid checksums")
-            check(UpdatePackage.caskRelease(cask.replacingOccurrences(of: "github.com", with: "example.com")) == nil,
-                  "Reject unexpected package hosts")
-        }
+        let cask = """
+        cask "sakura-cap" do
+          version "\(version)"
+          sha256 "\(hash)"
+          url "https://github.com/yueseqaz/Sakura-Cap/releases/download/v#{version}/Sakura-Cap-#{version}.dmg"
+        end
+        """
+        let parsed = UpdatePackage.caskRelease(cask)
+        check(parsed?.url.pathExtension == "dmg", "Parse the DMG download URL")
+        check(parsed?.digest == "sha256:\(hash)" && parsed?.version == version,
+              "Parse the Cask version and hash")
+        check(UpdatePackage.caskRelease(cask.replacingOccurrences(of: hash, with: "invalid")) == nil,
+              "Reject invalid checksums")
+        check(UpdatePackage.caskRelease(cask.replacingOccurrences(of: "github.com", with: "example.com")) == nil,
+              "Reject unexpected package hosts")
+        check(UpdatePackage.caskRelease(cask.replacingOccurrences(of: ".dmg", with: ".zip")) == nil,
+              "Reject ZIP Casks even with a valid checksum")
         let currentCask = try String(contentsOfFile: "Casks/sakura-cap.rb", encoding: .utf8)
         check(UpdatePackage.caskRelease(currentCask) != nil, "Keep published Cask fallback working")
 
-        let zip = work.appendingPathComponent("legacy.zip")
-        try run("/usr/bin/ditto", ["-c", "-k", "--keepParent", app.path, zip.path])
-        for (index, package) in [archive, zip].enumerated() {
-            let extraction = work.appendingPathComponent("work-\(index)")
-            let destination = work.appendingPathComponent("staged-\(index).app")
-            try UpdatePackage.stage(archive: package, work: extraction, destination: destination, version: version)
-            check(Bundle(url: destination)?.bundleIdentifier == "com.sakura.sakuracap",
-                  "Stage the correct application from \(package.pathExtension)")
-            try run("/usr/bin/codesign", ["--verify", "--strict", "--deep", destination.path])
-            checks += 1
-            let nested = (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? []
-            check(nested == ["Contents"], "Do not copy DMG guide, background, or Applications shortcut into the app")
-            check((try? FileManager.default.contentsOfDirectory(atPath: extraction.appendingPathComponent("extracted").path))?
-                .isEmpty == (package.pathExtension == "dmg"), "DMG must be unmounted after staging")
+        let extraction = work.appendingPathComponent("work")
+        let destination = work.appendingPathComponent("staged.app")
+        try UpdatePackage.stage(archive: archive, work: extraction, destination: destination, version: version)
+        check(Bundle(url: destination)?.bundleIdentifier == "com.sakura.sakuracap",
+              "Stage the correct application from DMG")
+        try run("/usr/bin/codesign", ["--verify", "--strict", "--deep", destination.path])
+        checks += 1
+        let nested = (try? FileManager.default.contentsOfDirectory(atPath: destination.path)) ?? []
+        check(nested == ["Contents"], "Do not copy DMG guide, background, or Applications shortcut into the app")
+        let contents = try FileManager.default.contentsOfDirectory(atPath:
+            extraction.appendingPathComponent("extracted").path)
+        check(contents.isEmpty, "DMG must be unmounted after staging")
+
+        let unsupported = work.appendingPathComponent("unsupported")
+        let zipDestination = work.appendingPathComponent("zip.app")
+        do {
+            try UpdatePackage.stage(archive: work.appendingPathComponent("update.zip"), work: unsupported,
+                                    destination: zipDestination, version: version)
+            preconditionFailure("ZIP staging must fail")
+        } catch {
+            check(!FileManager.default.fileExists(atPath: unsupported.path),
+                  "Reject ZIP before creating an extraction directory")
+            check(!FileManager.default.fileExists(atPath: zipDestination.path),
+                  "Rejected ZIP must not stage an app")
         }
         let rejected = work.appendingPathComponent("rejected.app")
         do {
