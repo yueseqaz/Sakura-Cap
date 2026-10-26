@@ -4,6 +4,13 @@ import SwiftUI
 import ServiceManagement
 import Carbon.HIToolbox
 
+enum ScreenshotAnnotationMode: String, CaseIterable, Identifiable {
+    case window, inline
+
+    var id: String { rawValue }
+    var label: String { self == .window ? L("独立窗口") : L("原地标注") }
+}
+
 /// 全部设置项，UserDefaults 持久化。更改即时生效并写盘。
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -34,6 +41,7 @@ final class AppSettings: ObservableObject {
         static let dndOn = "dndOnShortcut"
         static let dndOff = "dndOffShortcut"
         static let autoTrim = "autoTrimAfterRecording"
+        static let screenshotAnnotationMode = "screenshotAnnotationMode"
         static let countdown = "countdownEnabled"
         static let codec = "videoCodec"
         static let quality = "videoQuality"
@@ -81,6 +89,9 @@ final class AppSettings: ObservableObject {
 
     private let d = UserDefaults.standard
 
+    @Published var screenshotAnnotationMode: ScreenshotAnnotationMode = .window {
+        didSet { d.set(screenshotAnnotationMode.rawValue, forKey: Keys.screenshotAnnotationMode) }
+    }
     @Published var outputDirectory: URL? { didSet { d.set(outputDirectory?.path, forKey: Keys.outputDir) } }
     @Published var captureMode: CaptureMode = .display { didSet { d.set(captureMode.rawValue, forKey: Keys.mode) } }
     @Published var selectedDisplayID: UInt32 = 0 { didSet { d.set(Int(selectedDisplayID), forKey: Keys.displayID) } }
@@ -187,6 +198,8 @@ final class AppSettings: ObservableObject {
     }
 
     private init() {
+        if let raw = d.string(forKey: Keys.screenshotAnnotationMode),
+           let mode = ScreenshotAnnotationMode(rawValue: raw) { screenshotAnnotationMode = mode }
         outputDirectory = d.string(forKey: Keys.outputDir).map { URL(fileURLWithPath: $0) }
         if let raw = d.string(forKey: Keys.mode), let mode = CaptureMode(rawValue: raw) { captureMode = mode }
         selectedDisplayID = UInt32(d.integer(forKey: Keys.displayID))

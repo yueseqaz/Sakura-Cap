@@ -21,6 +21,10 @@ enum AnnotationTool: Int, CaseIterable {
         }
     }
 
+    var label: String {
+        L(["选择标注", "画笔", "箭头", "矩形", "文字", "序号", "马赛克", "裁剪", "放大镜"][rawValue])
+    }
+
     /// 直播覆盖层可用（裁剪只用于图片编辑）
     var availableLive: Bool { self != .crop && self != .magnifier }
 }
@@ -56,6 +60,7 @@ struct Annotation {
 final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     var tool: AnnotationTool = .select {
         didSet {
+            commitActiveField()
             // 切换到绘制工具时清掉选中，避免下一个图形先被当成“编辑旧标注”
             if tool != .select { selectedIndex = nil }
             cancelTransient()
@@ -68,6 +73,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     var lineWidth: CGFloat = 4
     var measurementScale: CGFloat = 1
     var allowCrop = true
+    var allowsImageNavigation = true
+    // In-place captures keep the frozen desktop and its coordinates intact when cropping.
+    var usesExportCrop = false
+    var exportRegion: CGRect?
 
     /// 底图（图片编辑时提供；直播覆盖层为 nil）
     var baseImage: CGImage? {
@@ -88,7 +97,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     private(set) var annotations: [Annotation] = []
     private var current: Annotation?
-    private struct Snapshot { let baseImage: CGImage?; let annotations: [Annotation] }
+    private struct Snapshot {
+        let baseImage: CGImage?
+        let annotations: [Annotation]
+        let exportRegion: CGRect?
+        let restoresExportRegion: Bool
+    }
     private var undoStack: [Snapshot] = []
     private var redoStack: [Snapshot] = []
     private var activeField: NSTextField?
@@ -129,6 +143,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
+    var selectedAnnotation: Annotation? {
+        guard let selectedIndex else { return nil }
+        return annotations[safe: selectedIndex]
+    }
 
     /// 当前应显示的马赛克程度：选中的马赛克优先，否则用工具默认值
     var currentMosaicStrength: CGFloat {
@@ -279,6 +297,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     func zoomIn() { zoomBy(1.25) }
     func zoomOut() { zoomBy(0.8) }
     func resetZoom() {
+        finishTextEditing()
         zoom = 1
         panOffset = .zero
         needsDisplay = true
@@ -291,6 +310,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     /// 以某个视图点为锚点缩放（保持该点下的图像不动）
     func zoom(at viewPoint: CGPoint, factor: CGFloat) {
+        finishTextEditing()
         // Keep zoom centered on the image rather than following the cursor.
         // This makes toolbar, trackpad and wheel zoom behave consistently.
         zoom = min(20, max(0.2, zoom * factor))
@@ -300,11 +320,14 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     override func scrollWheel(with event: NSEvent) {
+        guard allowsImageNavigation else { return }
         if event.modifierFlags.contains(.command) {
+            finishTextEditing()
             // ⌘ + 滚轮：平移画面
             panOffset.x += event.scrollingDeltaX
             panOffset.y += event.scrollingDeltaY
             needsDisplay = true
+            onChange?()
         } else {
             // 单独滚轮：缩放
             let factor = min(1.18, max(0.85, pow(1.02, event.scrollingDeltaY)))
@@ -313,10 +336,11 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     override func magnify(with event: NSEvent) {
+        guard allowsImageNavigation else { return }
         zoom(at: CGPoint(x: bounds.midX, y: bounds.midY), factor: 1 + event.magnification)
     }
 
-    private func imagePoint(_ viewPoint: CGPoint) -> CGPoint {
+    func imagePoint(_ viewPoint: CGPoint) -> CGPoint {
         let scale = displayScale
         let origin = displayOrigin
         return CGPoint(x: (viewPoint.x - origin.x) / scale, y: (viewPoint.y - origin.y) / scale)
@@ -327,7 +351,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         return point.x >= 0 && point.y >= 0 && point.x <= size.width && point.y <= size.height
     }
 
-    private func viewPoint(_ imagePoint: CGPoint) -> CGPoint {
+    func viewPoint(_ imagePoint: CGPoint) -> CGPoint {
         let scale = displayScale
         let origin = displayOrigin
         return CGPoint(x: imagePoint.x * scale + origin.x, y: imagePoint.y * scale + origin.y)
@@ -950,6 +974,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             let viewPoint = convert(event.locationInWindow, from: nil)
             panOffset = CGPoint(x: panStartOffset.x + viewPoint.x - panStartView.x,
                                 y: panStartOffset.y + viewPoint.y - panStartView.y)
+            onChange?()
             needsDisplay = true
             return
         }
@@ -1080,16 +1105,20 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     // MARK: 撤销 / 重做
 
-    private var snapshot: Snapshot { Snapshot(baseImage: baseImage, annotations: annotations) }
+    private func snapshot(restoringExportRegion: Bool = false) -> Snapshot {
+        Snapshot(baseImage: baseImage, annotations: annotations, exportRegion: exportRegion,
+                 restoresExportRegion: restoringExportRegion)
+    }
 
-    private func pushUndo() {
-        undoStack.append(snapshot)
+    private func pushUndo(restoringExportRegion: Bool = false) {
+        undoStack.append(snapshot(restoringExportRegion: restoringExportRegion))
         redoStack.removeAll()
     }
 
     private func restore(_ state: Snapshot) {
         baseImage = state.baseImage
         annotations = state.annotations
+        if state.restoresExportRegion { exportRegion = state.exportRegion }
         selectedIndex = nil
         needsDisplay = true
         onChange?()
@@ -1098,6 +1127,16 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     /// 裁剪：立即把底图换成裁剪区域；标注随之平移，完全落在外面的丢掉，剩下的夹到边界内
     private func applyCrop(_ rect: CGRect) {
         guard let baseImage else { return }
+        if usesExportCrop {
+            let bounds = exportRegion ?? CGRect(origin: .zero, size: imageSize)
+            let clipped = rect.integral.intersection(bounds)
+            guard !clipped.isNull, clipped.width >= 4, clipped.height >= 4 else { return }
+            pushUndo(restoringExportRegion: true)
+            exportRegion = clipped
+            selectedIndex = nil
+            onChange?()
+            return
+        }
         let integral = rect.integral
         let region = CGRect(origin: .zero, size: CGSize(width: integral.width, height: integral.height))
         guard integral.width >= 4, integral.height >= 4,
@@ -1119,13 +1158,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     func undo() {
         guard let last = undoStack.popLast() else { return }
-        redoStack.append(snapshot)
+        redoStack.append(snapshot(restoringExportRegion: last.restoresExportRegion))
         restore(last)
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
-        undoStack.append(snapshot)
+        undoStack.append(snapshot(restoringExportRegion: next.restoresExportRegion))
         restore(next)
     }
 
@@ -1177,15 +1216,17 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
+    func finishTextEditing() { commitActiveField() }
+
     // MARK: 导出（把标注烘焙进底图，供图片编辑器保存/复制）
 
     /// 新建一个 1:1 的同内容画布渲染成图，再按裁剪框裁切。
     func renderedImage() -> CGImage? {
+        finishTextEditing()
         guard let baseImage else { return nil }
         let copy = AnnotationCanvas(frame: NSRect(origin: .zero, size: imageSize))
         copy.baseImage = baseImage
         copy.annotations = annotations
-        copy.cropRect = cropRect
         // Create an explicitly sized bitmap. NSView's convenience bitmap rep
         // can use the Retina backing scale, which makes a small crop export at
         // a larger pixel size than the source screenshot.
@@ -1202,7 +1243,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                                          bitsPerPixel: 32) else { return nil }
         copy.cacheDisplay(in: copy.bounds, to: rep)
         guard let cg = rep.cgImage else { return nil }
-        if let cropRect {
+        if let cropRect = usesExportCrop ? exportRegion : cropRect {
             // CGImage.cropping 为左上原点，与图片坐标一致，不要翻转
             return cg.cropping(to: cropRect.integral) ?? cg
         }

@@ -23,6 +23,8 @@ Sakura-Cap focuses on doing one thing well: capturing your screen. No Dock icon,
 
 **Screenshots**
 - Full-screen / region capture
+- **Choose your annotation workflow** in Settings → General → Screenshot Annotation: keep the separate editor (default), or annotate in place on a frozen screen with a movable, resizable selection, then copy or save
+- In-place mode shares the complete editor tools, with a bottom dock, right-side actions, contextual properties, zoom, undoable crop, and Tab to hide controls
 - **OCR**: select an area, recognition runs offline via system Vision, text goes straight to your clipboard
 - **QR code recognition**: select to decode and copy the content
 - **Upload to image host**: one click in the annotation editor uploads the whole image (with annotations) — supports **S3-compatible object storage** (Cloudflare R2 / MinIO / any cloud), **GitHub repositories**, and **custom APIs** (multipart; link parsed via JSON path or regex). On success the link is copied to the clipboard in your chosen format (plain URL / Markdown / HTML)
@@ -30,7 +32,7 @@ Sakura-Cap focuses on doing one thing well: capturing your screen. No Dock icon,
   - Auto-scroll runs hands-free; manual scroll stitches in real time as you scroll — switch between them at any time
   - The matching algorithm is robust to sub-pixel scroll offsets on Retina displays, pinned headers / floating elements, and lazy-loaded content
   - The control bar and preview window are placed away from the selected region and never leak into the capture
-- Screenshots are **never saved directly** — they open in the annotation editor, where you save, copy to clipboard, or discard
+- Screenshots are **never saved directly** — save, copy to clipboard, or cancel in the separate editor or in-place annotation mode
 
 **Translation & AI** (one shared service configuration)
 - **Text translation** window + **screen translation** (select → OCR → AI translation), with configurable translation style

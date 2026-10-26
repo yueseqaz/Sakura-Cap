@@ -31,3 +31,6 @@ jobs:
 
       - name: Chat scrolling, appearance and fullscreen regressions
         run: bash Scripts/verify_chat_appearance.sh
+
+      - name: In-place screenshot regressions
+        run: bash Scripts/verify_inline_screenshot.sh

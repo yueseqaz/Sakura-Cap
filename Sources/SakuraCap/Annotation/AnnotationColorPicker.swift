@@ -4,6 +4,8 @@ import AppKit
 final class AnnotationColorPicker: NSButton {
     var selectedColor: NSColor = .systemRed { didSet { updateAppearance() } }
     var onSelect: ((NSColor) -> Void)?
+    var willPresentDialog: (() -> Void)?
+    var didDismissDialog: (() -> Void)?
 
     private static let swatches: [(String, NSColor)] = [
         ("红色", .systemRed), ("橙色", .systemOrange), ("黄色", .systemYellow),
@@ -79,7 +81,10 @@ final class AnnotationColorPicker: NSButton {
                                        Int((color.greenComponent * 255).rounded()), Int((color.blueComponent * 255).rounded()))
         }
         alert.accessoryView = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        willPresentDialog?()
+        let response = alert.runModal()
+        didDismissDialog?()
+        guard response == .alertFirstButtonReturn else { return }
         let hex = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
         guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return }
         select(NSColor(srgbRed: CGFloat((value >> 16) & 0xff) / 255,

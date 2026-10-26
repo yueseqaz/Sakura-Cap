@@ -264,6 +264,10 @@ final class StatusItemController: NSObject {
             }
             // 刷新显示器列表（同时验证权限有效），再进入对应的选择层
             _ = try? await DisplayCatalog.shared.refresh()
+            if purpose == .screenshot, AppSettings.shared.screenshotAnnotationMode == .inline {
+                await InlineScreenshotController.shared.begin(intent)
+                return
+            }
             SelectionController.shared.begin(intent, purpose: purpose,
                                              autoSelectHoveredDisplay: intent == .displayOnly)
         }

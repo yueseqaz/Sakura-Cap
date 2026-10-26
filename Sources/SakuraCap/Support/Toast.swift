@@ -10,8 +10,8 @@ final class Toast {
     private static let maxWidth: CGFloat = 340
 
     /// 仅提示
-    static func show(title: String, detail: String?) {
-        present(title: title, detail: detail, actionTitle: nil, action: nil)
+    static func show(title: String, detail: String?, level: NSWindow.Level? = nil) {
+        present(title: title, detail: detail, actionTitle: nil, action: nil, level: level)
     }
 
     /// 带操作按钮（如「打开」）
@@ -19,7 +19,7 @@ final class Toast {
         present(title: title, detail: detail, actionTitle: actionTitle, action: action)
     }
 
-    private static func present(title: String, detail: String?, actionTitle: String?, action: (() -> Void)?) {
+    private static func present(title: String, detail: String?, actionTitle: String?, action: (() -> Void)?, level: NSWindow.Level? = nil) {
         dismiss()
 
         let container = NSView()
@@ -81,7 +81,7 @@ final class Toast {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
-        window.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 5)
+        window.level = level ?? NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 5)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         window.ignoresMouseEvents = !hasAction
         window.sharingType = .readOnly

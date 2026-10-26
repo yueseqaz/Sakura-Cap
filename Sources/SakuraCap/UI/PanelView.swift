@@ -642,6 +642,16 @@ struct PanelView: View {
                 Toggle("登录时启动", isOn: $settings.launchAtLogin)
                 Toggle("录制结束后打开裁剪窗口", isOn: $settings.autoTrimAfterRecording)
             }
+            group("截图标注") {
+                Picker("截图标注方式", selection: $settings.screenshotAnnotationMode) {
+                    ForEach(ScreenshotAnnotationMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                Text("独立窗口保留现有流程；原地标注会冻结屏幕，可调整选框并直接标注、复制或保存。")
+                    .font(SettingsAppearance.detailFont)
+                    .foregroundStyle(SettingsAppearance.color(SettingsAppearance.secondary))
+            }
             group("录制勿扰") {
                 Toggle("录制时开启勿扰模式", isOn: $settings.dndDuringRecording)
                 if settings.dndDuringRecording {

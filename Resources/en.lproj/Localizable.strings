@@ -757,3 +757,24 @@
 "GIF 为静态图片" = "GIF output is a still image";
 "WebP 的宽高不能超过 16383 像素，请设置长边限制" = "WebP dimensions cannot exceed 16383 pixels; set a long-edge limit";
 "动画及多页图片仅转换首帧；GIF 输出为静态图片" = "Only the first frame/page is converted; GIF output is a still image";
+
+/* In-place screenshot annotation */
+"截图标注" = "Screenshot Annotation";
+"截图标注方式" = "Annotation Mode";
+"独立窗口" = "Separate Window";
+"原地标注" = "In Place";
+"独立窗口保留现有流程；原地标注会冻结屏幕，可调整选框并直接标注、复制或保存。" = "Separate Window keeps the existing workflow. In Place freezes the screen so you can adjust the selection, annotate, copy, or save without opening an editor.";
+"调整选区" = "Adjust Area";
+"选择标注" = "Select Annotation";
+"画笔" = "Pen";
+"箭头" = "Arrow";
+"矩形" = "Rectangle";
+"文字" = "Text";
+"序号" = "Number";
+"复制" = "Copy";
+"马赛克程度" = "Mosaic Strength";
+"拖动选择截图区域 · Esc 取消" = "Drag to select an area · Esc to cancel";
+"标注工具" = "Annotation Tools";
+"缩小" = "Zoom Out";
+"放大" = "Zoom In";
+"放大镜" = "Magnifier";

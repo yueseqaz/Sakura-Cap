@@ -11,12 +11,24 @@
 ./Scripts/verify_dmg.sh build/Sakura-Cap-版本.dmg  # 挂载、布局、签名及自动更新兼容性回归
 ./clean.sh          # 清理 .build 与 build
 swift Scripts/verify_coordinates.swift   # 坐标换算断言（CLT 无 XCTest，用零依赖脚本）
+bash Scripts/verify_inline_screenshot.sh # 截图标注：设置、工具对齐、选框/缩放/裁剪撤销、像素导出及两种界面生命周期回归
 ./verify.sh [录像.mp4]                    # 用 ffprobe 校验输出文件的分辨率/码率/色彩标注
 ```
 
 版本号来源优先级：`VERSION` 环境变量 > `Casks/sakura-cap.rb` 的 `version` > 兜底 `2.0.0`——本地构建自动跟随已发版本，不再停留在 2.0.0。
 
 不使用 Xcode / Interface Builder / xcassets：Info.plist 由 `Config/Info.plist.template` 模板生成，图标由 `Resources/AppIcon.png`（1024×1024）经 `sips` + `iconutil` 生成；把自定义 PNG 放到该路径重新构建即可。
+
+### 截图标注模式
+
+- `AppSettings.screenshotAnnotationMode` 持久化为 `window` / `inline`，未设置时默认 `window`，保留独立标注窗口流程。
+- 菜单和快捷键共用的截图入口仅在原地模式下交给 `InlineScreenshotController`；OCR、翻译、滚动截图、图片文件编辑不变。
+- 原地模式先捕获所有显示器，再显示冻结覆盖层。画布复用 `AnnotationCanvas`，标注保留在整屏图片像素坐标中；调整选框只改变导出范围，不移动标注或重新截图。
+- `调整选区` 用于移动整个选框；边缘及八个控制点始终可拖动。Command-C 复制、Enter / Command-S 保存、Tab 临时隐藏工具、Esc 先取消取色/测量/识别，再退出截图；保存目录对话框取消时返回当前冻结画面，显示器配置变化时结束会话。
+- 原地与独立窗口共用 `AnnotationEditorActions`（取色、测量、OCR/二维码、翻译、AI、上传、复制、保存、定住）。独立窗口的外观和默认入口保持不变。
+- 原地界面使用屏幕底部主工具栏、右侧快捷栏与按工具显示的属性条；工具栏可拖动，选框调整不会带着它移动。窄屏使用两行紧凑排布。
+- 选框持久化为原始图片像素坐标，通过画布变换投影到屏幕，支持缩放/平移。原地裁剪只变更导出区域，并进入画布撤销栈，不破坏冻结底图或移动标注；手动调整选框不进入标注撤销栈。只导出选框内的原始像素与标注，不含遮罩、边框或工具栏。
+- 系统对话框临时隐藏覆盖层并在取消时恢复；AI/翻译结果展示前降低冻结画面层级，保留编辑状态；异步识别在会话关闭或换屏后不再写剪贴板或打开结果。
 
 > 注意：纯 Command Line Tools 工具链下，SwiftUI 的宏（`@State` / `@StateObject`）以及 `AVKit` 的 SwiftUI `VideoPlayer` 都不可用（缺 `SwiftUIMacros` 插件 / `_AVKit_SwiftUI` 元数据会崩）。本项目一律用 AppKit（`NSViewRepresentable`、AppKit 控件、自绘 NSView）与 `@ObservedObject` 承载状态。
 
