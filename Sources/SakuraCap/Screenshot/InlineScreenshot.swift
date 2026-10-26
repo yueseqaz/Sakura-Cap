@@ -616,13 +616,25 @@ final class InlineScreenshotView: NSView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        addCursorRect(bounds, cursor: .crosshair)
+        addVisibleCursorRect(bounds, cursor: .crosshair)
         guard let selection else { return }
-        addCursorRect(selection.insetBy(dx: 7, dy: 7), cursor: adjustingSelection ? .openHand : .arrow)
+        addVisibleCursorRect(selection.insetBy(dx: 7, dy: 7), cursor: adjustingSelection ? .openHand : .arrow)
         for (index, point) in handles.enumerated() {
             let cursor: NSCursor = [1, 5].contains(index) ? .resizeUpDown : ([3, 7].contains(index) ? .resizeLeftRight : .crosshair)
-            addCursorRect(CGRect(x: point.x - 7, y: point.y - 7, width: 14, height: 14).intersection(bounds), cursor: cursor)
+            addVisibleCursorRect(CGRect(x: point.x - 7, y: point.y - 7, width: 14, height: 14), cursor: cursor)
         }
+    }
+
+    private func addVisibleCursorRect(_ rect: CGRect, cursor: NSCursor) {
+        // Insetting a tiny selection or clipping an offscreen handle can produce
+        // CGRect.null (infinite origin), which AppKit rejects with an exception.
+        guard rect.origin.x.isFinite, rect.origin.y.isFinite,
+              rect.width.isFinite, rect.height.isFinite, rect.width > 0, rect.height > 0 else { return }
+        let visible = rect.intersection(bounds)
+        guard visible.origin.x.isFinite, visible.origin.y.isFinite,
+              visible.width.isFinite, visible.height.isFinite,
+              visible.width > 0, visible.height > 0 else { return }
+        addCursorRect(visible, cursor: cursor)
     }
 
     override func mouseDown(with event: NSEvent) {

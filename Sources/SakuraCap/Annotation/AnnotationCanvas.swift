@@ -1206,8 +1206,11 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         let text = field.stringValue
         let textColor = field.textColor ?? color
         let point = pendingTextPoint
-        field.removeFromSuperview()
+        // Removing a focused field can synchronously send an end-editing callback.
+        // Retire it first so that callback cannot commit the same text again.
         activeField = nil
+        field.delegate = nil
+        field.removeFromSuperview()
         if !text.isEmpty {
             commit(Annotation(tool: .text, points: [point], text: text, color: textColor))
             awaitingTextSelectionClick = true

@@ -17,6 +17,7 @@ enum InlineScreenshotChecks {
             verifySetting()
             verifyGeometry()
             verifySelectionAndAnnotations()
+            verifySelectionCursorRects()
             verifyCropScaling()
             await verifySession()
             let result = "In-place screenshot regressions passed: \(checks) assertions"
@@ -170,6 +171,39 @@ enum InlineScreenshotChecks {
         check(AnnotationCanvas(frame: .zero).allowsImageNavigation, "Independent editors retain their zoom behavior")
     }
 
+    private static func verifySelectionCursorRects() {
+        let view = InlineScreenshotView(frame: CGRect(x: 0, y: 0, width: 400, height: 300), image: image())
+        let window = NSWindow(contentRect: view.bounds, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        // Exercise actual AppKit registration, not only selection geometry. A drag
+        // passes through narrow rectangles before it reaches its final size.
+        let selections: [CGRect?] = [nil, .zero,
+            CGRect(x: 20, y: 20, width: 2, height: 2),
+            CGRect(x: 20, y: 20, width: 4, height: 40),
+            CGRect(x: 20, y: 20, width: 40, height: 4),
+            CGRect(x: 20, y: 20, width: 14, height: 14),
+            CGRect(x: 20, y: 20, width: 15, height: 15),
+            CGRect(x: 0, y: 0, width: 40, height: 40),
+            CGRect(x: 360, y: 260, width: 40, height: 40), view.bounds]
+        for adjusting in [true, false] {
+            view.adjustingSelection = adjusting
+            for selection in selections {
+                view.setSelection(selection)
+                view.resetCursorRects()
+                window.resetCursorRects()
+                check(true, "Register safe cursor rectangles for \(String(describing: selection)), adjusting=\(adjusting)")
+            }
+        }
+        view.setSelection(CGRect(x: 20, y: 20, width: 10, height: 10))
+        view.canvas.zoom(at: .zero, factor: 20)
+        check(!view.selection!.intersects(view.bounds), "Zoom can move the selection and all its handles offscreen")
+        view.resetCursorRects()
+        window.resetCursorRects()
+        check(true, "Offscreen selection handles do not register null cursor rectangles")
+    }
+
     private static func verifyCropScaling() {
         for size in [CGSize(width: 400, height: 300), CGSize(width: 601, height: 427), CGSize(width: 763, height: 501)] {
             let canvas = AnnotationCanvas(frame: CGRect(origin: .zero, size: size))
@@ -195,6 +229,124 @@ enum InlineScreenshotChecks {
 
     private static func descendants(_ view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants($0) }
+    }
+
+    private static func verifyAnnotationInteractions(_ view: InlineScreenshotView) async {
+        let controller = InlineScreenshotController.shared
+        let canvas = view.canvas
+        let toolbar = NSApp.windows.first { $0.identifier?.rawValue == "inline.tools" && $0.isVisible }!
+        let properties = NSApp.windows.first { $0.identifier?.rawValue == "inline.properties" }!
+        let controls = descendants(toolbar.contentView!)
+        let picker = controls.compactMap { $0 as? NSSegmentedControl }.first!
+        let propertyControls = descendants(properties.contentView!)
+        let color = propertyControls.compactMap { $0 as? AnnotationColorPicker }.first!
+        let width = propertyControls.compactMap { $0 as? NSSlider }.first { $0.maxValue == 20 }!
+        let styles = propertyControls.compactMap { $0 as? NSSegmentedControl }.first!
+        func tap(_ title: String) {
+            let button = controls.compactMap { $0 as? NSButton }.first { $0.toolTip == L(title) }!
+            button.sendAction(button.action!, to: button.target)
+        }
+        func tool(_ tool: AnnotationTool) {
+            if tool == .magnifier { tap("放大镜：拖出圆形区域，将其中的图片放大 2 倍"); return }
+            picker.selectedSegment = tool.rawValue
+            picker.sendAction(picker.action!, to: picker.target)
+        }
+        func refresh(_ operation: String) async {
+            // Let AppKit process each intermediate state, including deferred
+            // tracking-area updates after toolbar and property callbacks.
+            view.window!.resetCursorRects()
+            view.window!.displayIfNeeded()
+            for panel in [toolbar, properties] { panel.contentView!.layoutSubtreeIfNeeded() }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+            check(controller.isActive, "Annotation session survives \(operation)")
+        }
+        let original = CGRect(x: 60, y: 60, width: 240, height: 180)
+        view.setSelection(original)
+        let pixels = view.pixelSelection!
+        for drawingTool in [AnnotationTool.pen, .arrow, .rectangle, .text, .number, .mosaic, .magnifier] {
+            tap("清空")
+            tool(drawingTool)
+            let start = CGPoint(x: 110, y: 100), end = CGPoint(x: 180, y: 140)
+            canvas.mouseDown(with: event(.leftMouseDown, start, in: canvas))
+            if drawingTool == .text {
+                canvas.subviews.compactMap { $0 as? NSTextField }.first!.stringValue = "In-place text"
+            } else {
+                canvas.mouseDragged(with: event(.leftMouseDragged, end, in: canvas))
+                canvas.mouseUp(with: event(.leftMouseUp, end, in: canvas))
+            }
+            await refresh("drawing \(drawingTool)")
+            tool(.select)
+            await refresh("switching from \(drawingTool) to select")
+            check(canvas.annotations.count == 1 && canvas.selectedAnnotation?.tool == drawingTool,
+                  "Drawing and text commit select exactly one \(drawingTool) annotation; got \(canvas.annotations.count): \(canvas.annotations.map { $0.text })")
+            if drawingTool == .mosaic {
+                for style in MosaicStyle.allCases {
+                    styles.selectedSegment = style.rawValue
+                    styles.sendAction(styles.action!, to: styles.target)
+                    await refresh("changing mosaic style to \(style)")
+                    check(canvas.selectedAnnotation?.mosaicStyle == style, "Mosaic property callback edits the selected annotation")
+                    check(view.renderedSelection()?.width == Int(pixels.width), "Mosaic style \(style) renders at native crop size")
+                }
+            } else if drawingTool != .magnifier {
+                color.onSelect?(.systemGreen)
+                width.doubleValue = 9
+                width.sendAction(width.action!, to: width.target)
+                await refresh("editing color and width of \(drawingTool)")
+                check(canvas.selectedAnnotation?.color == .systemGreen && canvas.selectedAnnotation?.lineWidth == 9,
+                      "Selected \(drawingTool) supports shared color and width callbacks")
+            }
+            tap("删除选中标注")
+            await refresh("deleting \(drawingTool)")
+            check(canvas.annotations.isEmpty, "Delete removes the selected \(drawingTool)")
+            tap("撤销")
+            await refresh("undoing deletion of \(drawingTool)")
+            check(canvas.annotations.count == 1, "Undo restores \(drawingTool)")
+            tap("下一步")
+            await refresh("redoing deletion of \(drawingTool)")
+            check(canvas.annotations.isEmpty && view.pixelSelection == pixels, "Redo preserves the capture frame for \(drawingTool)")
+        }
+        view.setSelection(CGRect(x: 60, y: 60, width: 40, height: 40))
+        let zoomPixels = view.pixelSelection
+        tool(.pen)
+        for _ in 0..<9 { tap("缩小"); await refresh("zooming a selection below the cursor inset size") }
+        check(view.selection!.width < 14 && view.pixelSelection == zoomPixels, "Zoom can make an existing selection narrower than the cursor inset")
+        tap("适应")
+        for _ in 0..<14 { tap("放大"); await refresh("zooming selection handles outside the screen") }
+        check(!view.selection!.intersects(view.bounds) && view.pixelSelection == zoomPixels,
+              "Offscreen handles during toolbar zoom do not change the capture pixels")
+        tap("适应")
+
+        let handles = [CGPoint(x: original.minX, y: original.minY), CGPoint(x: original.midX, y: original.minY),
+                       CGPoint(x: original.maxX, y: original.minY), CGPoint(x: original.maxX, y: original.midY),
+                       CGPoint(x: original.maxX, y: original.maxY), CGPoint(x: original.midX, y: original.maxY),
+                       CGPoint(x: original.minX, y: original.maxY), CGPoint(x: original.minX, y: original.midY)]
+        for (index, handle) in handles.enumerated() {
+            view.setSelection(original)
+            var end = handle
+            if [0, 6, 7].contains(index) { end.x = original.maxX - 2 }
+            if [2, 3, 4].contains(index) { end.x = original.minX + 2 }
+            if [0, 1, 2].contains(index) { end.y = original.maxY - 2 }
+            if [4, 5, 6].contains(index) { end.y = original.minY + 2 }
+            drag(view, from: handle, to: end)
+            await refresh("shrinking annotation frame with handle \(index)")
+            check(view.selection!.width == 2 || view.selection!.height == 2,
+                  "Every resize handle can safely shrink the frame below cursor inset size")
+        }
+        view.setSelection(original)
+        tap("吸管：点击图片取色并复制 HEX")
+        canvas.mouseDown(with: event(.leftMouseDown, CGPoint(x: 110, y: 100), in: canvas))
+        await refresh("sampling a color")
+        check(!canvas.isPickingColor && NSPasteboard.general.string(forType: .string)?.hasPrefix("#") == true,
+              "Eyedropper completes and copies HEX without leaving the session")
+        tap("测量：点击两个点量距离（像素）")
+        for point in [CGPoint(x: 110, y: 100), CGPoint(x: 180, y: 140)] {
+            canvas.mouseDown(with: event(.leftMouseDown, point, in: canvas))
+            canvas.mouseUp(with: event(.leftMouseUp, point, in: canvas))
+            await refresh("placing measurement endpoints")
+        }
+        check(canvas.hasMeasurement && !canvas.isMeasuring, "Two measurement clicks complete in-place")
+        canvas.cancelOperation(nil)
+        check(!canvas.hasMeasurement, "Completed measurements can be cancelled")
     }
 
     private static func verifyStandaloneEditor() {
@@ -239,6 +391,7 @@ enum InlineScreenshotChecks {
         let copy = buttons.first { $0.title == L("拷贝") }!
         copy.sendAction(copy.action!, to: copy.target)
         check(canvas.annotations.last?.text == "Shared editor actions", "Independent editor copy commits active text")
+        check(canvas.annotations.count == 1, "Independent editor copy commits a focused text field exactly once")
         let bitmap = NSBitmapImageRep(data: NSPasteboard.general.data(forType: .tiff)!)!
         check(bitmap.pixelsWide == 400 && bitmap.pixelsHigh == 300, "Independent editor copy preserves cropped native dimensions")
         check(closed && !editor.isVisible, "Shared copy command retains the independent window close lifecycle")
@@ -257,7 +410,7 @@ enum InlineScreenshotChecks {
         let overlays = NSApp.windows.filter { $0.isVisible && $0.contentView is InlineScreenshotView }
         check(overlays.count == screens.count, "Freeze every display, including displays with negative origins")
         let view = overlays.first { $0.frame == screen.frame }!.contentView as! InlineScreenshotView
-        check(view.selection == view.bounds, "Full-screen capture starts with the whole target display selected")
+        check(view.selection == view.bounds, "Full-screen capture starts with the whole target display selected: \(String(describing: view.selection)) vs \(view.bounds), canvas=\(view.canvas.bounds)")
         view.setSelection(CGRect(x: 60, y: 60, width: 360, height: 240))
         let panel = NSApp.windows.first { window in
             window.isVisible && window.identifier?.rawValue == "inline.tools"
@@ -409,6 +562,24 @@ enum InlineScreenshotChecks {
         controller.present(snapshots: snapshots, intent: .regionOnly, pointer: .zero)
         let fresh = NSApp.windows.compactMap { $0.isVisible ? $0.contentView as? InlineScreenshotView : nil }
         check(fresh.allSatisfy { $0.selection == nil && $0.canvas.annotations.isEmpty }, "Region capture starts fresh, without an editor window")
+        let region = fresh[0]
+        let anchor = CGPoint(x: 100, y: 100)
+        for direction in [CGFloat(1), -1] {
+            region.setSelection(nil)
+            region.mouseDown(with: event(.leftMouseDown, anchor, in: region))
+            for distance in [CGFloat(0), 1, 2, 4, 8, 13, 14, 20, 60] {
+                let point = CGPoint(x: anchor.x + distance * direction, y: anchor.y + distance * direction)
+                region.mouseDragged(with: event(.leftMouseDragged, point, in: region))
+                region.resetCursorRects()
+                region.window!.resetCursorRects()
+                try? await Task.sleep(nanoseconds: 10_000_000)
+                check(controller.isActive, "Region capture survives cursor refresh during a \(distance)-point drag")
+            }
+            region.mouseUp(with: event(.leftMouseUp, CGPoint(x: anchor.x + 60 * direction, y: anchor.y + 60 * direction), in: region))
+            check(region.selection?.width == 60 && region.selection?.height == 60,
+                  "Forward and reverse region drags still complete after small intermediate selections")
+        }
+        await verifyAnnotationInteractions(region)
         let clipboardChange = pasteboard.changeCount
         controller.close()
         check(pasteboard.changeCount == clipboardChange, "Cancel does not change the clipboard")
