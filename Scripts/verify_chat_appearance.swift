@@ -1,4 +1,5 @@
 import AppKit
+import AVKit
 import SwiftUI
 
 @main
@@ -28,9 +29,10 @@ enum ChatAppearanceChecks {
         app.setActivationPolicy(.accessory)
         Task { @MainActor in
             await verifySurfaces()
+            await verifyFullscreen()
             await verifyStreamingFollow()
             await verifyChat()
-            let result = "Chat / appearance regressions passed: \(checks) assertions"
+            let result = "Chat / appearance / fullscreen regressions passed: \(checks) assertions"
             if let completion = ProcessInfo.processInfo.environment["SAKURA_UI_TEST_COMPLETION"] {
                 try! result.write(toFile: completion, atomically: true, encoding: .utf8)
             }
@@ -89,6 +91,60 @@ enum ChatAppearanceChecks {
         }
         let l1 = luminance(a), l2 = luminance(b)
         return (max(l1, l2) + 0.05) / (min(l1, l2) + 0.05)
+    }
+
+    private static func verifyFullscreen() async {
+        let model = WorkbenchViewModel(url: URL(fileURLWithPath: "/nonexistent/fullscreen-test.mp4"))
+        let host = NSHostingView(rootView: WorkbenchView(model: model))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        defer { window.orderOut(nil) }
+        window.contentView = host
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenPrimary]
+        window.orderFront(nil)
+        await settle(window)
+        let player = descendants(host).compactMap { $0 as? AVPlayerView }.first!
+        let coordinator = player.delegate as! PlayerView.Coordinator
+        check(descendants(host).contains { $0 is WorkbenchTimelineContainer }, "Normal editing must include the timeline")
+        check(player.bounds.width < host.bounds.width - 200, "Normal editing must reserve the properties panel")
+
+        model.editingAnnotationID = UUID()
+        coordinator.playerViewWillEnterFullScreen(player)
+        check(model.editingAnnotationID == nil, "Fullscreen must commit and close an active annotation editor")
+        check(window.level == .normal, "Editor must not float above AVKit's fullscreen movie")
+        check(!window.collectionBehavior.contains(.canJoinAllSpaces)
+              && !window.collectionBehavior.contains(.fullScreenAuxiliary),
+              "Editor must not follow AVKit into its fullscreen Space")
+        coordinator.playerViewWillEnterFullScreen(player)
+        coordinator.playerViewDidEnterFullScreen(player)
+        check(!window.isVisible, "Native fullscreen must hide the editor window, including on other displays")
+        var restored = false
+        coordinator.playerView(player, restoreUserInterfaceForFullScreenExitWithCompletionHandler: { restored = $0 })
+        check(restored && window.isVisible && window.level == .normal,
+              "AVKit exit must restore its destination before restoring floating presentation")
+        coordinator.playerViewDidExitFullScreen(player)
+        check(window.level == .floating
+              && window.collectionBehavior == [.canJoinAllSpaces, .fullScreenPrimary],
+              "Leaving AVKit fullscreen must restore the original window presentation")
+
+        model.isFullscreen = true
+        await settle(window)
+        check(!descendants(host).contains { $0 is WorkbenchTimelineContainer }, "Window fullscreen must hide the timeline")
+        check(descendants(host).contains { $0 === player }, "Fullscreen layout must retain the same AVPlayerView")
+        check(abs(player.bounds.width - host.bounds.width) < 2
+              && abs(player.bounds.height - host.bounds.height) < 2,
+              "Fullscreen preview must fill the window without edit toolbar, properties or margins")
+        snapshot(host, name: "workbench-fullscreen")
+        model.isFullscreen = false
+        await settle(window)
+        check(descendants(host).contains { $0 is WorkbenchTimelineContainer }, "Exiting fullscreen must restore the timeline")
+        check(player.bounds.width < host.bounds.width - 200, "Exiting fullscreen must restore the properties panel")
+        coordinator.playerViewWillEnterFullScreen(player)
+        coordinator.restoreEditorWindow()
+        coordinator.restoreEditorWindow()
+        check(window.level == .floating && window.collectionBehavior.contains(.canJoinAllSpaces),
+              "Dismantling the player must safely restore its editor window")
     }
 
     private final class FlippedDocument: NSView {

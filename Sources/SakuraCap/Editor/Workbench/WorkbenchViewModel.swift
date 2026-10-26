@@ -682,6 +682,11 @@ final class WorkbenchViewModel: ObservableObject {
 
     // MARK: - 播放
 
+    func prepareForFullscreen() {
+        if editingAnnotationID != nil { finishAnnotationSelection(commit: true) }
+        if editingFocusID != nil { finishFocusEdit() }
+    }
+
     func togglePlay() {
         if isPlaying {
             player.pause()

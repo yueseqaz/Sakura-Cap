@@ -87,7 +87,9 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
         window.hidesOnDeactivate = false
         // 菜单栏应用：悬浮于其他应用之上、跟随所有空间，点别处不会被压到后面
         window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.collectionBehavior = kind == .workbench
+            ? [.canJoinAllSpaces, .fullScreenPrimary]
+            : [.canJoinAllSpaces, .fullScreenAuxiliary]
         // 远程桌面与录屏里不可见
         window.sharingType = .readOnly
         if let minSize = kind.minSize { window.minSize = minSize }
@@ -111,7 +113,7 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
         let center = NotificationCenter.default
         var tokens: [NSObjectProtocol] = []
         if kind.observesFullscreen {
-            tokens.append(center.addObserver(forName: NSWindow.didEnterFullScreenNotification,
+            tokens.append(center.addObserver(forName: NSWindow.willEnterFullScreenNotification,
                                              object: window, queue: .main) { [weak self] note in
                 MainActor.assumeIsolated { self?.syncFullscreen(note, isFullscreen: true) }
             })
@@ -133,7 +135,9 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
     private func syncFullscreen(_ note: Notification, isFullscreen: Bool) {
         guard let window = note.object as? NSWindow,
               let entry = entries.first(where: { $0.window === window }) else { return }
+        if isFullscreen { entry.model.prepareForFullscreen() }
         entry.model.isFullscreen = isFullscreen
+        window.level = isFullscreen ? .normal : .floating
     }
 
     private func removeEntry(for closed: NSWindow) {
@@ -146,7 +150,16 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
 
     func toggleFullscreen(of model: WorkbenchViewModel) {
         guard let entry = entries.first(where: { $0.model === model }) else { return }
+        if !entry.window.styleMask.contains(.fullScreen) {
+            entry.model.prepareForFullscreen()
+            entry.window.level = .normal
+        }
         entry.window.toggleFullScreen(nil)
+    }
+
+    func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        syncFullscreen(Notification(name: NSWindow.didExitFullScreenNotification, object: window),
+                       isFullscreen: false)
     }
 
     /// 点左上角关闭 / ⌘W 时先确认（程序内 close() 靠 isProgrammaticClose 跳过）
@@ -177,6 +190,10 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
             }
         }
         switch key {
+        case "\u{1B}": // Esc
+            guard kind == .workbench, model.isFullscreen else { return false }
+            toggleFullscreen(of: model)
+            return true
         case " ":
             model.togglePlay()
             return true

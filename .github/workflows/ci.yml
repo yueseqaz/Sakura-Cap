@@ -29,5 +29,5 @@ jobs:
       - name: Tool window and color picker regressions
         run: bash Scripts/verify_tools.sh
 
-      - name: Chat scrolling and appearance regressions
+      - name: Chat scrolling, appearance and fullscreen regressions
         run: bash Scripts/verify_chat_appearance.sh

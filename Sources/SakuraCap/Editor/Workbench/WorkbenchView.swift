@@ -8,7 +8,9 @@ struct WorkbenchView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            toolbar
+            if !model.isFullscreen {
+                toolbar
+            }
             HStack(spacing: 8) {
                 preview
                 if !model.isFullscreen {
@@ -22,8 +24,8 @@ struct WorkbenchView: View {
                     .frame(height: timelineHeight)
             }
         }
-        .padding(12)
-        .background(SettingsAppearance.color(SettingsAppearance.canvas))
+        .padding(model.isFullscreen ? 0 : 12)
+        .background(model.isFullscreen ? Color.black : SettingsAppearance.color(SettingsAppearance.canvas))
         .tint(SettingsAppearance.color(SettingsAppearance.accent))
         .frame(minWidth: 980, minHeight: 660)
         .task { await model.load() }
@@ -103,10 +105,10 @@ struct WorkbenchView: View {
     // MARK: 中央预览
 
     private var preview: some View {
-        PlayerView(player: model.player)
+        PlayerView(player: model.player, prepareForFullscreen: model.prepareForFullscreen)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: model.isFullscreen ? 0 : 6))
             .overlay {
                 if model.isAudioOnly {
                 VStack(spacing: 10) {
@@ -121,7 +123,7 @@ struct WorkbenchView: View {
                 }
             }
             .overlay {
-                if let id = model.editingFocusID,
+                if !model.isFullscreen, let id = model.editingFocusID,
                    let focus = model.document.focuses.first(where: { $0.id == id }) {
                     FocusRectEditor(rect: focus.rect, videoAspect: model.videoAspect,
                                     onChange: { model.updateFocusRect($0) },
@@ -129,7 +131,7 @@ struct WorkbenchView: View {
                 }
             }
             .overlay {
-                if model.editingAnnotationID != nil {
+                if !model.isFullscreen, model.editingAnnotationID != nil {
                     GeometryReader { geometry in
                         let width = min(geometry.size.width, geometry.size.height * max(model.videoAspect, 0.1))
                         let height = width / max(model.videoAspect, 0.1)
@@ -140,7 +142,7 @@ struct WorkbenchView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if model.editingAnnotationID != nil {
+                if !model.isFullscreen, model.editingAnnotationID != nil {
                     AnnotationFloatingToolbar(model: model)
                         .padding(.bottom, 8)
                 }
@@ -366,6 +368,9 @@ private struct LabeledRow: View {
 /// AppKit 的 AVPlayerView（SwiftUI 的 VideoPlayer 在 CLT 构建下会崩）
 struct PlayerView: NSViewRepresentable {
     let player: AVPlayer
+    var prepareForFullscreen: () -> Void = {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(prepareForFullscreen: prepareForFullscreen) }
 
     func makeNSView(context: Context) -> AVPlayerView {
         let view = AVPlayerView()
@@ -373,11 +378,64 @@ struct PlayerView: NSViewRepresentable {
         view.showsFullScreenToggleButton = true
         view.videoGravity = .resizeAspect
         view.player = player
+        view.delegate = context.coordinator
         return view
     }
 
     func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        context.coordinator.prepareForFullscreen = prepareForFullscreen
         if nsView.player !== player { nsView.player = player }
+    }
+
+    static func dismantleNSView(_ nsView: AVPlayerView, coordinator: Coordinator) {
+        nsView.delegate = nil
+        coordinator.restoreEditorWindow()
+    }
+
+    final class Coordinator: NSObject, AVPlayerViewDelegate {
+        var prepareForFullscreen: () -> Void
+        private weak var editorWindow: NSWindow?
+        private var savedPresentation: (level: NSWindow.Level, behavior: NSWindow.CollectionBehavior, visible: Bool)?
+
+        init(prepareForFullscreen: @escaping () -> Void) {
+            self.prepareForFullscreen = prepareForFullscreen
+        }
+
+        func playerViewWillEnterFullScreen(_ playerView: AVPlayerView) {
+            guard savedPresentation == nil, let window = playerView.window else { return }
+            prepareForFullscreen()
+            editorWindow = window
+            savedPresentation = (window.level, window.collectionBehavior, window.isVisible)
+            // AVKit creates its own fullscreen window. A floating auxiliary editor
+            // would follow it into that Space and cover the movie.
+            window.level = .normal
+            window.collectionBehavior.remove([.canJoinAllSpaces, .fullScreenAuxiliary])
+        }
+
+        func playerViewDidEnterFullScreen(_ playerView: AVPlayerView) {
+            editorWindow?.orderOut(nil)
+        }
+
+        func playerView(_ playerView: AVPlayerView,
+                        restoreUserInterfaceForFullScreenExitWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+            guard let window = editorWindow else { completionHandler(false); return }
+            if savedPresentation?.visible == true { window.makeKeyAndOrderFront(nil) }
+            completionHandler(true)
+        }
+
+        func playerViewDidExitFullScreen(_ playerView: AVPlayerView) {
+            restoreEditorWindow(show: true)
+        }
+
+        func restoreEditorWindow(show: Bool = false) {
+            if let window = editorWindow, let saved = savedPresentation {
+                window.collectionBehavior = saved.behavior
+                window.level = saved.level
+                if show && saved.visible { window.makeKeyAndOrderFront(nil) }
+            }
+            savedPresentation = nil
+            editorWindow = nil
+        }
     }
 }
 
