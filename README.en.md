@@ -82,12 +82,18 @@ brew trust yueseqaz/sakura-cap          # newer Homebrew requires trusting third
 brew install --cask sakura-cap
 ```
 
+### DMG installer
+
+Download `Sakura-Cap-VERSION.dmg` from [Releases](https://github.com/yueseqaz/Sakura-Cap/releases), open it, and read `安装前必看.txt` (installation and Gatekeeper troubleshooting, in Chinese). Drag the app into Applications and launch it from there. Only follow the instructions for a trusted official download; do not disable system-wide security checks.
+
 ### Build from source
 
 ```bash
 git clone https://github.com/yueseqaz/Sakura-Cap.git
 cd Sakura-Cap
 ./run.sh
+# Package the built .app as a DMG with the background and installation guide
+./Scripts/package_dmg.sh
 ```
 
 > The app is ad-hoc signed and not notarized. If macOS blocks the first launch, right-click → Open, or allow it under System Settings → Privacy & Security.

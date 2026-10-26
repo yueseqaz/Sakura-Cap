@@ -61,7 +61,8 @@ enum UpdateInstaller {
 
     private static func prepare(assetURL: URL, version: String, digest: String?) async throws -> URL {
         guard assetURL.scheme == "https", version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#,
-                                                       options: .regularExpression) != nil else {
+                                                       options: .regularExpression) != nil,
+              ["dmg", "zip"].contains(assetURL.pathExtension.lowercased()) else {
             throw UpdateError.invalidPackage
         }
         // 应用为 ad-hoc 签名，codesign 只能证明包完整、无法 pin 开发者身份，
@@ -81,34 +82,19 @@ enum UpdateInstaller {
 
         var request = URLRequest(url: assetURL)
         request.timeoutInterval = 120
-        let (zip, response) = try await URLSession.shared.download(for: request)
-        let size = (try FileManager.default.attributesOfItem(atPath: zip.path)[.size] as? NSNumber)?.intValue ?? 0
+        let (download, response) = try await URLSession.shared.download(for: request)
+        let size = (try FileManager.default.attributesOfItem(atPath: download.path)[.size] as? NSNumber)?.intValue ?? 0
         guard (response as? HTTPURLResponse)?.statusCode == 200, size > 0, size < 500_000_000 else {
             throw UpdateError.invalidPackage
         }
-        let archive = work.appendingPathComponent("update.zip")
-        try FileManager.default.moveItem(at: zip, to: archive)
+        let archive = work.appendingPathComponent("update.\(assetURL.pathExtension.lowercased())")
+        try FileManager.default.moveItem(at: download, to: archive)
         try await Task.detached(priority: .utility) {
             guard SHA256.hash(data: try Data(contentsOf: archive, options: .mappedIfSafe))
                 .map { String(format: "%02x", $0) }.joined() == String(digest.dropFirst(7)).lowercased() else {
                 throw UpdateError.invalidPackage
             }
-            let extracted = work.appendingPathComponent("extracted")
-            try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
-            try run("/usr/bin/ditto", ["-x", "-k", archive.path, extracted.path])
-            let unpacked = extracted.appendingPathComponent("Sakura-Cap.app")
-            guard let bundle = Bundle(url: unpacked),
-                  bundle.bundleIdentifier == "com.sakura.sakuracap",
-                  bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String == version,
-                  FileManager.default.fileExists(atPath: unpacked.appendingPathComponent("Contents/MacOS/SakuraCap").path) else {
-                throw UpdateError.invalidPackage
-            }
-            try run("/usr/bin/codesign", ["--verify", "--strict", "--deep", unpacked.path])
-            do { try FileManager.default.copyItem(at: unpacked, to: staging) }
-            catch {
-                try? FileManager.default.removeItem(at: staging)
-                throw error
-            }
+            try UpdatePackage.stage(archive: archive, work: work, destination: staging, version: version)
         }.value
         return staging
     }
@@ -134,17 +120,6 @@ enum UpdateInstaller {
         process.arguments = ["-c", script, "sakura-updater", String(ProcessInfo.processInfo.processIdentifier),
                              app.path, staged.path, backup.path]
         try process.run()
-    }
-
-    nonisolated private static func run(_ executable: String, _ arguments: [String]) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw UpdateError.invalidPackage }
     }
 
     private enum UpdateError: LocalizedError {

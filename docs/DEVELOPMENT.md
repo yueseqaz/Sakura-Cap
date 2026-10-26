@@ -7,6 +7,8 @@
 ```bash
 ./build.sh          # swift build -c release → 组装 .app → codesign；版本号默认读 Casks 里的已发布版本
 ./run.sh            # 构建并启动；./run.sh --log 附带实时日志
+./Scripts/package_dmg.sh   # 打包已有 .app → build/Sakura-Cap-版本.dmg；不重编译、不重启应用
+./Scripts/verify_dmg.sh build/Sakura-Cap-版本.dmg  # 挂载、布局、签名及自动更新兼容性回归
 ./clean.sh          # 清理 .build 与 build
 swift Scripts/verify_coordinates.swift   # 坐标换算断言（CLT 无 XCTest，用零依赖脚本）
 ./verify.sh [录像.mp4]                    # 用 ffprobe 校验输出文件的分辨率/码率/色彩标注
@@ -56,8 +58,19 @@ tccutil reset ListenEvent   com.sakura.sakuracap   # 输入监控（点击标记
    ```bash
    git tag v2.5.0 && git push origin v2.5.0
    ```
-4. 流水线自动完成：构建 `.app` → 打 zip → 创建 GitHub Release（正文取 ReleaseNotes、附件 zip）→ 更新 `Casks/sakura-cap.rb` 的 `version` / `sha256` 并以 bot 提交推回 `main`。
+4. 流水线自动完成：构建 `.app` → 制作 DMG 并验证 → 创建 GitHub Release（正文取 ReleaseNotes、主附件 DMG 及 sha256，另保留 ZIP 供旧版自动更新）→ 同时更新 `Casks/sakura-cap.rb` 的 `version` / `sha256` / DMG 下载地址并以 bot 提交推回 `main`。
 5. 本地 `git pull --ff-only origin main` 同步即可；之后本地构建的版本号自动跟上。
+
+### DMG 布局与迁移
+
+- `Resources/DMG/background.png` 是维护者提供的 1100×602 原图，完整保留图内署名；发布前请确认拥有再分发权限。`安装前必看.txt` 随 DMG 放在根目录。
+- 打包使用系统 `hdiutil`，通过 `Scripts/dmg_layout.py` 写 Finder `.DS_Store`，不需要启动 Finder，适合 CI。仅打包工具需要 Python 3，首次在 `.build/dmg-tools` 创建隔离环境并安装 `Scripts/dmg-requirements.txt` 中固定版本的依赖；可通过 `DMG_PYTHON` 指定已安装依赖的 Python。
+- 安装窗口约 780×480，背景按原比例显示为 770×421.4。使用 TIFF DPI 元数据控制显示尺寸，不裁剪、不重采样原图；素材放进应用包并参与签名，DMG 根目录无 `.background` 文件夹，即使显示隐藏文件也只出现应用、Applications 和说明文件三个项目（Finder 自身的 `.DS_Store` 除外）。
+- 本地如不希望覆盖正在运行的构建，可用 `BUILD_DIR=build/dmg-source ./build.sh`，然后 `./Scripts/package_dmg.sh build/dmg-source/Sakura-Cap.app`。
+- 新版自动更新优先选择 DMG，校验 sha256 后只读挂载、验证应用标识/版本/签名、暂存到原应用旁，然后卸载。仍支持旧 ZIP。
+- 保留兼容 ZIP 是为了已经安装的旧版能通过 GitHub API 找到更新；旧版在 API 限流且 Cask 已切换 DMG 的回退路径可能校验失败，此时应从发布页手动下载安装，不应跳过哈希校验。
+- 首次迁移时，不要提前把 Cask 的现有 ZIP 地址切到尚未发布的 DMG，也不要填入本地试打包的校验值；由 tag 发布流水线同步更新版本、地址和校验值。
+- DMG 不等于 Apple 公证，当前签名策略与 TCC 授权行为不变。说明文件仅提供应用级隔离标记处理，不全局关闭 Gatekeeper，也不内置自动执行的修复脚本。
 
 ## 调试
 

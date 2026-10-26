@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Settings-only semantic colors from @radix-ui/colors 3.0.0 (sRGB).
+/// Shared semantic colors from @radix-ui/colors 3.0.0 (sRGB).
 /// Steps 1–2: surfaces; 3–5: interaction; 6–8: borders; 11–12: text.
 enum SettingsAppearance {
     static let canvas = adaptive(0xFCFCFD, 0x111113)       // Slate 1
@@ -33,11 +33,12 @@ enum SettingsAppearance {
     static func applySurface(to view: NSView, fill: NSColor = canvas, border: NSColor = separator,
                              radius: CGFloat = 0) {
         view.wantsLayer = true
-        view.layer?.backgroundColor = fill.cgColor
-        view.layer?.borderColor = border.cgColor
-        view.layer?.borderWidth = borderWidth
         view.layer?.cornerRadius = radius
         view.layer?.masksToBounds = radius > 0
+        let surface = AppearanceSurfaceView(fill: fill, border: border, radius: radius)
+        surface.frame = view.bounds
+        surface.autoresizingMask = [.width, .height]
+        view.addSubview(surface, positioned: .below, relativeTo: nil)
     }
 
     static func styleToolbarButton(_ button: NSButton) {
@@ -53,6 +54,41 @@ enum SettingsAppearance {
                            green: CGFloat((hex >> 8) & 0xFF) / 255,
                            blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
         }
+    }
+}
+
+/// Resolve semantic colors at draw time, in the owning window's appearance.
+/// A CGColor stored on a layer is only a snapshot and does not adapt to theme changes.
+final class AppearanceSurfaceView: NSView {
+    private let fill: NSColor
+    private let border: NSColor
+    private let radius: CGFloat
+
+    init(fill: NSColor, border: NSColor, radius: CGFloat) {
+        self.fill = fill
+        self.border = border
+        self.radius = radius
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { fatalError("unsupported") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        fill.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        border.setStroke()
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: SettingsAppearance.borderWidth / 2,
+                                                          dy: SettingsAppearance.borderWidth / 2),
+                                xRadius: radius, yRadius: radius)
+        path.lineWidth = SettingsAppearance.borderWidth
+        path.stroke()
     }
 }
 

@@ -117,9 +117,8 @@ final class WorkbenchTimelineContainer: NSView {
         zoomStack.orientation = .horizontal
         zoomStack.spacing = 4
         zoomStack.edgeInsets = NSEdgeInsets(top: 3, left: 6, bottom: 3, right: 6)
-        zoomStack.wantsLayer = true
-        zoomStack.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.9).cgColor
-        zoomStack.layer?.cornerRadius = 6
+        SettingsAppearance.applySurface(to: zoomStack, fill: SettingsAppearance.sidebar,
+                                        border: SettingsAppearance.separator, radius: 6)
         addSubview(zoomStack)
         self.zoomStack = zoomStack
 
@@ -434,14 +433,6 @@ final class WorkbenchHeaderColumn: NSView {
 
     override var isFlipped: Bool { true }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.backgroundColor = SettingsAppearance.sidebar.cgColor
-    }
-
-    required init?(coder: NSCoder) { fatalError("unsupported") }
-
     /// 文档/媒体变化后重建静音按钮（位置与右侧波形行对齐）
     func refreshButtons() {
         muteButtons.forEach { $0.removeFromSuperview() }
@@ -479,6 +470,8 @@ final class WorkbenchHeaderColumn: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        SettingsAppearance.sidebar.setFill()
+        bounds.fill()
         guard let model else { return }
         let laneCount = model.document.lanes.count
         // 行底色与右侧对应
@@ -500,7 +493,7 @@ final class WorkbenchHeaderColumn: NSView {
         }
         // 文案
         let font = NSFont.systemFont(ofSize: 11)
-        let color = NSColor.secondaryLabelColor
+        let color = SettingsAppearance.secondary
         func drawLabel(_ text: String, row: WorkbenchTimelineCanvas.Row, inset: CGFloat = 10) {
             let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
             let y = row.y + (row.height - font.capHeight * 1.4) / 2
@@ -638,6 +631,8 @@ final class WorkbenchTimelineCanvas: NSView {
     // MARK: 绘制
 
     override func draw(_ dirtyRect: NSRect) {
+        SettingsAppearance.canvas.setFill()
+        bounds.fill()
         guard let model else { return }
         let document = model.document
         let laneCount = document.lanes.count
@@ -717,7 +712,7 @@ final class WorkbenchTimelineCanvas: NSView {
         let row = Self.rowYRow(for: rowKind, laneCount: model.document.lanes.count)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 10),
-            .foregroundColor: NSColor.tertiaryLabelColor,
+            .foregroundColor: SettingsAppearance.secondary,
         ]
         (text as NSString).draw(at: NSPoint(x: 8, y: row.y + row.height / 2 - 6), withAttributes: attrs)
     }
@@ -933,7 +928,7 @@ final class WorkbenchTimelineCanvas: NSView {
                 let label = gain.volume == 0 ? L("已静音") : "\(Int(gain.volume * 100))%"
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium),
-                    .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+                    .foregroundColor: SettingsAppearance.text,
                 ]
                 let size = (label as NSString).size(withAttributes: attrs)
                 if rect.width > size.width + 12 {
@@ -1008,7 +1003,8 @@ final class WorkbenchTimelineCanvas: NSView {
                 SettingsAppearance.accent.withAlphaComponent(0.35).setFill()
             }
             path.fill()
-            drawTintedSymbol(symbol, at: NSPoint(x: rect.minX + 4, y: rect.midY - 6), size: 12, color: .white)
+            drawTintedSymbol(symbol, at: NSPoint(x: rect.minX + 4, y: rect.midY - 6), size: 12,
+                             color: isSelected ? .white : SettingsAppearance.text)
         }
     }
 

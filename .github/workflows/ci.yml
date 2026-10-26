@@ -17,8 +17,17 @@ jobs:
       - name: Build & package (ad-hoc)
         run: SIGN_IDENTITY=- ./build.sh
 
+      - name: DMG layout and updater regressions
+        run: |
+          ./Scripts/package_dmg.sh
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/Sakura-Cap.app/Contents/Info.plist)
+          ./Scripts/verify_dmg.sh "build/Sakura-Cap-$VERSION.dmg"
+
       - name: Coordinate assertions
         run: swift Scripts/verify_coordinates.swift
 
       - name: Tool window and color picker regressions
         run: bash Scripts/verify_tools.sh
+
+      - name: Chat scrolling and appearance regressions
+        run: bash Scripts/verify_chat_appearance.sh

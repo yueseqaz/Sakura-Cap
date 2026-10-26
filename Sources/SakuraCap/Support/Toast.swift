@@ -23,11 +23,8 @@ final class Toast {
         dismiss()
 
         let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
-        container.layer?.cornerRadius = 10
-        container.layer?.borderWidth = 0.5
-        container.layer?.borderColor = NSColor.separatorColor.cgColor
+        SettingsAppearance.applySurface(to: container, fill: SettingsAppearance.sidebar,
+                                        border: SettingsAppearance.separator, radius: 10)
 
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .systemFont(ofSize: 12.5, weight: .semibold)

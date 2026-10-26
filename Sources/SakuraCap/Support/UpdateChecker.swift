@@ -62,9 +62,7 @@ enum UpdateChecker {
         }
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
         let pageURL = (json["html_url"] as? String).flatMap { URL(string: $0) }
-        let asset = (json["assets"] as? [[String: Any]])?.first {
-            ($0["name"] as? String) == "Sakura-Cap-\(version).zip"
-        }
+        let asset = UpdatePackage.preferredAsset(in: json["assets"] as? [[String: Any]] ?? [], version: version)
         return Release(version: version, pageURL: pageURL, notes: json["body"] as? String ?? "",
                        assetURL: (asset?["browser_download_url"] as? String).flatMap(URL.init(string:)),
                        digest: asset?["digest"] as? String)
@@ -85,26 +83,12 @@ enum UpdateChecker {
               let text = String(data: data, encoding: .utf8), text.count < 10_000 else {
             throw URLError(.cannotParseResponse)
         }
-        var version: String?
-        var sha256: String?
-        for rawLine in text.split(separator: "\n") {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
-            if version == nil, line.hasPrefix("version \"") {
-                version = String(line.dropFirst(9).dropLast(1))
-            } else if sha256 == nil, line.hasPrefix("sha256 \"") {
-                let value = String(line.dropFirst(8).dropLast(1))
-                if value.count == 64 { sha256 = value }
-            }
-        }
-        guard let version,
-              version.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil,
-              let sha256 else {
+        guard let parsed = UpdatePackage.caskRelease(text) else {
             throw URLError(.cannotParseResponse)
         }
-        let asset = URL(string: "https://github.com/yueseqaz/Sakura-Cap/releases/download/v\(version)/Sakura-Cap-\(version).zip")
-        return Release(version: version,
+        return Release(version: parsed.version,
                        pageURL: URL(string: "https://github.com/yueseqaz/Sakura-Cap/releases/latest"),
-                       notes: "", assetURL: asset, digest: "sha256:\(sha256)")
+                       notes: "", assetURL: parsed.url, digest: parsed.digest)
     }
 
     /// 读取 `github.com/owner/repo/releases/latest` 跳转后的地址，取出 `vX.Y.Z`。
@@ -118,7 +102,7 @@ enum UpdateChecker {
             throw URLError(.cannotParseResponse)
         }
         let version = String(tag.dropFirst())
-        let asset = URL(string: "https://github.com/yueseqaz/Sakura-Cap/releases/download/v\(version)/Sakura-Cap-\(version).zip")
+        let asset = URL(string: "https://github.com/yueseqaz/Sakura-Cap/releases/download/v\(version)/Sakura-Cap-\(version).dmg")
         return Release(version: version, pageURL: finalURL, notes: "", assetURL: asset, digest: nil)
     }
 

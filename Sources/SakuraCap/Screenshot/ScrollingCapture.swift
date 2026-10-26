@@ -447,11 +447,8 @@ final class ScrollingHUDWindow: NSPanel {
         isMovableByWindowBackground = true
 
         let container = NSView(frame: NSRect(origin: .zero, size: size))
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.94).cgColor
-        container.layer?.cornerRadius = 12
-        container.layer?.borderWidth = 0.5
-        container.layer?.borderColor = NSColor.separatorColor.cgColor
+        SettingsAppearance.applySurface(to: container, fill: SettingsAppearance.sidebar,
+                                        border: SettingsAppearance.separator, radius: 12)
 
         stateLabel.font = .systemFont(ofSize: 12)
         heightLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)

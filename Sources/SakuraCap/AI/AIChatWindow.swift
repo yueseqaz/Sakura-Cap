@@ -261,6 +261,7 @@ struct AIChatView: View {
 /// 聊天主体（顶栏 + 消息列表 + 输入区），独立窗口与历史窗口共用
 struct ChatPane: View {
     @ObservedObject var model: AIChatViewModel
+    @StateObject private var scrollState = ChatScrollState()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -317,29 +318,36 @@ struct ChatPane: View {
     }
 
     private var messageList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    if model.isEmpty {
-                        emptyHint
-                    }
-                    ForEach(model.session.messages) { message in
-                        MessageBubble(message: message, model: model)
-                            .id(message.id)
-                    }
-                    if !model.streamingText.isEmpty {
-                        MessageBubble(message: AIChatMessage(role: .assistant, text: model.streamingText),
-                                      model: model, streaming: true)
-                            .id("streaming")
-                    }
-                    Color.clear.frame(height: 1).id("bottom")
+        ScrollView {
+            // Markdown has variable height. Lazy row estimates can change the
+            // document height above the viewport while reading older messages.
+            VStack(spacing: 12) {
+                if model.isEmpty {
+                    emptyHint
                 }
-                .padding(12)
+                ForEach(model.session.messages) { message in
+                    MessageBubble(message: message, model: model)
+                        .id(message.id)
+                }
+                if !model.streamingText.isEmpty {
+                    MessageBubble(message: AIChatMessage(role: .assistant, text: model.streamingText),
+                                  model: model, streaming: true)
+                        .id("streaming")
+                }
+                Color.clear.frame(height: 1)
             }
-            .onChange(of: model.scrollStamp) { _ in
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
+            .padding(12)
+            .background(ChatScrollTracking(state: scrollState) { scrollState.followsLatestMessage = $0 })
         }
+        .onChange(of: model.session.id) { _ in
+            scrollState.followsLatestMessage = true
+            scrollState.scrollToLatest()
+        }
+        .onChange(of: model.session.messages.last(where: { $0.role == .user })?.id) { _ in
+            scrollState.followsLatestMessage = true
+            scrollState.scrollToLatest()
+        }
+        .onChange(of: model.scrollStamp) { _ in scrollState.scrollToLatest() }
     }
 
     private var emptyHint: some View {
@@ -420,7 +428,7 @@ struct ChatPane: View {
 /// 单条消息气泡：用户（右、纯文本+图片）/ 助手（左、Markdown）
 private struct MessageBubble: View {
     let message: AIChatMessage
-    @ObservedObject var model: AIChatViewModel
+    let model: AIChatViewModel
     var streaming = false
 
     var body: some View {
@@ -471,19 +479,25 @@ private struct MessageBubble: View {
 }
 
 /// 只读 Markdown 文本视图（可选中、链接可点）。
-/// 高度由视图自身报告（intrinsicContentSize 随内容自适应），
-/// SwiftUI 按内在高度布局——外部量算在流式更新时不可靠，会导致气泡重叠。
+/// 按 SwiftUI 提议的实际宽度排版，避免先用旧宽度估高再跳动。
 struct MarkdownTextView: NSViewRepresentable {
     let attributed: NSAttributedString
 
     final class AutoHeightTextView: NSTextView {
-        override var intrinsicContentSize: NSSize {
+        func contentSize(for width: CGFloat) -> NSSize {
             guard let container = textContainer, let manager = layoutManager else {
-                return super.intrinsicContentSize
+                return NSSize(width: width, height: 0)
             }
+            container.containerSize = NSSize(width: max(1, width - textContainerInset.width * 2),
+                                             height: .greatestFiniteMagnitude)
             manager.ensureLayout(for: container)
-            let height = manager.usedRect(for: container).height + textContainerInset.height * 2 + 6
-            return NSSize(width: NSView.noIntrinsicMetric, height: height)
+            let height = ceil(manager.usedRect(for: container).height + textContainerInset.height * 2 + 6)
+            return NSSize(width: width, height: height)
+        }
+
+        override var intrinsicContentSize: NSSize {
+            let size = contentSize(for: max(1, bounds.width))
+            return NSSize(width: NSView.noIntrinsicMetric, height: size.height)
         }
     }
 
@@ -502,8 +516,16 @@ struct MarkdownTextView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: AutoHeightTextView, context: Context) {
+        // Replacing identical text resets selection and can scroll an ancestor
+        // to the start of this message when SwiftUI refreshes the row.
+        guard view.textStorage?.isEqual(to: attributed) != true else { return }
         view.textStorage?.setAttributedString(attributed)
         view.invalidateIntrinsicContentSize()
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: AutoHeightTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
+        return nsView.contentSize(for: width)
     }
 }
 

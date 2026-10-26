@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ============================================================
 # Sakura-Cap 一键构建：swift build → 组装 .app → codesign
-# 可用环境变量覆盖：APP_NAME / BUNDLE_ID / VERSION / SIGN_IDENTITY
+# 可用环境变量覆盖：APP_NAME / BUILD_DIR / BUNDLE_ID / VERSION / SIGN_IDENTITY
 #   SIGN_IDENTITY=-       强制 ad-hoc 签名（每次重编译后 TCC 权限可能失效）
 #   SIGN_IDENTITY=auto    默认：自动查找名字含 sakura-cap 的本地证书，找不到退回 ad-hoc
 #   SIGN_IDENTITY="名称"  使用指定证书（推荐本地自签代码签名证书）
@@ -24,7 +24,8 @@ if [ -z "${VERSION:-}" ]; then
 fi
 VERSION="${VERSION:-2.0.0}"
 
-APP_DIR="build/$APP_NAME.app"
+BUILD_DIR="${BUILD_DIR:-build}"
+APP_DIR="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
 
 echo "==> swift build -c release"
@@ -54,7 +55,7 @@ if [ ! -f "$ICON_PNG" ]; then
 fi
 
 echo "==> 生成 icns"
-ICONSET="build/AppIcon.iconset"
+ICONSET="$BUILD_DIR/AppIcon.iconset"
 rm -rf "$ICONSET" "$CONTENTS/Resources/AppIcon.icns"
 mkdir -p "$ICONSET"
 for s in 16 32 128 256 512; do
@@ -66,6 +67,13 @@ iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/AppIcon.icns"
 
 # ---- 本地化资源（*.lproj/Localizable.strings）----
 find Resources -maxdepth 1 -name '*.lproj' -exec cp -R {} "$CONTENTS/Resources/" \;
+
+# Keep installer art inside the signed bundle: the DMG then has only three items,
+# even when Finder is configured to show hidden files. TIFF DPI sets display size
+# to 770 x 421.4 points without cropping or resampling the original 1100 x 602 pixels.
+sips -s format tiff -s formatOptions lzw \
+    -s dpiWidth 102.857142857 -s dpiHeight 102.857142857 \
+    Resources/DMG/background.png --out "$CONTENTS/Resources/DMGBackground.tiff" >/dev/null
 
 # WebP 静态链接进主程序，随包保留上游版权与专利授权声明。
 mkdir -p "$CONTENTS/Resources/ThirdParty/libwebp"

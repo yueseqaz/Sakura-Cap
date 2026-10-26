@@ -82,12 +82,18 @@ brew trust yueseqaz/sakura-cap          # 新しい Homebrew ではサードパ�
 brew install --cask sakura-cap
 ```
 
+### DMG インストーラ
+
+[Releases](https://github.com/yueseqaz/Sakura-Cap/releases) から `Sakura-Cap-バージョン.dmg` をダウンロードし、開いたら「安装前必看.txt」（中国語のインストール・起動トラブル対処）を確認してください。アプリを Applications にドラッグし、「アプリケーション」から起動します。対処手順は信頼できる公式配布物にのみ適用し、システム全体のセキュリティ機能を無効にしないでください。
+
 ### ソースからビルド
 
 ```bash
 git clone https://github.com/yueseqaz/Sakura-Cap.git
 cd Sakura-Cap
 ./run.sh
+# ビルド済み .app を背景画像・説明ファイル付き DMG にパッケージ
+./Scripts/package_dmg.sh
 ```
 
 > 本アプリは ad-hoc 署名で、公証（notarization）はしていません。初回起動時にブロックされた場合は、右クリック→「開く」、または「システム設定 → プライバシーとセキュリティ」で許可してください。
