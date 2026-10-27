@@ -315,7 +315,7 @@ private final class CameraPiPContentView: NSView {
         closeButton.wantsLayer = true
         closeButton.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
         closeButton.layer?.cornerRadius = 12
-        let closeSymbol = NSImage(systemSymbolName: "xmark", accessibilityDescription: "关闭")
+        let closeSymbol = NSImage(systemSymbolName: "xmark", accessibilityDescription: L("关闭窗口"))
         closeButton.image = closeSymbol?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .bold))
         closeButton.contentTintColor = .white
         closeButton.imagePosition = .imageOnly

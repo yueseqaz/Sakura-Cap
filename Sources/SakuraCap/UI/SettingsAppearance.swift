@@ -72,6 +72,21 @@ enum SettingsAppearance {
     }
 }
 
+struct PrimaryActionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(SettingsAppearance.bodyFont.weight(.medium))
+            .foregroundStyle(isEnabled ? Color.white : SettingsAppearance.color(SettingsAppearance.secondary))
+            .padding(.horizontal, 12)
+            .frame(minHeight: SettingsAppearance.rowHeight)
+            .background(RoundedRectangle(cornerRadius: 6)
+                .fill(SettingsAppearance.color(isEnabled ? SettingsAppearance.focus : SettingsAppearance.control)))
+            .opacity(configuration.isPressed ? 0.8 : 1)
+    }
+}
+
 /// Resolve semantic colors at draw time, in the owning window's appearance.
 /// A CGColor stored on a layer is only a snapshot and does not adapt to theme changes.
 final class AppearanceSurfaceView: NSView {

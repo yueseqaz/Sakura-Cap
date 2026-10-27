@@ -4,11 +4,11 @@ import AppKit
 /// 块级：标题 / 代码块 / 引用 / 列表 / 分隔线 / 段落；
 /// 行内：`code`、**粗体**、*斜体*、[链接](url)。渲染结果供聊天气泡使用。
 enum Markdown {
-    static func attributed(_ markdown: String, baseSize: CGFloat = 13) -> NSAttributedString {
+    static func attributed(_ markdown: String, baseSize: CGFloat = 14) -> NSAttributedString {
         let output = NSMutableAttributedString()
         let baseFont = NSFont.systemFont(ofSize: baseSize)
         let baseColor = NSColor.labelColor
-        let lineSpacing: CGFloat = 3
+        let lineSpacing: CGFloat = 4
 
         var paragraph: [String] = []
         var inCode = false
@@ -92,11 +92,14 @@ enum Markdown {
             }
             if isListLine(line) {
                 flushParagraph()
-                let indent: CGFloat = line.hasPrefix("  ") ? 28 : 14
-                let attributed = inline(line, font: baseFont, color: baseColor)
+                let leadingSpaces = rawLine.prefix { $0 == " " || $0 == "\t" }
+                    .reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+                let indent = CGFloat(min(leadingSpaces / 2, 8)) * 14 + 4
+                let attributed = inline(line + "\n", font: baseFont, color: baseColor)
                 let style = paragraphStyle(lineSpacing)
                 style.firstLineHeadIndent = indent
                 style.headIndent = indent + 14
+                style.paragraphSpacing = 4
                 attributed.addAttribute(.paragraphStyle, value: style,
                                         range: NSRange(location: 0, length: attributed.length))
                 output.append(attributed)
@@ -137,7 +140,7 @@ enum Markdown {
             if match.range(at: 2).location != NSNotFound {
                 target = match.range(at: 1)
                 attributed = NSAttributedString(string: (text as NSString).substring(with: match.range(at: 2)), attributes: [
-                    .font: mono, .foregroundColor: NSColor.systemPurple,
+                    .font: mono, .foregroundColor: NSColor.labelColor,
                     .backgroundColor: NSColor.systemGray.withAlphaComponent(0.14),
                 ])
             } else if match.range(at: 4).location != NSNotFound {

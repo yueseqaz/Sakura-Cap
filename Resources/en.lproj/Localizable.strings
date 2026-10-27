@@ -7,6 +7,8 @@
 "退出" = "Quit";
 "退出 Sakura-Cap" = "Quit";
 "设置…" = "Settings…";
+"截屏" = "Screenshot";
+"标注图片…" = "Annotate Image…";
 "设置分区" = "Section";
 "关于 Sakura-Cap" = "About";
 "访问 GitHub 仓库" = "Visit GitHub repository";
@@ -91,6 +93,10 @@
 
 /* 设置-通用 */
 "输出目录" = "Output Folder";
+"语言" = "Language";
+"界面语言" = "Interface Language";
+"跟随系统" = "Follow System";
+"更改后请重启 Sakura-Cap，界面语言才会完全生效。" = "Restart Sakura-Cap for the language change to take full effect.";
 "尚未选择（开始录制时会要求选择）" = "Not selected yet (you'll be asked when recording starts)";
 "启动" = "Startup";
 "开机时自动启动" = "Launch at login";
@@ -99,6 +105,8 @@
 "自动打开裁剪页" = "Open the trim window automatically";
 "录屏勿扰" = "Do Not Disturb";
 "录屏时开启勿扰模式" = "Turn on Do Not Disturb while recording";
+"Sakura-Cap 开启勿扰" = "Sakura-Cap Enable Do Not Disturb";
+"Sakura-Cap 关闭勿扰" = "Sakura-Cap Disable Do Not Disturb";
 "打开快捷指令…" = "Open Shortcuts…";
 "勿扰未开启" = "Do Not Disturb was not enabled";
 "仍要录制" = "Record anyway";
@@ -193,6 +201,11 @@
 "位置合适，请停下" = "Good position; stop scrolling";
 "滚动距离太小，请再向下滚一点" = "Scroll a little farther down";
 "滚动过多，请向上回滚" = "Scrolled too far; scroll back up";
+"自动滚动需要辅助功能权限，请精准滚动" = "Accessibility permission is required for auto-scroll; use guided manual scrolling";
+"再向下滚动约 %d px" = "Scroll down about %d px";
+"继续滚动，停下后我会校准" = "Keep scrolling; I'll calibrate when you stop";
+"向上回退约 %d px" = "Scroll back up about %d px";
+"到位了，停一下" = "You're there; hold still";
 "未找到可靠重叠，请回到上一段重试" = "No reliable overlap; return to the previous step and retry";
 "已拼接，请向下滚动至绿色区域" = "Stitched; scroll down into the green zone";
 "撤销上一段" = "Undo previous step";
@@ -258,6 +271,7 @@
 "识别到 %d 个字符，已复制到剪贴板。" = "Recognized %d characters and copied them to the clipboard.";
 "截图完成" = "Screenshot Saved";
 "截图失败" = "Screenshot Failed";
+"等待首帧" = "Waiting for first frame";
 "截图需要 macOS 14 或更高版本" = "Screenshots require macOS 14 or later";
 "找不到该显示器" = "Display not found";
 "图片编码失败" = "Failed to encode the image";
@@ -266,6 +280,9 @@
 "标注模式" = "Annotate";
 "退出标注" = "Exit Annotation";
 "清空" = "Clear";
+"撤销" = "Undo";
+"删除选中标注" = "Delete selected annotation";
+"清空标注" = "Clear annotations";
 "标注截图" = "Annotate Screenshot";
 "标注图片" = "Annotate Image";
 "选择要标注的图片" = "Choose an image to annotate";
@@ -289,6 +306,22 @@
 "模糊" = "Blur";
 "六边形" = "Hexagon";
 "输入文字" = "Enter text";
+"输入标注文字" = "Enter annotation text";
+"圆圈" = "Circle";
+"标注颜色" = "Annotation color";
+"输入颜色 HEX" = "Enter color HEX";
+"放大镜：拖出圆形区域，将其中的图片放大 2 倍" = "Magnifier: drag a circle to enlarge the image inside 2×";
+"红色" = "Red";
+"橙色" = "Orange";
+"黄色" = "Yellow";
+"绿色" = "Green";
+"青色" = "Cyan";
+"蓝色" = "Blue";
+"紫色" = "Purple";
+"粉色" = "Pink";
+"白色" = "White";
+"灰色" = "Gray";
+"黑色" = "Black";
 "确定" = "OK";
 
 /* 窗口录制 */
@@ -299,6 +332,7 @@
 /* 鼠标跟随放大 */
 
 "裁剪 — %@" = "Trim — %@";
+"剪辑 — %@" = "Edit — %@";
 "截取 %@ – %@　共 %@" = "Trim %@ – %@, total %@";
 "导出" = "Export";
 "删除" = "Delete";
@@ -517,6 +551,7 @@
 "文件名示例" = "Filename preview";
 "登录时启动" = "Launch at login";
 "录制结束后打开裁剪窗口" = "Open trimmer after recording";
+"录制结束后打开工作台" = "Open workbench after recording";
 "录制勿扰" = "Do Not Disturb";
 "录制时开启勿扰模式" = "Enable Do Not Disturb while recording";
 "开启快捷指令" = "Enable shortcut";
@@ -543,6 +578,7 @@
 "淡出" = "Fade Out";
 "删除片段" = "Delete Clip";
 "整轨静音" = "Mute Track";
+"取消静音" = "Unmute";
 "画面聚焦" = "Focus Zoom";
 "范围" = "Range";
 "放大倍数" = "Zoom";
@@ -572,6 +608,7 @@
 "静音此段" = "Mute Segment";
 "恢复音量" = "Restore Volume";
 "工具栏在预览画面下方，直接在画面上绘制。" = "The toolbar is below the preview — draw directly on the frame.";
+"把当前帧存为 PNG 并打开标注" = "Save the current frame as PNG and open annotation";
 "在轨道上拖拽创建聚焦 / 标注 / 音量段；点击片段或音轨编辑属性。" = "Drag on a lane to create focus / annotation / volume segments; click a clip or lane to edit it.";
 "在画面上直接拖拽矩形框选，拖四角改大小、拖中间移动。" = "Drag a rectangle on the frame; drag corners to resize, middle to move.";
 "框选的是聚焦的区域；放大几倍在这里拖滑杆决定。" = "The rectangle selects the focus region; set zoom here with the slider.";
@@ -579,6 +616,8 @@
 "声音淡出" = "Audio Fade Out";
 "截取摄像头画面" = "Snap Camera Frame";
 "摄像头还没有画面" = "No camera frame yet";
+"没有可用的摄像头" = "No camera available";
+"请连接摄像头后重试" = "Connect a camera and try again";
 "请稍候再试" = "Try again in a moment";
 "剪切" = "Cut";
 "粘贴" = "Paste";
@@ -591,6 +630,8 @@
 "风格" = "Style";
 "当前使用：DeepSeek（%@）" = "Using: DeepSeek (%@)";
 "当前使用：自定义 · %@（%@）" = "Using: Custom · %@ (%@)";
+"自定义 · %@ · %@" = "Custom · %@ · %@";
+"已选择服务，尚未配置 API Key" = "Service selected; API Key not configured";
 
 /* AI 助手 */
 "AI 助手" = "AI Assistant";
@@ -599,6 +640,16 @@
 "停止" = "Stop";
 "停止生成" = "Stop Generating";
 "发送 ⌘↩" = "Send ⌘↩";
+"发送 ⏎" = "Send ⏎";
+"Enter 发送 · Shift Enter 换行" = "Enter to send · Shift+Enter for new line";
+"继续提问，或添加图片…" = "Continue asking, or add an image…";
+"消息输入" = "Message input";
+"正在连接模型…" = "Connecting to model…";
+"正在生成…" = "Generating…";
+"重试" = "Retry";
+"服务设置" = "Service settings";
+"关闭提示" = "Dismiss message";
+"发送" = "Send";
 "问点什么，或从标注页 / 截屏把内容带进来" = "Ask anything, or bring content in from the annotator or a screenshot";
 "AI 聊天…" = "AI Chat…";
 "截屏问 AI（图片）" = "Ask AI about Screen (Image)";
@@ -622,6 +673,8 @@
 "添加图片" = "Add Images";
 "早期对话已压缩为摘要，随对话滚动更新" = "Earlier messages are rolled into a running summary";
 "翻译与 AI" = "Translation & AI";
+"翻译与 AI 服务" = "Translation & AI Services";
+"© 2026 Sakura · Sakura最可爱了" = "© 2026 Sakura · Sakura is adorable";
 
 /* 录音 */
 "录音" = "Audio Recording";
@@ -641,6 +694,7 @@
 "选择要编辑的音频" = "Choose an audio file to edit";
 "音频编辑中" = "Editing audio";
 "音频与画面轨都缺失，无法编辑" = "No audio or video tracks to edit";
+"构建时间线失败" = "Failed to build timeline";
 "音频片段" = "Audio Clip";
 "音频编辑 — %@" = "Audio Edit — %@";
 "片段" = "Clips";
@@ -664,7 +718,6 @@
 "图床" = "Image Host";
 "图床类型" = "Image host type";
 "S3 兼容" = "S3-compatible";
-"GitHub 仓库" = "GitHub repo";
 "自定义接口" = "Custom API";
 "纯链接" = "Plain URL";
 "Markdown 图片" = "Markdown image";

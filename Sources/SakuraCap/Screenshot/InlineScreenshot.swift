@@ -282,7 +282,11 @@ final class InlineScreenshotController: NSObject {
         rail.spacing = 8
         for (index, entry) in [("text.viewfinder", "取字"), ("qrcode.viewfinder", "二维码"),
                                ("character.bubble", "翻译"), ("sparkles", "问 AI"), ("icloud.and.arrow.up", "上传图床")].enumerated() {
-            let control = button(entry.0, entry.1, #selector(quickAction(_:)), size: 34)
+            let control = button(entry.0, entry.1, #selector(quickAction(_:)), size: 44)
+            // Match the standalone editor and keep the rail compact.  Names remain
+            // available through the tooltip and accessibility label.
+            control.title = ""
+            control.imagePosition = .imageOnly
             control.tag = index
             if index == 0 || index == 2 {
                 control.toolTip = L("点击选择识别当前区域或重新框选")

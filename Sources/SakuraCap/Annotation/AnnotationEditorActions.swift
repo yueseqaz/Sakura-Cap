@@ -112,6 +112,7 @@ final class AnnotationEditorActions: NSObject {
 
     /// Use the editor's retained export selection without creating a second drag box.
     func recognizeCurrentSelection(_ action: AnnotationCanvas.RecognitionAction) {
+        canvas.leaveMagnifierMode()
         canvas.cancelOperation(nil)
         let bounds = recognitionBounds() ?? canvas.baseImage.map {
             CGRect(x: 0, y: 0, width: $0.width, height: $0.height)

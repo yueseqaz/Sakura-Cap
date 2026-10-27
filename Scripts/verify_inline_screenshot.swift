@@ -376,11 +376,34 @@ enum InlineScreenshotChecks {
             check(canvas.tool == tool, "Independent editor tool remains connected: \(tool)")
         }
         let buttons = views.compactMap { $0 as? NSButton }
+        let quickActionTips = Set([
+            L("点击选择识别当前区域或重新框选"),
+            L("拖拽框选要识别的二维码"),
+            L("把这张图片发给 AI（或先 OCR）"),
+            L("上传整图（含标注）到图床，链接按设置格式复制到剪贴板")
+        ])
+        let quickActions = buttons.filter { quickActionTips.contains($0.toolTip ?? "") }
+        check(quickActions.count == 5 && quickActions.allSatisfy {
+            $0.title.isEmpty && $0.imagePosition == NSControl.ImagePosition.imageOnly
+        }, "Standalone quick actions stay icon-only and keep their tooltips")
         let ocr = buttons.first { $0.toolTip == L("点击选择识别当前区域或重新框选") }!
         ocr.sendAction(ocr.action!, to: ocr.target)
         check(canvas.recognitionAction == .ocr, "Independent editor routes OCR through the shared commands")
         ocr.sendAction(ocr.action!, to: ocr.target)
         check(canvas.recognitionAction == nil, "Independent editor can cancel OCR selection")
+        let magnifier = buttons.first { $0.toolTip == L("放大镜：拖出圆形区域，将其中的图片放大 2 倍") }!
+        let eyedropper = buttons.first { $0.toolTip == L("吸管：点击图片取色并复制 HEX") }!
+        let measure = buttons.first { $0.toolTip == L("测量：点击两个点量距离（像素）") }!
+        magnifier.sendAction(magnifier.action!, to: magnifier.target)
+        eyedropper.sendAction(eyedropper.action!, to: eyedropper.target)
+        check(canvas.isPickingColor && canvas.tool != .magnifier,
+              "Independent eyedropper takes over from the magnifier")
+        canvas.cancelOperation(nil)
+        magnifier.sendAction(magnifier.action!, to: magnifier.target)
+        measure.sendAction(measure.action!, to: measure.target)
+        check(canvas.isMeasuring && canvas.tool != .magnifier,
+              "Independent measurement takes over from the magnifier")
+        canvas.cancelOperation(nil)
         canvas.tool = .crop
         // Keep endpoints away from integer boundaries: outward pixel rounding must
         // not depend on floating-point round trips through the runner's fit scale.
@@ -436,6 +459,11 @@ enum InlineScreenshotChecks {
         check(abs(rail.frame.maxX - screen.visibleFrame.maxX + 18) < 1, "Quick actions dock to the screen's right side")
         check(descendants(rail.contentView!).compactMap { $0 as? NSButton }.count == 5,
               "OCR, QR, translation, AI and upload all appear on the quick rail")
+        let railButtons = descendants(rail.contentView!).compactMap { $0 as? NSButton }.sorted { $0.tag < $1.tag }
+        check(railButtons.allSatisfy {
+            $0.title.isEmpty && $0.imagePosition == NSControl.ImagePosition.imageOnly
+        },
+              "In-place quick actions stay icon-only and keep their tooltips")
         let picker = descendants(panel.contentView!).compactMap { $0 as? NSSegmentedControl }.first!
         check(picker.segmentCount == AnnotationTool.allCases.count - 1, "All regular tools, including crop, are available")
         for tool in AnnotationTool.allCases.filter({ $0 != .magnifier }) {
@@ -446,7 +474,6 @@ enum InlineScreenshotChecks {
         picker.selectedSegment = 1
         picker.sendAction(picker.action!, to: picker.target)
         check(view.canvas.tool == .pen && !view.adjustingSelection, "Toolbar switches from selection to drawing")
-        let railButtons = descendants(rail.contentView!).compactMap { $0 as? NSButton }.sorted { $0.tag < $1.tag }
         for (index, action) in [AnnotationCanvas.RecognitionAction.ocr, .barcode, .translate].enumerated() {
             let button = railButtons[index]
             if action == .barcode {
@@ -482,15 +509,18 @@ enum InlineScreenshotChecks {
         check(!propertyPanel.isVisible, "Tools without configurable drawing properties hide the property strip")
         let eyedropper = controls.compactMap { $0 as? NSButton }.first { $0.toolTip == L("吸管：点击图片取色并复制 HEX") }!
         eyedropper.sendAction(eyedropper.action!, to: eyedropper.target)
-        check(view.canvas.isPickingColor, "Eyedropper is available in-place")
+        check(view.canvas.isPickingColor && view.canvas.tool != .magnifier,
+              "Eyedropper takes over from the magnifier in-place")
         let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                      windowNumber: view.window!.windowNumber, context: nil,
                                      characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)!
         check(controller.handleKeyDown(escape) == nil, "The session consumes transient Escape commands")
         check(!view.canvas.isPickingColor && controller.isActive, "Escape cancels a transient operation before closing the session")
         let measure = controls.compactMap { $0 as? NSButton }.first { $0.toolTip == L("测量：点击两个点量距离（像素）") }!
+        view.canvas.tool = .magnifier
         measure.sendAction(measure.action!, to: measure.target)
-        check(view.canvas.isMeasuring, "Measurement is available in-place")
+        check(view.canvas.isMeasuring && view.canvas.tool != .magnifier,
+              "Measurement takes over from the magnifier in-place")
         view.canvas.cancelOperation(nil)
         let tab = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                   windowNumber: view.window!.windowNumber, context: nil,

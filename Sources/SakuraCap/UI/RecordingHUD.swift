@@ -123,8 +123,8 @@ private struct RecordingHUDView: View {
                 .help(L("拖动移动"))
             switch controller.state {
             case .ready:
-                Circle().fill(Color.red).frame(width: 8, height: 8)
-                Text("准备就绪").font(.system(size: 13, weight: .medium))
+                Circle().fill(Color.secondary.opacity(0.55)).frame(width: 8, height: 8)
+                Text(L("准备就绪")).font(.system(size: 13, weight: .medium))
                 Spacer(minLength: 4)
                 inputToggles
                 resolutionPicker
@@ -133,18 +133,18 @@ private struct RecordingHUDView: View {
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.red))
+                        .background(Circle().fill(SettingsAppearance.color(SettingsAppearance.focus)))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .help("开始录制")
-                cancelButton({ controller.cancelArmed() }, help: "取消")
+                .help(L("开始录制"))
+                cancelButton({ controller.cancelArmed() }, help: L("取消"))
             case .preparing, .countdown:
                 ProgressView().controlSize(.small)
-                Text(controller.state == .countdown ? "即将开始…" : "准备中…")
+                Text(controller.state == .countdown ? L("即将开始…") : L("准备中…"))
                     .font(.system(size: 13, weight: .medium))
                 Spacer(minLength: 4)
-                cancelButton({ controller.stop() }, help: "取消")
+                cancelButton({ controller.stop() }, help: L("取消"))
             default:
                 recordingContent
             }
@@ -170,7 +170,7 @@ private struct RecordingHUDView: View {
             .labelsHidden()
             .fixedSize()
         }
-        .help("输出分辨率")
+        .help(L("输出分辨率"))
     }
 
     /// 每次录屏需求不同：在 HUD 上直接开关麦克风 / 系统声音 / 摄像头
@@ -185,8 +185,8 @@ private struct RecordingHUDView: View {
                 onSelect: selectMicrophone
             )
             .frame(width: 24, height: 24)
-            .help("麦克风")
-            inputToggle("speaker.wave.2.fill", on: settings.recordSystemAudio, help: "系统声音") {
+            .help(L("麦克风"))
+            inputToggle("speaker.wave.2.fill", on: settings.recordSystemAudio, help: L("系统声音")) {
                 settings.recordSystemAudio.toggle()
             }
             InputMenuButton(
@@ -198,11 +198,11 @@ private struct RecordingHUDView: View {
                 onSelect: selectCamera
             )
             .frame(width: 24, height: 24)
-            .help("摄像头画中画")
-            inputToggle("cursorarrow.click", on: settings.clickIndicatorEnabled, help: "鼠标点击标记") {
+            .help(L("摄像头画中画"))
+            inputToggle("cursorarrow.click", on: settings.clickIndicatorEnabled, help: L("鼠标点击标记")) {
                 settings.clickIndicatorEnabled.toggle()
             }
-            inputToggle("keyboard", on: settings.keyDisplayEnabled, help: "键盘按键显示") {
+            inputToggle("keyboard", on: settings.keyDisplayEnabled, help: L("键盘按键显示")) {
                 settings.keyDisplayEnabled.toggle()
             }
         }
@@ -292,7 +292,7 @@ private struct RecordingHUDView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(controller.isPaused ? "继续录制" : "暂停录制")
+        .help(controller.isPaused ? L("继续录制") : L("暂停录制"))
 
         Button(action: { controller.stop() }) {
             Image(systemName: "stop.fill")
@@ -303,7 +303,7 @@ private struct RecordingHUDView: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .help("停止录制")
+        .help(L("停止录制"))
     }
 
     private func cancelButton(_ action: @escaping () -> Void, help: String) -> some View {

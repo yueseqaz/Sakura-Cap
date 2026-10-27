@@ -194,6 +194,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     // MARK: 识别框选
 
     func beginRecognitionSelection(_ action: RecognitionAction) {
+        leaveMagnifierMode()
         cancelTransient()
         recognitionAction = action
         window?.invalidateCursorRects(for: self)
@@ -213,6 +214,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     // MARK: 吸管 / 测量
 
     func beginColorPick() {
+        leaveMagnifierMode()
         cancelTransient()
         isPickingColor = true
         window?.acceptsMouseMovedEvents = true
@@ -232,6 +234,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     func beginMeasure() {
+        leaveMagnifierMode()
         cancelTransient()
         isMeasuring = true
         measureStart = nil
@@ -240,6 +243,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         window?.invalidateCursorRects(for: self)
         window?.makeFirstResponder(self)
         needsDisplay = true
+    }
+
+    /// Utility modes take over the canvas, so the magnifier must not remain
+    /// visually selected while color picking, measuring, or selecting OCR.
+    func leaveMagnifierMode() {
+        if tool == .magnifier { tool = .select }
     }
 
     func endMeasure() {

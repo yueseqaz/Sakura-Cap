@@ -349,8 +349,8 @@ struct PanelView: View {
                 }
                 // 明示当前生效的服务：文本翻译 / OCR 翻译实际走的就是它
                 HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    Image(systemName: activeProviderConfigured ? "checkmark.circle.fill" : "circle.dashed")
+                        .foregroundStyle(SettingsAppearance.color(activeProviderConfigured ? SettingsAppearance.success : SettingsAppearance.warning))
                     Text(activeProviderStatus)
                         .font(SettingsAppearance.detailFont)
                         .foregroundStyle(.secondary)
@@ -413,11 +413,16 @@ struct PanelView: View {
 
     /// 当前生效服务的描述：翻译窗口与 OCR 都走这个
     private var activeProviderStatus: String {
+        guard activeProviderConfigured else { return L("已选择服务，尚未配置 API Key") }
         if settings.translateProvider == .deepSeek {
             return String(format: L("当前使用：DeepSeek（%@）"), settings.activeTranslateModel)
         }
         let format = CustomAPIFormat(rawValue: settings.translateCustomFormat) ?? .openAIChat
         return String(format: L("当前使用：自定义 · %@（%@）"), format.label, settings.activeTranslateModel)
+    }
+
+    private var activeProviderConfigured: Bool {
+        !settings.activeTranslateAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func fetchModels() {
@@ -620,6 +625,21 @@ struct PanelView: View {
                     }.disabled(settings.outputDirectory == nil)
                 }
             }
+            group("语言") {
+                settingRow("界面语言") {
+                    Picker("界面语言", selection: $settings.appLanguage) {
+                        ForEach(AppLanguage.allCases) { language in
+                            Text(language.label).tag(language)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: pickerWidth)
+                }
+                Text("更改后请重启 Sakura-Cap，界面语言才会完全生效。")
+                    .font(SettingsAppearance.detailFont)
+                    .foregroundStyle(SettingsAppearance.color(SettingsAppearance.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             group("文件命名") {
                 HStack(spacing: 8) {
                     TextField("{date}-{time}-{rand}", text: $settings.fileNamePattern)
@@ -640,7 +660,7 @@ struct PanelView: View {
             }
             group("启动与行为") {
                 Toggle("登录时启动", isOn: $settings.launchAtLogin)
-                Toggle("录制结束后打开裁剪窗口", isOn: $settings.autoTrimAfterRecording)
+                Toggle("录制结束后打开工作台", isOn: $settings.autoTrimAfterRecording)
             }
             group("截图标注") {
                 Picker("截图标注方式", selection: $settings.screenshotAnnotationMode) {
@@ -722,12 +742,7 @@ struct PanelView: View {
 
     // MARK: - 通用组件
 
-    private var footer: some View {
-        HStack {
-            Spacer()
-            Button("退出") { NSApp.terminate(nil) }
-        }
-    }
+    private var footer: some View { EmptyView() }
 
     private var rule: some View {
         Rectangle()

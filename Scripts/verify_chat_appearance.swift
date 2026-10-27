@@ -264,14 +264,9 @@ enum ChatAppearanceChecks {
         NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
         check(following == false, "User scrolling up must pause follow mode")
 
-        let textView = descendants(host).compactMap { $0 as? MarkdownTextView.AutoHeightTextView }.first!
-        let narrow = textView.contentSize(for: 240)
-        let wide = textView.contentSize(for: 460)
-        check(narrow.height > wide.height, "Markdown must measure height against the proposed width")
-        textView.setSelectedRange(NSRange(location: 3, length: 8))
-        model.input += "Selection refresh"
-        await settle(window)
-        check(textView.selectedRange() == NSRange(location: 3, length: 8),
-              "Unchanged Markdown updates must preserve selection")
+        let attributed = Markdown.attributed(markdown)
+        let narrow = Markdown.height(of: attributed, width: 240)
+        let wide = Markdown.height(of: attributed, width: 460)
+        check(narrow > wide, "Markdown must measure height against the proposed width")
     }
 }

@@ -8,10 +8,10 @@ final class AnnotationColorPicker: NSButton {
     var didDismissDialog: (() -> Void)?
 
     private static let swatches: [(String, NSColor)] = [
-        ("红色", .systemRed), ("橙色", .systemOrange), ("黄色", .systemYellow),
-        ("绿色", .systemGreen), ("青色", .systemTeal), ("蓝色", .systemBlue),
-        ("紫色", .systemPurple), ("粉色", .systemPink), ("白色", .white),
-        ("灰色", .systemGray), ("黑色", .black)
+        (L("红色"), .systemRed), (L("橙色"), .systemOrange), (L("黄色"), .systemYellow),
+        (L("绿色"), .systemGreen), (L("青色"), .systemTeal), (L("蓝色"), .systemBlue),
+        (L("紫色"), .systemPurple), (L("粉色"), .systemPink), (L("白色"), .white),
+        (L("灰色"), .systemGray), (L("黑色"), .black)
     ]
 
     init() {

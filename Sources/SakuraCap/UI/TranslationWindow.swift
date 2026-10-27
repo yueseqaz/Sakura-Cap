@@ -192,7 +192,7 @@ struct TranslationView: View {
             return "DeepSeek · \(settings.activeTranslateModel)"
         }
         let format = CustomAPIFormat(rawValue: settings.translateCustomFormat) ?? .openAIChat
-        return "自定义 · \(format.label) · \(settings.activeTranslateModel)"
+        return String(format: L("自定义 · %@ · %@"), format.label, settings.activeTranslateModel)
     }
 
     private func copy() {
@@ -209,13 +209,50 @@ struct EditableText: NSViewRepresentable {
     var font: NSFont = .systemFont(ofSize: 13)
     /// 非空时 ⏎ 直接提交（Shift+⏎ 换行）；nil 保持 ⏎ 换行的原行为
     var onCommit: (() -> Void)? = nil
+    var onHeightChange: ((CGFloat) -> Void)? = nil
+    /// 输入法正在组合文字时回调（例如中文拼音尚未上屏）
+    var onCompositionChange: ((Bool) -> Void)? = nil
 
     /// 可拦截回车的文本视图
     final class CommitTextView: NSTextView {
         var onCommit: (() -> Void)?
+        var onHeightChange: ((CGFloat) -> Void)?
+        var onCompositionChange: ((Bool) -> Void)?
+        private var reportedHeight: CGFloat = 0
+
+        func reportHeight() {
+            guard let onHeightChange, let layoutManager, let textContainer else { return }
+            layoutManager.ensureLayout(for: textContainer)
+            let height = min(150, max(52, ceil(layoutManager.usedRect(for: textContainer).height + textContainerInset.height * 2)))
+            guard abs(height - reportedHeight) > 1 else { return }
+            reportedHeight = height
+            DispatchQueue.main.async { onHeightChange(height) }
+        }
+
+        override func layout() {
+            super.layout()
+            reportHeight()
+        }
+
+        func reportCompositionState() {
+            let composing = hasMarkedText()
+            DispatchQueue.main.async { [weak self] in
+                self?.onCompositionChange?(composing)
+            }
+        }
+
+        override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+            super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+            reportCompositionState()
+        }
+
+        override func unmarkText() {
+            super.unmarkText()
+            reportCompositionState()
+        }
 
         override func keyDown(with event: NSEvent) {
-            if event.keyCode == 36, let onCommit {   // Return
+            if event.keyCode == 36, !hasMarkedText(), let onCommit {   // Return
                 let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
                 if !flags.contains(.shift) {
                     onCommit()
@@ -227,11 +264,13 @@ struct EditableText: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
-        let parent: EditableText
+        var parent: EditableText
         init(_ parent: EditableText) { self.parent = parent }
         func textDidChange(_ notification: Notification) {
             guard let view = notification.object as? NSTextView else { return }
             parent.text = view.string
+            (view as? CommitTextView)?.reportHeight()
+            (view as? CommitTextView)?.reportCompositionState()
         }
     }
 
@@ -251,6 +290,9 @@ struct EditableText: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.string = text
         textView.onCommit = onCommit
+        textView.onHeightChange = onHeightChange
+        textView.onCompositionChange = onCompositionChange
+        textView.textContainerInset = NSSize(width: 0, height: 8)
         // 手工构建必须配齐的自动布局参数（对齐工厂行为）
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
@@ -271,8 +313,14 @@ struct EditableText: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let textView = scroll.documentView as? CommitTextView else { return }
+        context.coordinator.parent = self
         textView.onCommit = onCommit
-        if textView.string != text {
+        textView.onHeightChange = onHeightChange
+        textView.onCompositionChange = onCompositionChange
+        // Do not replace the backing string while an IME owns marked text.
+        // SwiftUI may re-render when composition state changes; replacing the
+        // string here would cancel the active Chinese/Japanese composition.
+        if !textView.hasMarkedText(), textView.string != text {
             let selectedRanges = textView.selectedRanges
             textView.string = text
             textView.selectedRanges = selectedRanges
@@ -282,5 +330,6 @@ struct EditableText: NSViewRepresentable {
         if textView.frame.height < visibleHeight {
             textView.frame.size.height = visibleHeight
         }
+        textView.reportHeight()
     }
 }

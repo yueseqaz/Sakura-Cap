@@ -304,6 +304,10 @@ final class AnnotationEditorWindow: NSWindow {
         ] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular))
+            // Keep the narrow action rail icon-only.  The tooltip and accessibility
+            // label still provide the action name without letting text collide with
+            // neighboring controls on compact or resized editor windows.
+            button.title = ""
             button.imagePosition = .imageOnly
             button.bezelStyle = .rounded
             SettingsAppearance.styleToolbarButton(button)
@@ -312,8 +316,8 @@ final class AnnotationEditorWindow: NSWindow {
             button.target = self
             button.action = action
             button.translatesAutoresizingMaskIntoConstraints = false
-            button.widthAnchor.constraint(equalToConstant: 36).isActive = true
-            button.heightAnchor.constraint(equalToConstant: 36).isActive = true
+            button.widthAnchor.constraint(equalToConstant: 44).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         }
         ocrButton.toolTip = L("点击选择识别当前区域或重新框选")
         barcodeButton.toolTip = L("拖拽框选要识别的二维码")

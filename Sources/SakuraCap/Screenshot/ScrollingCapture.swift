@@ -213,9 +213,10 @@ final class ScrollingCapture {
         manualStableSamples = 0
         configureManualTarget()
         hud?.setManualMode()
+        let guidance = message ?? String(format: L("再向下滚动约 %d px"), manualMinShift)
         hud?.setManualProgress(shift: 0, target: manualTargetShift,
                                min: manualMinShift, max: manualMaxShift,
-                               state: message ?? L("请向下滚动至绿色区域"))
+                               state: guidance)
     }
 
     private func configureManualTarget() {
@@ -303,13 +304,13 @@ final class ScrollingCapture {
 
         let state: String
         if !manualCandidateReliable || match.shift < 3 {
-            state = L("请向下滚动至绿色区域")
+            state = L("继续滚动，停下后我会校准")
         } else if match.shift < manualMinShift {
-            state = L("滚动距离太小，请再向下滚一点")
+            state = String(format: L("再向下滚动约 %d px"), manualMinShift - match.shift)
         } else if match.shift > manualMaxShift {
-            state = L("滚动过多，请向上回滚")
+            state = String(format: L("向上回退约 %d px"), match.shift - manualTargetShift)
         } else {
-            state = L("位置合适，请停下")
+            state = L("到位了，停一下")
         }
         hud?.setManualProgress(shift: match.shift, target: manualTargetShift,
                                min: manualMinShift, max: manualMaxShift, state: state)
@@ -643,8 +644,12 @@ final class ScrollingHUDWindow: NSPanel {
                                         border: SettingsAppearance.separator, radius: 12)
 
         stateLabel.font = .systemFont(ofSize: 12)
+        stateLabel.lineBreakMode = .byTruncatingTail
+        stateLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        stateLabel.widthAnchor.constraint(equalToConstant: 190).isActive = true
         heightLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
         heightLabel.textColor = .secondaryLabelColor
+        heightLabel.widthAnchor.constraint(equalToConstant: 112).isActive = true
 
         scrollButton.bezelStyle = .rounded
         scrollButton.target = ClosureTarget.shared
@@ -731,7 +736,7 @@ final class ScrollingHUDWindow: NSPanel {
         undoButton.isHidden = false
         undoButton.isEnabled = false
         finishButton.isHidden = false
-        refit()
+        setContentSize(NSSize(width: 680, height: 52))
     }
 
     func setManualMode() {
@@ -739,7 +744,7 @@ final class ScrollingHUDWindow: NSPanel {
         manualMeter.isHidden = false
         undoButton.isEnabled = true
         scrollButton.title = L("自动滚动")
-        refit()
+        setContentSize(NSSize(width: 680, height: 52))
     }
 
     func setHeight(_ height: Int) {
@@ -750,7 +755,7 @@ final class ScrollingHUDWindow: NSPanel {
         stateLabel.stringValue = message
         // running=自动滚动中可暂停；停止后按钮变为恢复自动滚动（手动模式常驻）
         scrollButton.title = running ? L("暂停") : L("自动滚动")
-        refit()
+        // Keep the running HUD width stable while status text and pixel values change.
     }
 
     func setManualProgress(shift: Int, target: Int, min: Int, max: Int, state: String) {
@@ -759,7 +764,7 @@ final class ScrollingHUDWindow: NSPanel {
         heightLabel.stringValue = target > 0
             ? String(format: L("本段 %d / %d px"), shift, target)
             : L("等待首帧")
-        refit()
+        // Do not refit while tracking; status text must not move the HUD.
     }
 
     override var canBecomeKey: Bool { true }

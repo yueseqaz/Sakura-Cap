@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 /// 「开始录制」进入可视化选择层（点屏/点窗口/框区域）；录制中图标切换并显示计时。
 @MainActor
 final class StatusItemController: NSObject {
+    private static weak var sharedController: StatusItemController?
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let controller: RecordingController
     private var viewModel: PanelViewModel!
@@ -30,6 +31,7 @@ final class StatusItemController: NSObject {
     init(controller: RecordingController) {
         self.controller = controller
         super.init()
+        Self.sharedController = self
 
         let viewModel = PanelViewModel(controller: controller)
         self.viewModel = viewModel
@@ -296,7 +298,7 @@ final class StatusItemController: NSObject {
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.movie]
             panel.allowsMultipleSelection = false
-            panel.message = "选择要裁剪的视频"
+            panel.message = L("选择要裁剪的视频")
             if panel.runModal() == .OK, let url = panel.url {
                 // Let the file panel and status menu finish dismissing before ordering the editor.
                 DispatchQueue.main.async {
@@ -313,6 +315,12 @@ final class StatusItemController: NSObject {
         NSApp.activate(ignoringOtherApps: true)
         let window = ensureSettingsWindow()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    static func showSettings(section: String) {
+        guard let controller = sharedController else { return }
+        controller.viewModel.settingsSection = section
+        controller.showSettings()
     }
 
     /// 设置窗口的静态引用：TCC 授权弹窗会夺走焦点，系统可能顺势把普通窗口从桌面

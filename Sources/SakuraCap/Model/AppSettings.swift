@@ -53,6 +53,7 @@ final class AppSettings: ObservableObject {
         static let hotKeys = "hotKeys"
         static let onboarding = "hasCompletedOnboarding"
         static let fileNamePattern = "fileNamePattern"
+        static let appLanguage = "appLanguage"
         static let translateProvider = "translateProvider"
         static let translateCustomFormat = "translateCustomFormat"
         static let translateBaseURL = "translateBaseURL"
@@ -126,8 +127,8 @@ final class AppSettings: ObservableObject {
 
     // 录屏时开启勿扰（通过「快捷指令」切换专注模式）
     @Published var dndDuringRecording = false { didSet { d.set(dndDuringRecording, forKey: Keys.dnd) } }
-    @Published var dndOnShortcut = "Sakura-Cap 开启勿扰" { didSet { d.set(dndOnShortcut, forKey: Keys.dndOn) } }
-    @Published var dndOffShortcut = "Sakura-Cap 关闭勿扰" { didSet { d.set(dndOffShortcut, forKey: Keys.dndOff) } }
+    @Published var dndOnShortcut = L("Sakura-Cap 开启勿扰") { didSet { d.set(dndOnShortcut, forKey: Keys.dndOn) } }
+    @Published var dndOffShortcut = L("Sakura-Cap 关闭勿扰") { didSet { d.set(dndOffShortcut, forKey: Keys.dndOff) } }
 
     // 录制完成后自动打开裁剪页
     @Published var autoTrimAfterRecording = true { didSet { d.set(autoTrimAfterRecording, forKey: Keys.autoTrim) } }
@@ -146,6 +147,14 @@ final class AppSettings: ObservableObject {
 
     // 自动命名模板（截图 / 录屏 / 截帧）
     @Published var fileNamePattern = FileName.defaultPattern { didSet { d.set(fileNamePattern, forKey: Keys.fileNamePattern) } }
+
+    // 界面语言：更改后下次启动生效，避免当前窗口出现中英文混排。
+    @Published var appLanguage: AppLanguage = .system {
+        didSet {
+            d.set(appLanguage.rawValue, forKey: Keys.appLanguage)
+            appLanguage.apply(to: d)
+        }
+    }
 
     // 翻译
     @Published var translateProvider: TranslateProvider = .deepSeek { didSet { d.set(translateProvider.rawValue, forKey: Keys.translateProvider) } }
@@ -222,8 +231,12 @@ final class AppSettings: ObservableObject {
         if let raw = d.string(forKey: Keys.cameraCorner), let corner = PiPCorner(rawValue: raw) { cameraPiPCorner = corner }
         if let raw = d.string(forKey: Keys.outputResolution), let r = OutputResolution(rawValue: raw) { outputResolution = r }
         dndDuringRecording = d.bool(forKey: Keys.dnd)
-        if let s = d.string(forKey: Keys.dndOn) { dndOnShortcut = s }
-        if let s = d.string(forKey: Keys.dndOff) { dndOffShortcut = s }
+        if let s = d.string(forKey: Keys.dndOn) {
+            dndOnShortcut = localizedDefaultShortcut(s, key: "Sakura-Cap 开启勿扰")
+        }
+        if let s = d.string(forKey: Keys.dndOff) {
+            dndOffShortcut = localizedDefaultShortcut(s, key: "Sakura-Cap 关闭勿扰")
+        }
         autoTrimAfterRecording = d.object(forKey: Keys.autoTrim) == nil ? true : d.bool(forKey: Keys.autoTrim)
         countdownEnabled = d.object(forKey: Keys.countdown) == nil ? true : d.bool(forKey: Keys.countdown)
         if let raw = d.string(forKey: Keys.codec), let c = VideoCodec(rawValue: raw) { codec = c }
@@ -235,6 +248,9 @@ final class AppSettings: ObservableObject {
         showFPSOverlay = d.bool(forKey: Keys.fpsOverlay)
         hasCompletedOnboarding = d.bool(forKey: Keys.onboarding)
         if let s = d.string(forKey: Keys.fileNamePattern) { fileNamePattern = s }
+        if let raw = d.string(forKey: Keys.appLanguage), let language = AppLanguage(rawValue: raw) {
+            appLanguage = language
+        }
         if let raw = d.string(forKey: Keys.translateProvider), let p = TranslateProvider(rawValue: raw) { translateProvider = p }
         if let raw = d.string(forKey: Keys.translateCustomFormat), let f = CustomAPIFormat(rawValue: raw) { translateCustomFormat = raw }
         translateBaseURL = d.string(forKey: Keys.translateBaseURL) ?? ""
@@ -275,6 +291,21 @@ final class AppSettings: ObservableObject {
     }
 
     // MARK: - 敏感值存取（UserDefaults + base64 脱敏）
+
+    /// Keep the built-in Do Not Disturb shortcut names in sync with the UI
+    /// language, while preserving names that the user has customized.
+    private func localizedDefaultShortcut(_ value: String, key: String) -> String {
+        let legacy = key == "Sakura-Cap 开启勿扰"
+            ? "Sakura-Cap 开启勿扰"
+            : "Sakura-Cap 关闭勿扰"
+        let english = key == "Sakura-Cap 开启勿扰"
+            ? "Sakura-Cap Enable Do Not Disturb"
+            : "Sakura-Cap Disable Do Not Disturb"
+        guard value == legacy || value == english else { return value }
+        let localized = L(key)
+        if value != localized { d.set(localized, forKey: key == "Sakura-Cap 开启勿扰" ? Keys.dndOn : Keys.dndOff) }
+        return localized
+    }
 
     /// 写入：空值删键；非空值 base64 编码后存（与旧明文同域不同键，避免误判）
     private func storeObfuscated(_ value: String, key: String) {

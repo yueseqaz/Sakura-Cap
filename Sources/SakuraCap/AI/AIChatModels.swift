@@ -57,11 +57,11 @@ final class AIChatStore {
     let directory: URL
     private let imagesDirectory: URL
 
-    init() {
+    init(directory: URL? = nil) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        directory = support.appendingPathComponent("SakuraCap/AIChats", isDirectory: true)
-        imagesDirectory = directory.appendingPathComponent("images", isDirectory: true)
+        self.directory = directory ?? support.appendingPathComponent("SakuraCap/AIChats", isDirectory: true)
+        imagesDirectory = self.directory.appendingPathComponent("images", isDirectory: true)
         try? FileManager.default.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
         load()
     }

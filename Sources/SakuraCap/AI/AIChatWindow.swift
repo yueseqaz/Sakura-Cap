@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 /// AI 聊天窗口的视图模型：当前会话 + 输入 + 附件 + 流式状态
 @MainActor
 final class AIChatViewModel: ObservableObject {
+    typealias ReplyStream = ([AIChatMessage], TranslationConfig, AIChatStore, String?,
+                            @escaping (String) -> Void) async throws -> String
     @Published private(set) var session: AIChatSession
     @Published var input = ""
     /// 待发送的图片附件（文件名，来自标注页 / 截屏问 AI）
@@ -17,13 +19,36 @@ final class AIChatViewModel: ObservableObject {
     @Published private(set) var scrollStamp = 0
 
     private var streamTask: Task<Void, Never>?
-    private let store = AIChatStore.shared
+    private var streamID: UUID?
+    private let store: AIChatStore
+    private let replyStream: ReplyStream
 
-    init(session: AIChatSession) {
+    init(session: AIChatSession, store: AIChatStore? = nil,
+         replyStream: @escaping ReplyStream = AIChatClient.stream) {
         self.session = session
+        self.store = store ?? AIChatStore.shared
+        self.replyStream = replyStream
     }
 
     var isEmpty: Bool { session.messages.isEmpty && streamingText.isEmpty && stagedImages.isEmpty }
+    var canSend: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !stagedImages.isEmpty }
+    var canRetry: Bool { error != nil && !isStreaming && session.messages.contains { $0.role == .user } }
+
+    func retry() {
+        guard canRetry, let lastUser = session.messages.lastIndex(where: { $0.role == .user }) else { return }
+        // Retrying replaces only the failed answer, never duplicates the question.
+        let answerStart = lastUser + 1
+        if answerStart < session.messages.count {
+            session.messages.removeSubrange(answerStart..<session.messages.count)
+        }
+        error = nil
+        store.save(&session)
+        streamReply()
+    }
+
+    func sendOrStop() {
+        if isStreaming { stopTapped() } else { send() }
+    }
 
     func attach(image: CGImage) {
         if let name = store.saveImage(image) {
@@ -97,8 +122,9 @@ final class AIChatViewModel: ObservableObject {
         \(session.summary.map { "已有摘要：\n\($0)\n\n" } ?? "")新增对话：
         \(transcript)
         """
-        if let merged = try? await AIChatClient.stream(messages: [AIChatMessage(role: .user, text: prompt)],
-                                                       config: config, store: store, onDelta: { _ in }) {
+        let sessionID = session.id
+        if let merged = try? await replyStream([AIChatMessage(role: .user, text: prompt)], config, store, nil, { _ in }),
+           !Task.isCancelled, session.id == sessionID {
             session.summary = merged
             session.summarizedUpTo = total - Self.keepRecent
             store.save(&session)
@@ -107,35 +133,41 @@ final class AIChatViewModel: ObservableObject {
 
     private func streamReply() {
         let config = AppSettings.shared.translationConfig
+        let requestID = UUID()
+        streamID = requestID
         isStreaming = true
         streamingText = ""
         scrollStamp += 1
         streamTask = Task { [weak self] in
             guard let self else { return }
             await self.compressMemoryIfNeeded(config: config)
+            guard !Task.isCancelled, self.streamID == requestID else { return }
             // 已有摘要时只携带未压缩的最近消息
             let summarized = self.session.summarizedUpTo ?? 0
             let clamped = min(summarized, self.session.messages.count)
             let history = summarized > 0 ? Array(self.session.messages[clamped...]) : self.session.messages
             let summary = summarized > 0 ? self.session.summary : nil
             do {
-                let full = try await AIChatClient.stream(messages: history, config: config, store: self.store,
-                                                         summary: summary) { [weak self] delta in
+                let full = try await self.replyStream(history, config, self.store, summary) { [weak self] delta in
                     guard let self else { return }
                     Task { @MainActor in
+                        guard self.streamID == requestID else { return }
                         self.streamingText += delta
                         self.scrollStamp += 1
                     }
                 }
+                guard self.streamID == requestID else { return }
                 self.session.messages.append(AIChatMessage(role: .assistant, text: full))
                 self.store.save(&self.session)
             } catch is CancellationError {
+                guard self.streamID == requestID else { return }
                 // 手动停止：保留已流出的部分
                 if !self.streamingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     self.session.messages.append(AIChatMessage(role: .assistant, text: self.streamingText))
                     self.store.save(&self.session)
                 }
             } catch {
+                guard self.streamID == requestID else { return }
                 if !self.streamingText.isEmpty {
                     self.session.messages.append(AIChatMessage(role: .assistant, text: self.streamingText))
                     self.store.save(&self.session)
@@ -144,6 +176,8 @@ final class AIChatViewModel: ObservableObject {
             }
             self.streamingText = ""
             self.isStreaming = false
+            self.streamID = nil
+            self.streamTask = nil
             self.scrollStamp += 1
         }
     }
@@ -151,6 +185,14 @@ final class AIChatViewModel: ObservableObject {
     func cancelStreaming() {
         streamTask?.cancel()
         streamTask = nil
+        streamID = nil
+        if !streamingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            session.messages.append(AIChatMessage(role: .assistant, text: streamingText))
+            store.save(&session)
+        }
+        streamingText = ""
+        isStreaming = false
+        scrollStamp += 1
     }
 
     func stopTapped() { cancelStreaming() }
@@ -262,13 +304,13 @@ struct AIChatView: View {
 struct ChatPane: View {
     @ObservedObject var model: AIChatViewModel
     @StateObject private var scrollState = ChatScrollState()
+    @StateObject private var composerState = ChatComposerState()
 
     var body: some View {
         VStack(spacing: 0) {
             topBar
             Divider()
             messageList
-            Divider()
             composer
         }
     }
@@ -281,7 +323,7 @@ struct ChatPane: View {
             return "DeepSeek · \(settings.activeTranslateModel)"
         }
         let format = CustomAPIFormat(rawValue: settings.translateCustomFormat) ?? .openAIChat
-        return "自定义 · \(format.label) · \(settings.activeTranslateModel)"
+        return String(format: L("自定义 · %@ · %@"), format.label, settings.activeTranslateModel)
     }
 
     private var topBar: some View {
@@ -298,7 +340,7 @@ struct ChatPane: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .font(SettingsAppearance.detailFont)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             if model.session.summary != nil {
@@ -306,22 +348,20 @@ struct ChatPane: View {
                     .foregroundStyle(.tertiary)
                     .help(L("早期对话已压缩为摘要，随对话滚动更新"))
             }
-            if model.isStreaming {
-                Button(L("停止")) { model.stopTapped() }
-                    .buttonStyle(.bordered)
+            Button { model.startNewSession() } label: {
+                Label(L("新对话"), systemImage: "square.and.pencil")
             }
-            Button(L("新对话")) { model.startNewSession() }
-                .buttonStyle(.bordered)
+            .buttonStyle(SettingsButtonStyle())
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     private var messageList: some View {
         ScrollView {
             // Markdown has variable height. Lazy row estimates can change the
             // document height above the viewport while reading older messages.
-            VStack(spacing: 12) {
+            VStack(spacing: 20) {
                 if model.isEmpty {
                     emptyHint
                 }
@@ -333,10 +373,22 @@ struct ChatPane: View {
                     MessageBubble(message: AIChatMessage(role: .assistant, text: model.streamingText),
                                   model: model, streaming: true)
                         .id("streaming")
+                } else if model.isStreaming {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(L("正在连接模型…"))
+                            .font(SettingsAppearance.detailFont)
+                            .foregroundStyle(SettingsAppearance.color(SettingsAppearance.secondary))
+                        Spacer(minLength: 0)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .id("streaming")
                 }
                 Color.clear.frame(height: 1)
             }
-            .padding(12)
+            .frame(maxWidth: 720)
+            .padding(16)
+            .frame(maxWidth: .infinity)
             .background(ChatScrollTracking(state: scrollState) { scrollState.followsLatestMessage = $0 })
         }
         .onChange(of: model.session.id) { _ in
@@ -365,7 +417,29 @@ struct ChatPane: View {
     }
 
     private var composer: some View {
-        VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
+            if let error = model.error {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(error, systemImage: "exclamationmark.circle")
+                        .font(SettingsAppearance.detailFont)
+                        .foregroundStyle(SettingsAppearance.color(SettingsAppearance.error))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 12) {
+                        if model.canRetry {
+                            Button(L("重试")) { model.retry() }
+                        }
+                        Button(L("服务设置")) { StatusItemController.showSettings(section: "translate") }
+                        Spacer(minLength: 0)
+                        Button { model.error = nil } label: { Image(systemName: "xmark") }
+                            .accessibilityLabel(L("关闭提示"))
+                    }
+                    .font(SettingsAppearance.detailFont)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(SettingsAppearance.color(SettingsAppearance.focus))
+                }
+                .padding(.horizontal, 2)
+            }
             if !model.stagedImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -376,53 +450,61 @@ struct ChatPane: View {
                     .padding(.top, 10)   // 给移除按钮留出上方空间，不被分隔线压住
                 }
                 .frame(height: 80)
-                .padding(.horizontal, 12)
             }
-            HStack(alignment: .bottom, spacing: 8) {
-                Button {
-                    model.attachFromPicker()
-                } label: {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 20))
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+            ZStack(alignment: .topLeading) {
+                if model.input.isEmpty && !composerState.isComposing {
+                    Text(L("继续提问，或添加图片…"))
+                        .foregroundStyle(SettingsAppearance.color(SettingsAppearance.secondary))
+                        .padding(.top, 8)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
+                }
+                EditableText(text: $model.input, font: .systemFont(ofSize: 14),
+                             onCommit: { model.send() },
+                             onHeightChange: { composerState.height = $0 },
+                             onCompositionChange: { composerState.isComposing = $0 })
+                    .frame(height: composerState.height)
+                    .accessibilityLabel(L("消息输入"))
+            }
+            HStack(spacing: 8) {
+                Button { model.attachFromPicker() } label: {
+                    Label(L("图片"), systemImage: "plus")
+                        .frame(minHeight: 30)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
                 .help(L("添加图片"))
-                .padding(.bottom, 14)
-                EditableText(text: $model.input, onCommit: { model.send() })
-                    .frame(height: 72)
-                VStack(spacing: 6) {
-
-                    Button {
-                        model.send()
-                    } label: {
-                        Image(systemName: model.isStreaming ? "stop.circle" : "arrow.up.circle.fill")
-                            .font(.system(size: 22))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(SettingsAppearance.color(SettingsAppearance.accent))
-                    .disabled(model.isStreaming && model.streamingText.isEmpty)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .help(model.isStreaming ? L("停止生成") : L("发送 ⏎"))
-                }
-                .padding(.bottom, 6)
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
-        }
-        .overlay(alignment: .top) {
-            if let error = model.error {
-                Text(error)
+                Spacer(minLength: 0)
+                Text(L("Enter 发送 · Shift Enter 换行"))
                     .font(SettingsAppearance.detailFont)
-                    .foregroundStyle(SettingsAppearance.color(SettingsAppearance.error))
-                    .lineLimit(2)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 4)
+                    .foregroundStyle(SettingsAppearance.color(SettingsAppearance.secondary))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
+                Button { model.sendOrStop() } label: {
+                    Image(systemName: model.isStreaming ? "stop.fill" : "arrow.up")
+                        .frame(width: 18)
+                }
+                .buttonStyle(PrimaryActionButtonStyle())
+                .disabled(!model.isStreaming && !model.canSend)
+                .keyboardShortcut(.return, modifiers: .command)
+                .accessibilityLabel(model.isStreaming ? L("停止生成") : L("发送"))
+                .help(model.isStreaming ? L("停止生成") : L("发送 ⏎"))
             }
         }
+        .font(.system(size: 14))
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12)
+            .fill(SettingsAppearance.color(SettingsAppearance.sidebar)))
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(SettingsAppearance.color(SettingsAppearance.separator), lineWidth: SettingsAppearance.borderWidth))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 14)
+        .padding(.top, 4)
     }
+}
+
+private final class ChatComposerState: ObservableObject {
+    @Published var height: CGFloat = 52
+    @Published var isComposing = false
 }
 
 /// 单条消息气泡：用户（右、纯文本+图片）/ 助手（左、Markdown）
@@ -436,13 +518,14 @@ private struct MessageBubble: View {
             if message.role == .user { Spacer(minLength: 32) }
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
                 if !message.imageFiles.isEmpty {
-                    HStack(spacing: 6) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 160), alignment: .leading)], alignment: .leading, spacing: 8) {
                         ForEach(message.imageFiles, id: \.self) { name in
                             if let cg = model.image(name) {
                                 Image(nsImage: NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)))
                                     .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 120, height: 90)
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(maxWidth: 160, maxHeight: 120)
+                                    .background(SettingsAppearance.color(SettingsAppearance.control))
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                     .onTapGesture { AIChatImageViewer.shared.show(cg) }
                             }
@@ -455,6 +538,8 @@ private struct MessageBubble: View {
                             // Keep the live response in SwiftUI's layout system so each
                             // token immediately gets a visible, resize-safe text frame.
                             Text(message.text)
+                                .font(.system(size: 14))
+                                .lineSpacing(4)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -466,18 +551,20 @@ private struct MessageBubble: View {
                     } else {
                         Text(message.text)
                             .textSelection(.enabled)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
+                            .font(.system(size: 14))
+                            .foregroundStyle(SettingsAppearance.color(SettingsAppearance.text))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
                             .background(RoundedRectangle(cornerRadius: 10)
-                                .fill(SettingsAppearance.color(SettingsAppearance.accent)))
+                                .fill(SettingsAppearance.color(SettingsAppearance.selection)))
                     }
                 }
                 if streaming {
-                    HStack(spacing: 4) {
-                        Circle().fill(Color.secondary).frame(width: 5, height: 5)
-                        Circle().fill(Color.secondary).frame(width: 5, height: 5)
-                        Circle().fill(Color.secondary).frame(width: 5, height: 5)
+                    HStack(spacing: 6) {
+                        Circle().fill(SettingsAppearance.color(SettingsAppearance.focus)).frame(width: 5, height: 5)
+                        Text(L("正在生成…"))
+                            .font(SettingsAppearance.detailFont)
+                            .foregroundStyle(SettingsAppearance.color(SettingsAppearance.secondary))
                     }
                     .padding(.top, 2)
                 }
