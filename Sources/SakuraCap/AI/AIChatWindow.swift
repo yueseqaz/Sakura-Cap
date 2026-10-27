@@ -451,9 +451,18 @@ private struct MessageBubble: View {
                 }
                 if !message.text.isEmpty {
                     if message.role == .assistant {
-                        // 内在高度驱动布局：NSTextView 报告真实内容高度，避免外部量算
-                        MarkdownTextView(attributed: Markdown.attributed(message.text))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if streaming {
+                            // Keep the live response in SwiftUI's layout system so each
+                            // token immediately gets a visible, resize-safe text frame.
+                            Text(message.text)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            // Markdown view reports its intrinsic height after the stream ends.
+                            MarkdownTextView(attributed: Markdown.attributed(message.text))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     } else {
                         Text(message.text)
                             .textSelection(.enabled)
@@ -479,53 +488,19 @@ private struct MessageBubble: View {
 }
 
 /// 只读 Markdown 文本视图（可选中、链接可点）。
-/// 按 SwiftUI 提议的实际宽度排版，避免先用旧宽度估高再跳动。
-struct MarkdownTextView: NSViewRepresentable {
+/// 使用 SwiftUI 原生文本布局，避免 AppKit 文本视图在窗口调整尺寸时
+/// 反复失效 intrinsic height，导致气泡闪烁或内容被裁掉。
+struct MarkdownTextView: View {
     let attributed: NSAttributedString
 
-    final class AutoHeightTextView: NSTextView {
-        func contentSize(for width: CGFloat) -> NSSize {
-            guard let container = textContainer, let manager = layoutManager else {
-                return NSSize(width: width, height: 0)
-            }
-            container.containerSize = NSSize(width: max(1, width - textContainerInset.width * 2),
-                                             height: .greatestFiniteMagnitude)
-            manager.ensureLayout(for: container)
-            let height = ceil(manager.usedRect(for: container).height + textContainerInset.height * 2 + 6)
-            return NSSize(width: width, height: height)
-        }
-
-        override var intrinsicContentSize: NSSize {
-            let size = contentSize(for: max(1, bounds.width))
-            return NSSize(width: NSView.noIntrinsicMetric, height: size.height)
-        }
-    }
-
-    func makeNSView(context: Context) -> AutoHeightTextView {
-        let view = AutoHeightTextView()
-        view.isEditable = false
-        view.isSelectable = true
-        view.drawsBackground = false
-        view.isVerticallyResizable = false
-        view.isHorizontallyResizable = false
-        view.textContainer?.widthTracksTextView = true
-        view.textContainer?.heightTracksTextView = false
-        view.textContainerInset = NSSize(width: 10, height: 5)
-        view.textStorage?.setAttributedString(attributed)
-        return view
-    }
-
-    func updateNSView(_ view: AutoHeightTextView, context: Context) {
-        // Replacing identical text resets selection and can scroll an ancestor
-        // to the start of this message when SwiftUI refreshes the row.
-        guard view.textStorage?.isEqual(to: attributed) != true else { return }
-        view.textStorage?.setAttributedString(attributed)
-        view.invalidateIntrinsicContentSize()
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: AutoHeightTextView, context: Context) -> CGSize? {
-        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
-        return nsView.contentSize(for: width)
+    var body: some View {
+        // AttributedString keeps the Markdown renderer's fonts, colors,
+        // paragraph spacing, and links while letting SwiftUI recalculate the
+        // wrapped height atomically whenever the window width changes.
+        Text(AttributedString(attributed))
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -199,6 +199,9 @@
 "已撤销上一段，请重新滚动至绿色区域" = "Undid the previous step; scroll into the green zone again";
 "还没有可撤销的段落" = "There is no step to undo";
 "无法采集当前画面" = "Could not capture the current frame";
+"点击选择识别当前区域或重新框选" = "Choose the current region or select a new region";
+"识别当前区域" = "Recognize current region";
+"重新框选识别" = "Select a new region";
 "自动滚动中" = "Auto-scrolling";
 "自动滚动需要辅助功能权限，请手动滚动" = "Accessibility access required; scroll manually";
 "所有显示器并行录制（每屏各存一份）" = "Record all displays in parallel (one file each)";

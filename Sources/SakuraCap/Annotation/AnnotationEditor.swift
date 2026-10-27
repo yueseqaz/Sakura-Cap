@@ -48,6 +48,8 @@ final class AnnotationEditorWindow: NSWindow {
     private let translateButton = NSButton()
     private let askAIButton = NSButton()
     private let uploadButton = NSButton()
+    private let eyedropperButton = NSButton()
+    private let measureButton = NSButton()
 
     private lazy var actions = AnnotationEditorActions(canvas: canvas, suggestedName: suggestedName,
         renderImage: { [weak self] in
@@ -69,6 +71,12 @@ final class AnnotationEditorWindow: NSWindow {
         }
         if event.keyCode == 51 || event.keyCode == 117 {
             canvas.deleteSelected()
+            refresh()
+            return
+        }
+        if event.keyCode == 53,
+           canvas.recognitionAction != nil || canvas.isPickingColor || canvas.isMeasuring || canvas.hasMeasurement {
+            canvas.cancelOperation(nil)
             refresh()
             return
         }
@@ -113,6 +121,7 @@ final class AnnotationEditorWindow: NSWindow {
             guard let self else { return }
             self.colorPicker.selectedColor = color
             self.actions.pickColor(color)
+            self.refresh()
         }
 
         actions.onChange = { [weak self] in self?.refresh() }
@@ -169,6 +178,8 @@ final class AnnotationEditorWindow: NSWindow {
 
         toolSegment.segmentCount = allTools.count
         toolSegment.trackingMode = .selectOne
+        toolSegment.segmentStyle = .rounded
+        toolSegment.selectedSegmentBezelColor = .controlAccentColor
         for (index, tool) in allTools.enumerated() {
             let image = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: nil)
             toolSegment.setImage(image, forSegment: index)
@@ -229,10 +240,8 @@ final class AnnotationEditorWindow: NSWindow {
         let pinButton = NSButton(title: L("定住"), target: self, action: #selector(pinTapped))
         pinButton.bezelStyle = .rounded
         SettingsAppearance.styleToolbarButton(pinButton)
-        let eyedropperButton = NSButton()
         configure(eyedropperButton, symbol: "eyedropper", action: #selector(eyedropperTapped))
         eyedropperButton.toolTip = L("吸管：点击图片取色并复制 HEX")
-        let measureButton = NSButton()
         configure(measureButton, symbol: "ruler", action: #selector(measureTapped))
         measureButton.toolTip = L("测量：点击两个点量距离（像素）")
         configure(magnifierButton, symbol: "plus.magnifyingglass", action: #selector(magnifierTapped))
@@ -306,9 +315,9 @@ final class AnnotationEditorWindow: NSWindow {
             button.widthAnchor.constraint(equalToConstant: 36).isActive = true
             button.heightAnchor.constraint(equalToConstant: 36).isActive = true
         }
-        ocrButton.toolTip = L("拖拽框选图片中的文字并复制到剪贴板")
+        ocrButton.toolTip = L("点击选择识别当前区域或重新框选")
         barcodeButton.toolTip = L("拖拽框选要识别的二维码")
-        translateButton.toolTip = L("拖拽框选要翻译的文字")
+        translateButton.toolTip = L("点击选择识别当前区域或重新框选")
         askAIButton.toolTip = L("把这张图片发给 AI（或先 OCR）")
         uploadButton.toolTip = L("上传整图（含标注）到图床，链接按设置格式复制到剪贴板")
         let stack = NSStackView(views: [ocrButton, barcodeButton, translateButton, askAIButton, uploadButton])
@@ -339,6 +348,15 @@ final class AnnotationEditorWindow: NSWindow {
         barcodeButton.isEnabled = !actions.isBarcodeBusy
         translateButton.isEnabled = !actions.isTranslationBusy
         uploadButton.isEnabled = !actions.isUploadBusy
+        let activeRecognition = canvas.recognitionAction
+        // Busy work is represented by the disabled state; only an actual
+        // transient selection is shown as the selected tool.
+        SettingsAppearance.setToolActive(ocrButton, activeRecognition == .ocr, inactiveColor: .labelColor)
+        SettingsAppearance.setToolActive(barcodeButton, activeRecognition == .barcode, inactiveColor: .labelColor)
+        SettingsAppearance.setToolActive(translateButton, activeRecognition == .translate, inactiveColor: .labelColor)
+        SettingsAppearance.setToolActive(uploadButton, false, inactiveColor: .labelColor)
+        SettingsAppearance.setToolActive(eyedropperButton, canvas.isPickingColor, inactiveColor: .labelColor)
+        SettingsAppearance.setToolActive(measureButton, canvas.isMeasuring, inactiveColor: .labelColor)
         let showMosaic = canvas.tool == .mosaic
         mosaicLabel.isHidden = !showMosaic
         mosaicSegment.isHidden = !showMosaic
@@ -356,7 +374,8 @@ final class AnnotationEditorWindow: NSWindow {
         redoButton.isEnabled = canvas.canRedo
         zoomLabel.stringValue = "\(Int((canvas.zoom * 100).rounded()))%"
         magnifierButton.state = canvas.tool == .magnifier ? .on : .off
-        if canvas.tool == .magnifier { toolSegment.selectedSegment = -1 }
+        SettingsAppearance.setToolActive(magnifierButton, canvas.tool == .magnifier, inactiveColor: .labelColor)
+        toolSegment.selectedSegment = canvas.tool == .magnifier ? -1 : (allTools.firstIndex(of: canvas.tool) ?? -1)
     }
 
     @objc private func toolChanged() {
@@ -391,17 +410,54 @@ final class AnnotationEditorWindow: NSWindow {
     @objc private func zoomOutTapped() { canvas.zoomOut(); refresh() }
     @objc private func fitTapped() { canvas.resetZoom(); refresh() }
     @objc private func pinTapped() { actions.pinTapped() }
-    @objc private func eyedropperTapped() { actions.eyedropperTapped() }
-    @objc private func measureTapped() { actions.measureTapped() }
+    @objc private func eyedropperTapped() { actions.eyedropperTapped(); refresh() }
+    @objc private func measureTapped() { actions.measureTapped(); refresh() }
     @objc private func askAITapped() { actions.askAITapped() }
-    @objc private func ocrTapped() { actions.ocrTapped() }
-    @objc private func barcodeTapped() { actions.barcodeTapped() }
-    @objc private func translateTapped() { actions.translateTapped() }
+    @objc private func ocrTapped() {
+        guard !showRecognitionMenu(for: .ocr, from: ocrButton) else { return }
+        actions.ocrTapped()
+        refresh()
+    }
+    @objc private func barcodeTapped() { actions.barcodeTapped(); refresh() }
+    @objc private func translateTapped() {
+        guard !showRecognitionMenu(for: .translate, from: translateButton) else { return }
+        actions.translateTapped()
+        refresh()
+    }
     @objc private func uploadTapped() { actions.uploadTapped() }
     @objc private func undoTapped() { actions.undoTapped() }
     @objc private func redoTapped() { actions.redoTapped() }
     @objc private func saveTapped() { actions.saveTapped() }
     @objc private func copyTapped() { actions.copyTapped() }
+
+    private func showRecognitionMenu(for action: AnnotationCanvas.RecognitionAction, from button: NSButton) -> Bool {
+        guard let event = NSApp.currentEvent, event.window === button.window else { return false }
+        let menu = NSMenu()
+        let current = NSMenuItem(title: L("识别当前区域"), action: #selector(recognitionMenuItem(_:)), keyEquivalent: "")
+        current.target = self
+        current.tag = action.rawValue * 2
+        let reselect = NSMenuItem(title: L("重新框选识别"), action: #selector(recognitionMenuItem(_:)), keyEquivalent: "")
+        reselect.target = self
+        reselect.tag = action.rawValue * 2 + 1
+        menu.addItem(current)
+        menu.addItem(reselect)
+        NSMenu.popUpContextMenu(menu, with: event, for: button)
+        return true
+    }
+
+    @objc private func recognitionMenuItem(_ sender: NSMenuItem) {
+        guard let action = AnnotationCanvas.RecognitionAction(rawValue: sender.tag / 2) else { return }
+        if sender.tag.isMultiple(of: 2) {
+            actions.recognizeCurrentSelection(action)
+        } else {
+            switch action {
+            case .ocr: actions.ocrTapped()
+            case .barcode: actions.barcodeTapped()
+            case .translate: actions.translateTapped()
+            }
+        }
+        refresh()
+    }
 
     override func close() {
         super.close()

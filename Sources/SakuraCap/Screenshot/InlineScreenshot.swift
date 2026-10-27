@@ -25,6 +25,8 @@ final class InlineScreenshotController: NSObject {
     private var copyButton: NSButton?
     private var saveButton: NSButton?
     private var magnifierButton: NSButton?
+    private var eyedropperButton: NSButton?
+    private var measureButton: NSButton?
     private var zoomLabel: NSTextField?
     private var colorPicker: AnnotationColorPicker?
     private var widthSlider: NSSlider?
@@ -132,6 +134,7 @@ final class InlineScreenshotController: NSObject {
         if event.keyCode == 53 {
             if canvas?.recognitionAction != nil || canvas?.isPickingColor == true || canvas?.isMeasuring == true || canvas?.hasMeasurement == true {
                 canvas?.cancelOperation(nil)
+                activeView?.setRecognitionSelectionActive(false)
                 self.refreshControls()
             } else if event.window?.firstResponder is NSTextView {
                 canvas?.finishTextEditing()
@@ -199,10 +202,14 @@ final class InlineScreenshotController: NSObject {
             colorPicker?.selectedColor = view.canvas.color
             colorPicker?.willPresentDialog = commands.suspend
             colorPicker?.didDismissDialog = commands.resume
-            view.canvas.onRecognitionSelection = { [weak commands] action, rect in commands?.recognize(action, in: rect) }
+            view.canvas.onRecognitionSelection = { [weak commands, weak view] action, rect in
+                view?.setRecognitionSelectionActive(false)
+                commands?.recognize(action, in: rect)
+            }
             view.canvas.onColorPicked = { [weak self, weak commands] color in
                 self?.colorPicker?.selectedColor = color
                 commands?.pickColor(color)
+                self?.refreshControls()
             }
             positionToolbar()
         }
@@ -217,7 +224,8 @@ final class InlineScreenshotController: NSObject {
         picker.segmentCount = tools.count
         picker.trackingMode = .selectOne
         picker.selectedSegment = -1
-        picker.segmentStyle = .separated
+        picker.segmentStyle = .rounded
+        picker.selectedSegmentBezelColor = .controlAccentColor
         picker.target = self
         picker.action = #selector(toolChanged)
         for (index, tool) in tools.enumerated() {
@@ -241,6 +249,10 @@ final class InlineScreenshotController: NSObject {
         zoomLabel = zoom
         let magnifier = button("plus.magnifyingglass", "放大镜：拖出圆形区域，将其中的图片放大 2 倍", #selector(magnifier))
         magnifierButton = magnifier
+        let eyedropper = button("eyedropper", "吸管：点击图片取色并复制 HEX", #selector(eyedropper))
+        eyedropperButton = eyedropper
+        let measure = button("ruler", "测量：点击两个点量距离（像素）", #selector(measure))
+        measureButton = measure
         let copy = NSButton(title: L("拷贝"), target: self, action: #selector(copyTapped))
         let save = NSButton(title: L("保存"), target: self, action: #selector(save))
         for button in [copy, save] {
@@ -255,8 +267,7 @@ final class InlineScreenshotController: NSObject {
         let utility = row([button("minus.magnifyingglass", "缩小", #selector(zoomOut)), zoom,
                            button("plus.magnifyingglass", "放大", #selector(zoomIn)),
                            button("arrow.up.left.and.arrow.down.right", "适应", #selector(fit)), separator(),
-                           button("pin", "定住", #selector(pin)), button("eyedropper", "吸管：点击图片取色并复制 HEX", #selector(eyedropper)),
-                           button("ruler", "测量：点击两个点量距离（像素）", #selector(measure)), magnifier,
+                           button("pin", "定住", #selector(pin)), eyedropper, measure, magnifier,
                            separator(), copy, save, button("xmark", "删除截图", #selector(cancel))])
         let content = row([edit, separator(), utility])
         if content.fittingSize.width + 24 > availableWidth - 32 {
@@ -273,6 +284,9 @@ final class InlineScreenshotController: NSObject {
                                ("character.bubble", "翻译"), ("sparkles", "问 AI"), ("icloud.and.arrow.up", "上传图床")].enumerated() {
             let control = button(entry.0, entry.1, #selector(quickAction(_:)), size: 34)
             control.tag = index
+            if index == 0 || index == 2 {
+                control.toolTip = L("点击选择识别当前区域或重新框选")
+            }
             quickButtons.append(control)
             rail.addArrangedSubview(control)
         }
@@ -380,8 +394,15 @@ final class InlineScreenshotController: NSObject {
         undoButton?.isEnabled = canvas?.canUndo ?? false
         redoButton?.isEnabled = canvas?.canRedo ?? false
         adjustButton?.state = activeView?.adjustingSelection == true ? .on : .off
+        if let adjustButton {
+            SettingsAppearance.setToolActive(adjustButton, activeView?.adjustingSelection == true)
+        }
         toolPicker?.selectedSegment = activeView?.adjustingSelection == true ? -1 : tools.firstIndex(of: canvas?.tool ?? .select) ?? -1
-        magnifierButton?.state = canvas?.tool == .magnifier && activeView?.adjustingSelection == false ? .on : .off
+        let magnifierActive = canvas?.tool == .magnifier && activeView?.adjustingSelection == false
+        magnifierButton?.state = magnifierActive ? .on : .off
+        if let magnifierButton { SettingsAppearance.setToolActive(magnifierButton, magnifierActive) }
+        if let eyedropperButton { SettingsAppearance.setToolActive(eyedropperButton, canvas?.isPickingColor == true) }
+        if let measureButton { SettingsAppearance.setToolActive(measureButton, canvas?.isMeasuring == true) }
         zoomLabel?.stringValue = "\(Int(((canvas?.zoom ?? 1) * 100).rounded()))%"
         let propertyTool = canvas?.selectedAnnotation?.tool ?? canvas?.tool ?? .select
         let mosaic = propertyTool == .mosaic
@@ -392,7 +413,20 @@ final class InlineScreenshotController: NSObject {
         mosaicSlider?.doubleValue = Double(canvas?.currentMosaicStrength ?? 4)
         mosaicPicker?.selectedSegment = canvas?.selectedAnnotation?.mosaicStyle.rawValue ?? canvas?.mosaicStyle.rawValue ?? 0
         let busy = [actions?.isOCRBusy, actions?.isBarcodeBusy, actions?.isTranslationBusy, false, actions?.isUploadBusy]
-        for (index, button) in quickButtons.enumerated() { button.isEnabled = selected && busy[index] != true }
+        let activeRecognition = canvas?.recognitionAction
+        for (index, button) in quickButtons.enumerated() {
+            button.isEnabled = selected && busy[index] != true
+            let active = switch index {
+            case 0: activeRecognition == .ocr
+            case 1: activeRecognition == .barcode
+            case 2: activeRecognition == .translate
+            default: false
+            }
+            // Busy work is shown by the disabled control. Keep the selected
+            // treatment for the temporary drag-selection state only, so a
+            // completed request cannot leave a button looking latched.
+            SettingsAppearance.setToolActive(button, active)
+        }
         for panel in [toolbar, quickRail].compactMap({ $0 }) {
             if selected && !hiddenControls && suspensionCount == 0 { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
         }
@@ -449,15 +483,60 @@ final class InlineScreenshotController: NSObject {
     @objc private func magnifier() { useCanvas(); activeView?.canvas.tool = .magnifier; refreshControls() }
     @objc private func quickAction(_ sender: NSButton) {
         useCanvas()
+        // Clear the secondary-selection presentation before switching actions so
+        // a completed or cancelled recognition drag cannot leave the canvas routed
+        // around the normal screenshot-selection handles.
+        activeView?.setRecognitionSelectionActive(false)
         switch sender.tag {
-        case 0: actions?.ocrTapped()
+        case 0:
+            if !showRecognitionMenu(for: .ocr, from: sender) { useCurrentSelection(.ocr) }
         case 1: actions?.barcodeTapped()
-        case 2: actions?.translateTapped()
+        case 2:
+            if !showRecognitionMenu(for: .translate, from: sender) { useCurrentSelection(.translate) }
         case 3: actions?.askAITapped()
         case 4: actions?.uploadTapped()
         default: break
         }
         refreshControls()
+    }
+
+    private func showRecognitionMenu(for action: AnnotationCanvas.RecognitionAction, from button: NSButton) -> Bool {
+        guard let event = NSApp.currentEvent, event.window === button.window else { return false }
+        let menu = NSMenu()
+        let current = NSMenuItem(title: L("识别当前区域"), action: #selector(recognitionMenuItem(_:)), keyEquivalent: "")
+        current.target = self
+        current.tag = action.rawValue * 2
+        let reselect = NSMenuItem(title: L("重新框选识别"), action: #selector(recognitionMenuItem(_:)), keyEquivalent: "")
+        reselect.target = self
+        reselect.tag = action.rawValue * 2 + 1
+        menu.addItem(current)
+        menu.addItem(reselect)
+        NSMenu.popUpContextMenu(menu, with: event, for: button)
+        return true
+    }
+
+    @objc private func recognitionMenuItem(_ sender: NSMenuItem) {
+        guard let action = AnnotationCanvas.RecognitionAction(rawValue: sender.tag / 2) else { return }
+        if sender.tag.isMultiple(of: 2) {
+            useCurrentSelection(action)
+        } else {
+            beginRecognition(action)
+        }
+        refreshControls()
+    }
+
+    private func useCurrentSelection(_ action: AnnotationCanvas.RecognitionAction) {
+        activeView?.setRecognitionSelectionActive(false)
+        actions?.recognizeCurrentSelection(action)
+    }
+
+    private func beginRecognition(_ action: AnnotationCanvas.RecognitionAction) {
+        switch action {
+        case .ocr: actions?.ocrTapped()
+        case .barcode: actions?.barcodeTapped()
+        case .translate: actions?.translateTapped()
+        }
+        activeView?.setRecognitionSelectionActive(activeView?.canvas.recognitionAction != nil)
     }
 
     private func restoreWindows() {
@@ -491,6 +570,8 @@ final class InlineScreenshotController: NSObject {
         copyButton = nil
         saveButton = nil
         magnifierButton = nil
+        eyedropperButton = nil
+        measureButton = nil
         zoomLabel = nil
         colorPicker = nil
         widthSlider = nil
@@ -517,6 +598,7 @@ final class InlineScreenshotView: NSView {
     var adjustingSelection = true {
         didSet { window?.invalidateCursorRects(for: self) }
     }
+    private var recognitionSelectionActive = false
     var selection: CGRect? {
         guard let rect = canvas.exportRegion else { return nil }
         let a = canvas.viewPoint(rect.origin)
@@ -561,6 +643,11 @@ final class InlineScreenshotView: NSView {
         window?.invalidateCursorRects(for: self)
     }
 
+    func setRecognitionSelectionActive(_ active: Bool) {
+        recognitionSelectionActive = active
+        refreshSelection()
+    }
+
     var pixelSelection: CGRect? {
         canvas.exportRegion?.integral
     }
@@ -603,6 +690,9 @@ final class InlineScreenshotView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         guard bounds.contains(local) else { return nil }
+        if recognitionSelectionActive {
+            return canvas.hitTest(convert(local, to: canvas.superview)) ?? canvas
+        }
         if !adjustingSelection, let selection, selection.insetBy(dx: 7, dy: 7).contains(local), handle(at: local) == nil {
             return canvas.hitTest(convert(local, to: canvas.superview))
         }
@@ -617,6 +707,7 @@ final class InlineScreenshotView: NSView {
     override func resetCursorRects() {
         super.resetCursorRects()
         addVisibleCursorRect(bounds, cursor: .crosshair)
+        if recognitionSelectionActive { return }
         guard let selection else { return }
         addVisibleCursorRect(selection.insetBy(dx: 7, dy: 7), cursor: adjustingSelection ? .openHand : .arrow)
         for (index, point) in handles.enumerated() {
@@ -678,6 +769,15 @@ final class InlineScreenshotView: NSView {
     }
 
     fileprivate func drawSelection() {
+        if recognitionSelectionActive {
+            guard let selection else { return }
+            let border = NSBezierPath(rect: selection)
+            border.lineWidth = 1
+            border.setLineDash([5, 4], count: 2, phase: 0)
+            NSColor.systemBlue.withAlphaComponent(0.72).setStroke()
+            border.stroke()
+            return
+        }
         let mask = NSBezierPath(rect: bounds)
         if let selection { mask.appendRect(selection) }
         mask.windingRule = .evenOdd

@@ -111,6 +111,17 @@ enum InlineScreenshotChecks {
         check(hit(CGPoint(x: 100, y: 100)) === view.canvas, "Annotation mode sends interior clicks to the canvas")
         check(hit(CGPoint(x: 20, y: 30)) === view, "Selection handles remain accessible while annotating")
         check(hit(CGPoint(x: 390, y: 290)) === view, "Outside clicks never reach the live desktop")
+        let retainedPixels = view.pixelSelection!
+        view.canvas.beginRecognitionSelection(.ocr)
+        view.setRecognitionSelectionActive(true)
+        check(hit(CGPoint(x: 20, y: 30)) === view.canvas,
+              "Recognition mode routes the whole frozen view to the temporary selector")
+        view.canvas.mouseDown(with: event(.leftMouseDown, CGPoint(x: 60, y: 60), in: view.canvas))
+        view.canvas.mouseDragged(with: event(.leftMouseDragged, CGPoint(x: 140, y: 120), in: view.canvas))
+        view.canvas.mouseUp(with: event(.leftMouseUp, CGPoint(x: 140, y: 120), in: view.canvas))
+        check(view.pixelSelection == retainedPixels && view.canvas.recognitionAction == nil,
+              "Temporary recognition selection leaves the retained screenshot crop unchanged")
+        view.setRecognitionSelectionActive(false)
         view.canvas.tool = .rectangle
         view.canvas.mouseDown(with: event(.leftMouseDown, CGPoint(x: 60, y: 60), in: view.canvas))
         view.canvas.mouseDragged(with: event(.leftMouseDragged, CGPoint(x: 120, y: 100), in: view.canvas))
@@ -365,7 +376,7 @@ enum InlineScreenshotChecks {
             check(canvas.tool == tool, "Independent editor tool remains connected: \(tool)")
         }
         let buttons = views.compactMap { $0 as? NSButton }
-        let ocr = buttons.first { $0.toolTip == L("拖拽框选图片中的文字并复制到剪贴板") }!
+        let ocr = buttons.first { $0.toolTip == L("点击选择识别当前区域或重新框选") }!
         ocr.sendAction(ocr.action!, to: ocr.target)
         check(canvas.recognitionAction == .ocr, "Independent editor routes OCR through the shared commands")
         ocr.sendAction(ocr.action!, to: ocr.target)
@@ -438,10 +449,25 @@ enum InlineScreenshotChecks {
         let railButtons = descendants(rail.contentView!).compactMap { $0 as? NSButton }.sorted { $0.tag < $1.tag }
         for (index, action) in [AnnotationCanvas.RecognitionAction.ocr, .barcode, .translate].enumerated() {
             let button = railButtons[index]
-            button.sendAction(button.action!, to: button.target)
-            check(view.canvas.recognitionAction == action && !view.adjustingSelection, "Quick action reuses region recognition: \(action)")
-            button.sendAction(button.action!, to: button.target)
-            check(view.canvas.recognitionAction == nil, "Pressing the active recognition tool cancels it")
+            if action == .barcode {
+                button.sendAction(button.action!, to: button.target)
+                check(view.canvas.recognitionAction == action && !view.adjustingSelection,
+                      "Quick action reuses region recognition: \(action)")
+                button.sendAction(button.action!, to: button.target)
+                check(view.canvas.recognitionAction == nil, "Pressing the active recognition tool cancels it")
+            } else {
+                // Direct OCR/translation uses the retained screenshot region. Temporarily
+                // remove the test image so the asynchronous recognizer has no work to do;
+                // this keeps the UI regression deterministic while still exercising the
+                // quick-action routing and preserving the pixel selection.
+                let retained = view.pixelSelection
+                let source = view.canvas.baseImage
+                view.canvas.baseImage = nil
+                button.sendAction(button.action!, to: button.target)
+                view.canvas.baseImage = source
+                check(view.canvas.recognitionAction == nil && view.pixelSelection == retained && !view.adjustingSelection,
+                      "Quick action uses the retained region without a second drag: \(action)")
+            }
         }
 
         panel.contentView!.layoutSubtreeIfNeeded()

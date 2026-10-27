@@ -121,6 +121,7 @@ final class ScreenAnnotationController: NSObject {
         }
         picker.selectedSegment = 1
         picker.segmentStyle = .rounded
+        picker.selectedSegmentBezelColor = .controlAccentColor
         picker.target = self
         picker.action = #selector(toolChanged)
         picker.toolTip = L("选择工具后在屏幕上绘制；Esc 退出")
@@ -348,9 +349,15 @@ final class ScreenAnnotationController: NSObject {
         widthSlider?.isEnabled = !passingThrough
         deleteButton?.isEnabled = !passingThrough && !(editingCanvas()?.annotations.isEmpty ?? true)
         measureButton?.isEnabled = !passingThrough
-        measureButton?.state = canvases.contains(where: { $0.isMeasuring }) ? .on : .off
-        measureButton?.contentTintColor = canvases.contains(where: { $0.isMeasuring }) ? .controlAccentColor : .labelColor
-        passButton?.contentTintColor = passingThrough ? .controlAccentColor : .labelColor
+        // A completed measurement remains visible for reference, but the
+        // measure command is no longer active after the second click.
+        let measuring = canvases.contains(where: { $0.isMeasuring })
+        measureButton?.state = measuring ? .on : .off
+        if let measureButton { SettingsAppearance.setToolActive(measureButton, measuring, inactiveColor: .labelColor) }
+        if let passButton { SettingsAppearance.setToolActive(passButton, passingThrough, inactiveColor: .labelColor) }
+        if let canvas = editingCanvas(), let index = tools.firstIndex(of: canvas.tool) {
+            toolPicker?.selectedSegment = index
+        }
         undoButton?.isEnabled = !passingThrough && (editingCanvas()?.canUndo ?? false)
         redoButton?.isEnabled = !passingThrough && (editingCanvas()?.canRedo ?? false)
         clearButton?.isEnabled = !passingThrough && canvases.contains { !$0.annotations.isEmpty || $0.hasMeasurement }

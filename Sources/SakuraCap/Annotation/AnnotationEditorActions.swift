@@ -110,6 +110,16 @@ final class AnnotationEditorActions: NSObject {
     @objc func barcodeTapped() { beginRecognition(.barcode, prompt: L("拖拽框选要识别的二维码")) }
     @objc func translateTapped() { beginRecognition(.translate, prompt: L("拖拽框选要翻译的文字")) }
 
+    /// Use the editor's retained export selection without creating a second drag box.
+    func recognizeCurrentSelection(_ action: AnnotationCanvas.RecognitionAction) {
+        canvas.cancelOperation(nil)
+        let bounds = recognitionBounds() ?? canvas.baseImage.map {
+            CGRect(x: 0, y: 0, width: $0.width, height: $0.height)
+        }
+        guard let bounds, bounds.width >= 2, bounds.height >= 2 else { return }
+        recognize(action, in: bounds)
+    }
+
     private func beginRecognition(_ action: AnnotationCanvas.RecognitionAction, prompt: String) {
         if canvas.recognitionAction == action { canvas.endRecognitionSelection(); return }
         canvas.finishTextEditing()

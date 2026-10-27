@@ -47,6 +47,21 @@ enum SettingsAppearance {
         button.controlSize = .regular
     }
 
+    /// Match the selected appearance of the annotation segmented control on
+    /// standalone icon buttons.  A light selection surface keeps a vertical
+    /// rail from turning into a column of saturated blue pills while still
+    /// making the active tool unambiguous.
+    static func setToolActive(_ button: NSButton, _ active: Bool, inactiveColor: NSColor = text) {
+        button.wantsLayer = true
+        button.isBordered = false
+        button.layer?.cornerRadius = controlRadius
+        button.layer?.masksToBounds = true
+        button.layer?.backgroundColor = active ? selection.cgColor : NSColor.clear.cgColor
+        button.layer?.borderWidth = active ? borderWidth : 0
+        button.layer?.borderColor = active ? focus.withAlphaComponent(0.32).cgColor : nil
+        button.contentTintColor = active ? focus : inactiveColor
+    }
+
     private static func adaptive(_ light: UInt32, _ dark: UInt32) -> NSColor {
         NSColor(name: nil) { appearance in
             let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light

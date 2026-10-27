@@ -112,7 +112,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var cropAnchor: CGPoint?
 
     // 一次性识别框选（图片坐标）
-    enum RecognitionAction { case ocr, barcode, translate }
+    enum RecognitionAction: Int { case ocr, barcode, translate }
     var onRecognitionSelection: ((RecognitionAction, CGRect) -> Void)?
     private(set) var recognitionAction: RecognitionAction?
     private var ocrRect: CGRect?
