@@ -8,7 +8,6 @@ final class ScrollingCapture {
     static let shared = ScrollingCapture()
 
     private var region: RegionSelection?
-    private var timer: Timer?
     private var autoScrollTask: Task<Void, Never>?
     private var scrollMonitor: Any?
     private var localScrollMonitor: Any?
@@ -24,10 +23,21 @@ final class ScrollingCapture {
     private var stitchedWidth = 0
     private var lastGray: [UInt8] = []
     private var autoScrolling = false
+    private var manualMode = false
+    private var manualTrackingTask: Task<Void, Never>?
+    private var manualLastScrollAt = Date.distantPast
+    private var manualCandidateFrame: CGImage?
+    private var manualCandidateShift = 0
+    private var manualCandidateReliable = false
+    private var manualPreviousCandidateShift: Int?
+    private var manualStableSamples = 0
+    private var manualTargetShift = 0
+    private var manualMinShift = 0
+    private var manualMaxShift = 0
 
     func start(region: RegionSelection) {
         // 防重入：已有会话进行中时忽略再次进入。
-        // 否则下面的覆盖赋值会让旧 timer / 滚动事件 monitor / HUD 永远失去引用、无法清理。
+        // 否则下面的覆盖赋值会让旧滚动事件 monitor / HUD 永远失去引用、无法清理。
         guard hud == nil else { return }
         self.region = region
         segments.removeAll()
@@ -37,7 +47,8 @@ final class ScrollingCapture {
                                      onCancel: { [weak self] in self?.cancel() },
                                      onToggleScroll: { [weak self] in self?.toggleAutoScroll() },
                                      onChooseAuto: { [weak self] in self?.chooseAuto() },
-                                     onChooseManual: { [weak self] in self?.chooseManual() })
+                                     onChooseManual: { [weak self] in self?.chooseManual() },
+                                     onUndo: { [weak self] in self?.undoLastSegment() })
         hud.orderFrontRegardless()
         self.hud = hud
         let preview = ScrollingPreviewWindow(region: region)
@@ -51,11 +62,11 @@ final class ScrollingCapture {
         scrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             // Synthetic events carry our marker; a user's wheel/trackpad input pauses automation.
             guard event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.scrollMarker else { return }
-            Task { @MainActor in self?.stopAutoScroll() }
+            Task { @MainActor in self?.handleUserScroll(event) }
         }
         localScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             if event.cgEvent?.getIntegerValueField(.eventSourceUserData) != Self.scrollMarker {
-                self?.stopAutoScroll()
+                Task { @MainActor in self?.handleUserScroll(event) }
             }
             return event
         }
@@ -80,9 +91,11 @@ final class ScrollingCapture {
         hud?.setRunningMode()
         Task { @MainActor in
             await prepareCapture()
-            await captureOnce()
-            startManualSampling()
-            hud?.setScrollState(L("手动模式：滚动页面即可继续拼接"), running: false)
+            guard await captureOnce() else {
+                hud?.setScrollState(L("无法采集当前画面"), running: false)
+                return
+            }
+            beginManualGuidance()
         }
     }
 
@@ -118,16 +131,18 @@ final class ScrollingCapture {
     private func startAutoScroll() {
         guard region != nil, !autoScrolling, !segments.isEmpty else { return }
         guard PermissionCenter.accessibilityGranted() || PermissionCenter.requestAccessibility() else {
-            startManualSampling()
-            hud?.setScrollState(L("自动滚动需要辅助功能权限，请手动滚动"), running: false)
+            beginManualGuidance(message: L("自动滚动需要辅助功能权限，请精准滚动"))
             PermissionCenter.openAccessibilitySettings()
             return
         }
+        manualMode = false
+        manualTrackingTask?.cancel()
+        manualTrackingTask = nil
         autoScrolling = true
         // In automatic mode capture one settled frame per scroll step. The old
-        // independent timer sampled intermediate frames and made late stitching
+        // Independent sampling of intermediate frames made late stitching
         // increasingly ambiguous as the page moved.
-        stopTimer()
+        hud?.setRunningMode()
         hud?.setScrollState(L("自动滚动中"), running: true)
         autoScrollTask = Task { @MainActor [weak self] in
             while let self, self.autoScrolling, !Task.isCancelled {
@@ -152,8 +167,8 @@ final class ScrollingCapture {
                     if advanced { break }
                 }
                 guard advanced else {
-                    // 放弃自动滚动但不停会话：切入手动模式，滚动页面即可继续拼接。
-                    self.stopAutoScroll(message: L("未确认到新的滚动内容，已切换手动滚动"))
+                    // 放弃自动滚动但不停会话：切入精准手动模式。
+                    self.stopAutoScroll(message: L("未确认到新的滚动内容，已切换精准手动"))
                     break
                 }
                 try? await Task.sleep(for: .milliseconds(350))
@@ -176,25 +191,180 @@ final class ScrollingCapture {
         if autoScrolling { stopAutoScroll() } else { startAutoScroll() }
     }
 
-    private func stopAutoScroll(message: String? = nil) {
+    private func stopAutoScroll(message: String? = nil, continueManually: Bool = true) {
         guard autoScrolling else { return }
         autoScrolling = false
         autoScrollTask?.cancel()
         autoScrollTask = nil
-        // 自动滚动停下后切入手动模式：恢复采样，用户滚动页面即可继续拼接。
-        startManualSampling()
-        hud?.setScrollState(message ?? L("已暂停自动滚动，可手动滚动继续"), running: false)
+        if continueManually {
+            beginManualGuidance(message: message ?? L("已暂停自动滚动，请精准滚动"))
+        }
     }
 
-    /// 手动模式采样：与进入时的兜底定时器同一套逻辑，只提高频率，
-    /// 让用户滚动时的中间帧尽量少丢重叠区间。
-    private func startManualSampling() {
-        guard timer == nil else { return }
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.captureOnce() }
+    /// 手动模式不是持续拼接，而是一次只校准一个滚动段。
+    private func beginManualGuidance(message: String? = nil) {
+        manualMode = true
+        manualTrackingTask?.cancel()
+        manualTrackingTask = nil
+        manualCandidateFrame = nil
+        manualCandidateShift = 0
+        manualCandidateReliable = false
+        manualPreviousCandidateShift = nil
+        manualStableSamples = 0
+        configureManualTarget()
+        hud?.setManualMode()
+        hud?.setManualProgress(shift: 0, target: manualTargetShift,
+                               min: manualMinShift, max: manualMaxShift,
+                               state: message ?? L("请向下滚动至绿色区域"))
+    }
+
+    private func configureManualTarget() {
+        let height = segments.last?.image.height ?? 0
+        guard height > 0 else {
+            manualTargetShift = 0
+            manualMinShift = 0
+            manualMaxShift = 0
+            return
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        // Aim for roughly half a viewport, retaining enough overlap for a stable match.
+        manualTargetShift = max(12, Int((Double(height) * 0.52).rounded()))
+        manualMinShift = max(8, Int((Double(height) * 0.38).rounded()))
+        manualMaxShift = min(height - 8, Int((Double(height) * 0.66).rounded()))
+    }
+
+    private func handleUserScroll(_ event: NSEvent) {
+        if autoScrolling {
+            stopAutoScroll()
+            return
+        }
+        guard manualMode else { return }
+        guard abs(event.scrollingDeltaY) > 0.01 else { return }
+        manualLastScrollAt = Date()
+        hud?.setManualProgress(shift: manualCandidateShift, target: manualTargetShift,
+                               min: manualMinShift, max: manualMaxShift,
+                               state: L("检测到滚动，请停下"))
+        guard manualTrackingTask == nil else { return }
+        manualTrackingTask = Task { @MainActor [weak self] in
+            await self?.trackManualScroll()
+        }
+    }
+
+    private func trackManualScroll() async {
+        defer { manualTrackingTask = nil }
+        try? await Task.sleep(for: .milliseconds(100))
+        while manualMode && !Task.isCancelled {
+            if let frame = await captureCurrentFrame() {
+                updateManualCandidate(frame)
+            }
+            let quietFor = Date().timeIntervalSince(manualLastScrollAt)
+            if quietFor >= 0.32 {
+                let settleStartedAt = manualLastScrollAt
+                hud?.setManualProgress(shift: manualCandidateShift, target: manualTargetShift,
+                                       min: manualMinShift, max: manualMaxShift,
+                                       state: L("正在等待页面稳定"))
+                try? await Task.sleep(for: .milliseconds(160))
+                guard manualMode, !Task.isCancelled else { return }
+                if let frame = await captureCurrentFrame() {
+                    updateManualCandidate(frame)
+                }
+                try? await Task.sleep(for: .milliseconds(110))
+                guard manualMode, !Task.isCancelled else { return }
+                if let frame = await captureCurrentFrame() {
+                    updateManualCandidate(frame)
+                }
+                // A new gesture during the settle window invalidates these samples.
+                // Keep tracking instead of committing a frame from the previous step.
+                guard manualLastScrollAt == settleStartedAt else { continue }
+                commitManualCandidateIfReady()
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(120))
+        }
+    }
+
+    private func updateManualCandidate(_ frame: CGImage) {
+        guard !segments.isEmpty else { return }
+        let grayNew = blurVertical(gray(frame), width: 60, height: frame.height)
+        let match = bestVerticalShift(prev: lastGray, next: grayNew, width: 60, height: frame.height)
+        manualCandidateShift = match.shift
+        manualCandidateReliable = isReliable(match: match, height: frame.height)
+        manualCandidateFrame = manualCandidateReliable ? frame : nil
+        if manualCandidateReliable {
+            if let previous = manualPreviousCandidateShift, abs(previous - match.shift) <= 4 {
+                manualStableSamples += 1
+            } else {
+                manualStableSamples = 1
+            }
+            manualPreviousCandidateShift = match.shift
+        } else {
+            manualStableSamples = 0
+            manualPreviousCandidateShift = nil
+        }
+
+        let state: String
+        if !manualCandidateReliable || match.shift < 3 {
+            state = L("请向下滚动至绿色区域")
+        } else if match.shift < manualMinShift {
+            state = L("滚动距离太小，请再向下滚一点")
+        } else if match.shift > manualMaxShift {
+            state = L("滚动过多，请向上回滚")
+        } else {
+            state = L("位置合适，请停下")
+        }
+        hud?.setManualProgress(shift: match.shift, target: manualTargetShift,
+                               min: manualMinShift, max: manualMaxShift, state: state)
+    }
+
+    private func commitManualCandidateIfReady() {
+        guard manualCandidateReliable,
+              manualStableSamples >= 2,
+              let frame = manualCandidateFrame,
+              manualCandidateShift >= manualMinShift,
+              manualCandidateShift <= manualMaxShift else {
+            let state: String
+            if manualCandidateShift > manualMaxShift {
+                state = L("滚动过多，请向上回滚")
+            } else if manualCandidateShift > 0 && manualCandidateShift < manualMinShift {
+                state = L("滚动距离太小，请再向下滚一点")
+            } else {
+                state = L("未找到可靠重叠，请回到上一段重试")
+            }
+            hud?.setManualProgress(shift: manualCandidateShift, target: manualTargetShift,
+                                   min: manualMinShift, max: manualMaxShift, state: state)
+            return
+        }
+        guard append(frame) else {
+            hud?.setManualProgress(shift: manualCandidateShift, target: manualTargetShift,
+                                   min: manualMinShift, max: manualMaxShift,
+                                   state: L("未找到可靠重叠，请回到上一段重试"))
+            return
+        }
+        manualCandidateFrame = nil
+        manualCandidateShift = 0
+        manualCandidateReliable = false
+        manualPreviousCandidateShift = nil
+        manualStableSamples = 0
+        configureManualTarget()
+        hud?.setManualProgress(shift: 0, target: manualTargetShift,
+                               min: manualMinShift, max: manualMaxShift,
+                               state: L("已拼接，请向下滚动至绿色区域"))
+    }
+
+    private func isReliable(match: (shift: Int, score: Int, score0: Int), height: Int) -> Bool {
+        guard match.shift >= 3, match.shift < height - 8 else { return false }
+        return match.score <= 10 || match.score < match.score0 - match.score
+    }
+
+    private func captureCurrentFrame() async -> CGImage? {
+        guard !capturing, let region else { return nil }
+        capturing = true
+        defer { capturing = false }
+        guard #available(macOS 14.0, *), let filter, let config else { return nil }
+        guard let full = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) else { return nil }
+        let scale = pixelScale
+        let rect = CGRect(x: region.sckRect.minX * scale.x, y: region.sckRect.minY * scale.y,
+                          width: region.sckRect.width * scale.x, height: region.sckRect.height * scale.y).integral
+        return full.cropping(to: rect) ?? full
     }
 
     /// 只构建一次过滤器/配置，之后每帧直接重采样，更跟手也更稳。
@@ -237,15 +407,8 @@ final class ScrollingCapture {
 
     @discardableResult
     private func captureOnce() async -> Bool {
-        guard !capturing, let region else { return false }
-        capturing = true
-        defer { capturing = false }
-        guard #available(macOS 14.0, *), let filter, let config else { return false }
-        guard let full = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) else { return false }
-        let scale = pixelScale
-        let rect = CGRect(x: region.sckRect.minX * scale.x, y: region.sckRect.minY * scale.y,
-                          width: region.sckRect.width * scale.x, height: region.sckRect.height * scale.y).integral
-        return append(full.cropping(to: rect) ?? full)
+        guard let frame = await captureCurrentFrame() else { return false }
+        return append(frame)
     }
 
     private func append(_ frame: CGImage) -> Bool {
@@ -295,9 +458,11 @@ final class ScrollingCapture {
     }
 
     private func finish() {
-        stopAutoScroll()
+        stopAutoScroll(continueManually: false)
+        manualMode = false
+        manualTrackingTask?.cancel()
+        manualTrackingTask = nil
         removeScrollMonitor()
-        stopTimer()
         hud?.orderOut(nil)
         hud = nil
         preview?.orderOut(nil)
@@ -309,9 +474,11 @@ final class ScrollingCapture {
     }
 
     private func cancel() {
-        stopAutoScroll()
+        stopAutoScroll(continueManually: false)
+        manualMode = false
+        manualTrackingTask?.cancel()
+        manualTrackingTask = nil
         removeScrollMonitor()
-        stopTimer()
         hud?.orderOut(nil)
         hud = nil
         preview?.orderOut(nil)
@@ -320,9 +487,31 @@ final class ScrollingCapture {
         region = nil
     }
 
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
+    private func undoLastSegment() {
+        guard !autoScrolling else { return }
+        guard segments.count > 1 else {
+            hud?.setManualProgress(shift: manualCandidateShift, target: manualTargetShift,
+                                   min: manualMinShift, max: manualMaxShift,
+                                   state: L("还没有可撤销的段落"))
+            return
+        }
+        segments.removeLast()
+        stitchedHeight = segments.reduce(0) { $0 + Int($1.rect.height) }
+        if let last = segments.last {
+            lastGray = blurVertical(gray(last.image), width: 60, height: last.image.height)
+        }
+        manualCandidateFrame = nil
+        manualCandidateShift = 0
+        manualCandidateReliable = false
+        manualPreviousCandidateShift = nil
+        manualStableSamples = 0
+        configureManualTarget()
+        updateHUD()
+        if manualMode {
+            hud?.setManualProgress(shift: 0, target: manualTargetShift,
+                                   min: manualMinShift, max: manualMaxShift,
+                                   state: L("已撤销上一段，请重新滚动至绿色区域"))
+        }
     }
 
     private func removeScrollMonitor() {
@@ -420,19 +609,22 @@ final class ScrollingCapture {
     }
 }
 
-/// 长截图时的悬浮提示条：框选后先选「自动/手动滚动」，选定后切换为进度控制
+/// 长截图时的悬浮提示条：框选后选择自动或精准手动，手动模式显示位移校准条。
 final class ScrollingHUDWindow: NSPanel {
     private let heightLabel = NSTextField(labelWithString: "")
     private let stateLabel = NSTextField(labelWithString: L("选择滚动方式"))
+    private let manualMeter = ManualScrollMeterView()
     private let scrollButton = NSButton(title: L("暂停"), target: nil, action: nil)
     private let autoChoiceButton = NSButton(title: L("自动滚动"), target: nil, action: nil)
-    private let manualChoiceButton = NSButton(title: L("手动滚动"), target: nil, action: nil)
+    private let manualChoiceButton = NSButton(title: L("精准手动"), target: nil, action: nil)
+    private let undoButton = NSButton(title: L("撤销上一段"), target: nil, action: nil)
     private let finishButton = NSButton(title: L("完成"), target: nil, action: nil)
     private let cancelButton = NSButton(title: L("取消"), target: nil, action: nil)
 
     init(onFinish: @escaping () -> Void, onCancel: @escaping () -> Void,
          onToggleScroll: @escaping () -> Void,
-         onChooseAuto: @escaping () -> Void, onChooseManual: @escaping () -> Void) {
+         onChooseAuto: @escaping () -> Void, onChooseManual: @escaping () -> Void,
+         onUndo: @escaping () -> Void) {
         let size = NSSize(width: 390, height: 52)
         super.init(contentRect: NSRect(origin: .zero, size: size),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -469,6 +661,11 @@ final class ScrollingHUDWindow: NSPanel {
         manualChoiceButton.action = #selector(ClosureTarget.chooseManualTapped)
         ClosureTarget.shared.chooseManual = onChooseManual
 
+        undoButton.bezelStyle = .rounded
+        undoButton.target = ClosureTarget.shared
+        undoButton.action = #selector(ClosureTarget.undoTapped)
+        ClosureTarget.shared.undo = onUndo
+
         finishButton.bezelStyle = .rounded
         finishButton.target = ClosureTarget.shared
         finishButton.action = #selector(ClosureTarget.finishTapped)
@@ -478,9 +675,14 @@ final class ScrollingHUDWindow: NSPanel {
         cancelButton.action = #selector(ClosureTarget.cancelTapped)
         ClosureTarget.shared.cancel = onCancel
 
-        let stack = NSStackView(views: [stateLabel, heightLabel, scrollButton,
+        manualMeter.translatesAutoresizingMaskIntoConstraints = false
+        manualMeter.isHidden = true
+        manualMeter.widthAnchor.constraint(equalToConstant: 110).isActive = true
+        manualMeter.heightAnchor.constraint(equalToConstant: 10).isActive = true
+
+        let stack = NSStackView(views: [stateLabel, heightLabel, manualMeter, scrollButton,
                                         autoChoiceButton, manualChoiceButton,
-                                        finishButton, cancelButton])
+                                        undoButton, finishButton, cancelButton])
         stack.orientation = .horizontal
         stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -505,11 +707,14 @@ final class ScrollingHUDWindow: NSPanel {
         if fitted.width > 1 { setContentSize(fitted) }
     }
 
-    /// 框选后的第一步：只展示「自动滚动 / 手动滚动 / 取消」
+    /// 框选后的第一步：只展示「自动滚动 / 精准手动 / 取消」
     func setChooseMode() {
         stateLabel.stringValue = L("选择滚动方式")
         heightLabel.isHidden = true
         scrollButton.isHidden = true
+        manualMeter.isHidden = true
+        undoButton.isHidden = true
+        undoButton.isEnabled = false
         finishButton.isHidden = true
         autoChoiceButton.isHidden = false
         manualChoiceButton.isHidden = false
@@ -520,9 +725,20 @@ final class ScrollingHUDWindow: NSPanel {
     func setRunningMode() {
         autoChoiceButton.isHidden = true
         manualChoiceButton.isHidden = true
+        manualMeter.isHidden = true
         heightLabel.isHidden = false
         scrollButton.isHidden = false
+        undoButton.isHidden = false
+        undoButton.isEnabled = false
         finishButton.isHidden = false
+        refit()
+    }
+
+    func setManualMode() {
+        setRunningMode()
+        manualMeter.isHidden = false
+        undoButton.isEnabled = true
+        scrollButton.title = L("自动滚动")
         refit()
     }
 
@@ -537,8 +753,56 @@ final class ScrollingHUDWindow: NSPanel {
         refit()
     }
 
+    func setManualProgress(shift: Int, target: Int, min: Int, max: Int, state: String) {
+        stateLabel.stringValue = state
+        manualMeter.update(shift: shift, target: target, min: min, max: max)
+        heightLabel.stringValue = target > 0
+            ? String(format: L("本段 %d / %d px"), shift, target)
+            : L("等待首帧")
+        refit()
+    }
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+/// 手动长截图的位移校准条：绿色区域是本次允许提交的滚动范围。
+final class ManualScrollMeterView: NSView {
+    private var shift = 0
+    private var target = 1
+    private var minShift = 0
+    private var maxShift = 1
+
+    func update(shift: Int, target: Int, min: Int, max maxShiftValue: Int) {
+        self.shift = Swift.max(0, shift)
+        self.target = Swift.max(1, target)
+        self.minShift = Swift.max(0, min)
+        self.maxShift = Swift.max(self.minShift + 1, maxShiftValue)
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let bounds = bounds.insetBy(dx: 1, dy: 2)
+        let radius = bounds.height / 2
+        NSColor.quaternaryLabelColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+
+        let scale = bounds.width / CGFloat(maxShift)
+        let safe = CGRect(x: bounds.minX + CGFloat(minShift) * scale,
+                          y: bounds.minY,
+                          width: CGFloat(maxShift - minShift) * scale,
+                          height: bounds.height)
+        NSColor.systemGreen.withAlphaComponent(0.78).setFill()
+        NSBezierPath(roundedRect: safe, xRadius: radius, yRadius: radius).fill()
+
+        let targetX = min(bounds.maxX, max(bounds.minX, bounds.minX + CGFloat(target) * scale))
+        NSColor.white.withAlphaComponent(0.9).setFill()
+        NSBezierPath(rect: CGRect(x: targetX - 1, y: bounds.minY, width: 2, height: bounds.height)).fill()
+
+        let x = min(bounds.maxX, max(bounds.minX, bounds.minX + CGFloat(shift) * scale))
+        NSColor.labelColor.setFill()
+        NSBezierPath(ovalIn: CGRect(x: x - 3, y: bounds.midY - 3, width: 6, height: 6)).fill()
+    }
 }
 
 /// 简单闭包目标（按钮 target/action）
@@ -549,11 +813,13 @@ final class ClosureTarget: NSObject {
     var toggleScroll: (() -> Void)?
     var chooseAuto: (() -> Void)?
     var chooseManual: (() -> Void)?
+    var undo: (() -> Void)?
     @objc func finishTapped() { finish?() }
     @objc func cancelTapped() { cancel?() }
     @objc func toggleScrollTapped() { toggleScroll?() }
     @objc func chooseAutoTapped() { chooseAuto?() }
     @objc func chooseManualTapped() { chooseManual?() }
+    @objc func undoTapped() { undo?() }
 }
 
 /// 长截图实时预览：把当前拼接结果缩略显示在旁边

@@ -28,8 +28,8 @@ Sakura-Cap focuses on doing one thing well: capturing your screen. No Dock icon,
 - **OCR**: select an area, recognition runs offline via system Vision, text goes straight to your clipboard
 - **QR code recognition**: select to decode and copy the content
 - **Upload to image host**: one click in the annotation editor uploads the whole image (with annotations) — supports **S3-compatible object storage** (Cloudflare R2 / MinIO / any cloud), **GitHub repositories**, and **custom APIs** (multipart; link parsed via JSON path or regex). On success the link is copied to the clipboard in your chosen format (plain URL / Markdown / HTML)
-- **Scrolling capture (long screenshot)**: after selecting the region, choose **Auto-scroll** or **Manual scroll**; frames are stitched vertically by overlap into one long image, with a live preview on the side
-  - Auto-scroll runs hands-free; manual scroll stitches in real time as you scroll — switch between them at any time
+- **Scrolling capture (long screenshot)**: after selecting the region, choose **Auto-scroll** or **Guided manual**; frames are stitched vertically by overlap into one long image, with a live preview on the side
+  - Auto-scroll runs hands-free; guided manual mode shows a green target zone for each step, waits for the page to settle before committing, and lets you recover from overscroll or undo a step
   - The matching algorithm is robust to sub-pixel scroll offsets on Retina displays, pinned headers / floating elements, and lazy-loaded content
   - The control bar and preview window are placed away from the selected region and never leak into the capture
 - Screenshots are **never saved directly** — save, copy to clipboard, or cancel in the separate editor or in-place annotation mode
