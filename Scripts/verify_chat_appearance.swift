@@ -196,7 +196,8 @@ enum ChatAppearanceChecks {
     private static func verifyChat() async {
         let markdown = "# Heading\nA paragraph with **bold**, `code`, and a [link](https://example.com).\n\n"
             + String(repeating: "Wrapped text that must retain its measured height while scrolling. ", count: 12)
-            + "\n\n```swift\nlet value = 42\n```\n"
+            + "\n\n- First item\n- Second item\n  - Nested item\n\n1. Ordered item\n2. Next item\n\n```swift\nlet value = 42\n```\n"
+            + "\n| 项目 | 说明 | 状态 |\n| --- | :--- | ---: |\n| 表格 | 直接渲染的 Markdown 表格 | ✅ |\n| 代码块 | 未使用三个反引号 | ✅ |\n| 语言 | 中文 | ✅ |\n"
         let messages = (0..<40).map { index in
             AIChatMessage(role: index.isMultiple(of: 2) ? .user : .assistant,
                           text: index.isMultiple(of: 2) ? "Question \(index)" : markdown)
@@ -265,6 +266,19 @@ enum ChatAppearanceChecks {
         check(following == false, "User scrolling up must pause follow mode")
 
         let attributed = Markdown.attributed(markdown)
+        check(attributed.string.contains("•  First item"), "Unordered Markdown items must render as bullets")
+        check(attributed.string.contains("◦  Nested item"), "Nested Markdown items must retain their list level")
+        check(attributed.string.contains("1.  Ordered item"), "Ordered Markdown items must retain their number")
+        let tableBlocks = Markdown.blocks("| Name | Status |\n| :--- | ---: |\n| Table | Ready |")
+        check(tableBlocks.contains {
+            if case .table(let table) = $0 { return table.columnCount == 2 && table.rows.count == 1 }
+            return false
+        }, "Markdown tables must be split into a rendered table block")
+        let fencedTableBlocks = Markdown.blocks("```\n| Name | Status |\n| --- | --- |\n```")
+        check(!fencedTableBlocks.contains {
+            if case .table = $0 { return true }
+            return false
+        }, "Fenced table syntax must remain code")
         let narrow = Markdown.height(of: attributed, width: 240)
         let wide = Markdown.height(of: attributed, width: 460)
         check(narrow > wide, "Markdown must measure height against the proposed width")

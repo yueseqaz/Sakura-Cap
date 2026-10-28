@@ -545,7 +545,7 @@ private struct MessageBubble: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         } else {
                             // Markdown view reports its intrinsic height after the stream ends.
-                            MarkdownTextView(attributed: Markdown.attributed(message.text))
+                            MarkdownTextView(markdown: message.text)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     } else {
@@ -578,16 +578,84 @@ private struct MessageBubble: View {
 /// 使用 SwiftUI 原生文本布局，避免 AppKit 文本视图在窗口调整尺寸时
 /// 反复失效 intrinsic height，导致气泡闪烁或内容被裁掉。
 struct MarkdownTextView: View {
-    let attributed: NSAttributedString
+    let markdown: String
 
     var body: some View {
-        // AttributedString keeps the Markdown renderer's fonts, colors,
-        // paragraph spacing, and links while letting SwiftUI recalculate the
-        // wrapped height atomically whenever the window width changes.
-        Text(AttributedString(attributed))
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(Markdown.blocks(markdown).enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .text(let attributed):
+                    // AttributedString keeps the Markdown renderer's fonts, colors,
+                    // paragraph spacing, and links while letting SwiftUI recalculate
+                    // the wrapped height atomically whenever the window width changes.
+                    Text(AttributedString(attributed))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                case .table(let table):
+                    MarkdownTableView(table: table)
+                }
+            }
+        }
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A compact, wrapping table for GitHub-style Markdown table blocks.
+private struct MarkdownTableView: View {
+    let table: Markdown.Table
+
+    var body: some View {
+        VStack(spacing: 0) {
+            row(table.header, isHeader: true)
+            ForEach(Array(table.rows.enumerated()), id: \.offset) { _, cells in
+                row(cells, isHeader: false)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6)
+            .stroke(SettingsAppearance.color(SettingsAppearance.border), lineWidth: 0.5))
+    }
+
+    @ViewBuilder
+    private func row(_ cells: [NSAttributedString], isHeader: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(0..<table.columnCount, id: \.self) { column in
+                let cell = column < cells.count ? cells[column] : NSAttributedString(string: "")
+                let alignment = table.alignments[column]
+                Text(AttributedString(cell))
+                    .multilineTextAlignment(alignment.textAlignment)
+                    .frame(maxWidth: .infinity, alignment: alignment.horizontalAlignment)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(isHeader
+                        ? SettingsAppearance.color(SettingsAppearance.control)
+                        : SettingsAppearance.color(SettingsAppearance.canvas))
+                    .overlay(Rectangle()
+                        .stroke(SettingsAppearance.color(SettingsAppearance.separator), lineWidth: 0.5))
+            }
+        }
+    }
+}
+
+private extension Markdown.TableAlignment {
+    var horizontalAlignment: Alignment {
+        switch self {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
+    }
+
+    var textAlignment: TextAlignment {
+        switch self {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
     }
 }
 

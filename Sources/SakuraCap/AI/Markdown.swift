@@ -1,9 +1,63 @@
 import AppKit
 
 /// 轻量 Markdown → NSAttributedString 渲染器（无第三方依赖）。
-/// 块级：标题 / 代码块 / 引用 / 列表 / 分隔线 / 段落；
+/// 块级：标题 / 代码块 / 引用 / 列表 / 表格 / 分隔线 / 段落；
 /// 行内：`code`、**粗体**、*斜体*、[链接](url)。渲染结果供聊天气泡使用。
 enum Markdown {
+    enum TableAlignment {
+        case leading
+        case center
+        case trailing
+    }
+
+    struct Table {
+        let header: [NSAttributedString]
+        let rows: [[NSAttributedString]]
+        let alignments: [TableAlignment]
+
+        var columnCount: Int { alignments.count }
+    }
+
+    enum Block {
+        case text(NSAttributedString)
+        case table(Table)
+    }
+
+    /// Splits a document into regular Markdown text and GitHub-style table blocks.
+    /// Tables inside fenced code blocks intentionally remain code, just like other
+    /// fenced content.
+    static func blocks(_ markdown: String, baseSize: CGFloat = 14) -> [Block] {
+        let lines = markdown.components(separatedBy: "\n")
+        var blocks: [Block] = []
+        var textLines: [String] = []
+        var inCode = false
+        var index = 0
+
+        func flushText() {
+            guard !textLines.isEmpty else { return }
+            blocks.append(.text(attributed(textLines.joined(separator: "\n"), baseSize: baseSize)))
+            textLines = []
+        }
+
+        while index < lines.count {
+            let line = lines[index].trimmingCharacters(in: .whitespaces)
+            if !inCode, let parsed = parseTable(lines, startingAt: index, baseSize: baseSize) {
+                flushText()
+                blocks.append(.table(parsed.table))
+                index = parsed.nextIndex
+                continue
+            }
+
+            textLines.append(lines[index])
+            if line.hasPrefix("```") {
+                inCode.toggle()
+            }
+            index += 1
+        }
+        flushText()
+        return blocks
+    }
+
     static func attributed(_ markdown: String, baseSize: CGFloat = 14) -> NSAttributedString {
         let output = NSMutableAttributedString()
         let baseFont = NSFont.systemFont(ofSize: baseSize)
@@ -90,15 +144,21 @@ enum Markdown {
                 output.append(spacer(baseFont, lineSpacing))
                 continue
             }
-            if isListLine(line) {
+            if let item = listItem(rawLine) {
                 flushParagraph()
-                let leadingSpaces = rawLine.prefix { $0 == " " || $0 == "\t" }
-                    .reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
-                let indent = CGFloat(min(leadingSpaces / 2, 8)) * 14 + 4
-                let attributed = inline(line + "\n", font: baseFont, color: baseColor)
+                // Keep the marker as part of the attributed paragraph so wrapped
+                // lines can use a hanging indent instead of looking like a new item.
+                let prefix = String(repeating: "  ", count: item.level)
+                let marker = prefix + (item.ordered ? "\(item.marker)  " : (item.level == 0 ? "•  " : "◦  "))
+                let attributed = NSMutableAttributedString(string: marker, attributes: [
+                    .font: baseFont, .foregroundColor: baseColor,
+                ])
+                attributed.append(inline(item.body + "\n", font: baseFont, color: baseColor))
                 let style = paragraphStyle(lineSpacing)
+                let indent = CGFloat(item.level) * 14 + 4
                 style.firstLineHeadIndent = indent
-                style.headIndent = indent + 14
+                let markerIndent = item.ordered ? max(24, CGFloat(item.marker.count + 2) * 8) : 14
+                style.headIndent = indent + markerIndent
                 style.paragraphSpacing = 4
                 attributed.addAttribute(.paragraphStyle, value: style,
                                         range: NSRange(location: 0, length: attributed.length))
@@ -189,9 +249,110 @@ enum Markdown {
         return count
     }
 
-    private static func isListLine(_ line: String) -> Bool {
-        if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("  - ") || line.hasPrefix("  * ") { return true }
-        return line.range(of: "^\\s{0,2}\\d{1,3}\\. ", options: .regularExpression) != nil
+    private static func parseTable(_ lines: [String], startingAt start: Int,
+                                   baseSize: CGFloat) -> (table: Table, nextIndex: Int)? {
+        guard start + 1 < lines.count,
+              let header = tableCells(in: lines[start]),
+              let separator = tableCells(in: lines[start + 1]),
+              header.count >= 2,
+              separator.count == header.count else { return nil }
+
+        let alignments = separator.compactMap(tableAlignment)
+        guard alignments.count == separator.count else { return nil }
+
+        let font = NSFont.systemFont(ofSize: baseSize)
+        let color = NSColor.labelColor
+        var rows: [[NSAttributedString]] = []
+        var next = start + 2
+        while next < lines.count, let cells = tableCells(in: lines[next]) {
+            rows.append(cells.prefix(header.count).map { inline($0, font: font, color: color) }
+                + Array(repeating: NSAttributedString(string: "", attributes: [
+                    .font: font, .foregroundColor: color,
+                ]), count: max(0, header.count - cells.count)))
+            next += 1
+        }
+
+        let renderedHeader = header.map { inline($0, font: font, color: color) }
+        return (Table(header: renderedHeader, rows: rows, alignments: alignments), next)
+    }
+
+    /// Splits a pipe-delimited row while preserving escaped pipes inside a cell.
+    private static func tableCells(in rawLine: String) -> [String]? {
+        var line = rawLine.trimmingCharacters(in: .whitespaces)
+        guard line.contains("|") else { return nil }
+        if line.first == "|" { line.removeFirst() }
+        if line.last == "|" { line.removeLast() }
+
+        var cells: [String] = []
+        var current = ""
+        var escaped = false
+        for character in line {
+            if character == "|" && !escaped {
+                cells.append(current.trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: "\\|", with: "|"))
+                current = ""
+            } else {
+                current.append(character)
+            }
+            escaped = character == "\\" && !escaped
+        }
+        cells.append(current.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "\\|", with: "|"))
+        return cells.isEmpty ? nil : cells
+    }
+
+    private static func tableAlignment(_ cell: String) -> TableAlignment? {
+        let value = cell.trimmingCharacters(in: .whitespaces)
+        guard value.count >= 3 else { return nil }
+        let leading = value.first == ":"
+        let trailing = value.last == ":"
+        let start = value.index(value.startIndex, offsetBy: leading ? 1 : 0)
+        let end = value.index(value.endIndex, offsetBy: trailing ? -1 : 0)
+        guard start < end, value[start..<end].allSatisfy({ $0 == "-" }) else { return nil }
+        if leading && trailing { return .center }
+        if trailing { return .trailing }
+        return .leading
+    }
+
+    private struct ListItem {
+        let level: Int
+        let ordered: Bool
+        let marker: String
+        let body: String
+    }
+
+    /// Parses the common Markdown list forms while retaining indentation for nested items.
+    private static func listItem(_ rawLine: String) -> ListItem? {
+        var leading = 0
+        var index = rawLine.startIndex
+        while index < rawLine.endIndex {
+            switch rawLine[index] {
+            case " ": leading += 1
+            case "\t": leading += 4
+            default: break
+            }
+            guard rawLine[index] == " " || rawLine[index] == "\t" else { break }
+            index = rawLine.index(after: index)
+        }
+
+        let content = String(rawLine[index...])
+        guard !content.isEmpty else { return nil }
+        let characters = Array(content)
+        if let first = characters.first, ["-", "*", "+", "•", "◦"].contains(first),
+           characters.dropFirst().first.map({ $0 == " " || $0 == "\t" }) == true {
+            let body = String(content.dropFirst()).trimmingCharacters(in: .whitespaces)
+            return ListItem(level: min(leading / 2, 8), ordered: false, marker: "", body: body)
+        }
+
+        var digits = 0
+        while digits < characters.count, characters[digits].isNumber { digits += 1 }
+        guard digits > 0, digits + 1 < characters.count,
+              characters[digits] == "." || characters[digits] == ")",
+              characters[digits + 1] == " " || characters[digits + 1] == "\t" else { return nil }
+        let marker = String(characters[..<digits]) + String(characters[digits])
+        let bodyStart = content.index(content.startIndex, offsetBy: digits + 1)
+        let body = String(content[bodyStart...]).trimmingCharacters(in: .whitespaces)
+        return ListItem(level: min(leading / 2, 8), ordered: true, marker: marker, body: body)
     }
 
     /// 估算渲染高度（气泡布局用）
