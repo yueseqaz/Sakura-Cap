@@ -106,9 +106,7 @@ final class AnnotationEditorWindow: NSWindow {
 
         super.init(contentRect: NSRect(origin: .zero, size: contentSize),
                    styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        // 菜单栏应用：悬浮于其他应用之上、跟随所有空间，点别处不会被压到后面
-        level = .floating
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        WindowPresentation.configure(self)
         title = L("标注图片")
         isReleasedWhenClosed = false
         sharingType = .readOnly

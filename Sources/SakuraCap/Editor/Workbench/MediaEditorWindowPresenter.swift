@@ -15,7 +15,7 @@ final class KeyHandlingWindow: NSWindow {
     }
 }
 
-/// 媒体编辑窗口的统一呈现层：同一文件去重（重开复用原窗、状态保留）、悬浮 + 跟随所有空间、
+/// 媒体编辑窗口的统一呈现层：同一文件去重（重开复用原窗、状态保留）、普通窗口与可选置顶、
 /// 关窗前确认丢弃、willClose / 全屏观察者随窗口关闭一并移除。
 /// 视频工作台（WorkbenchView）与音频编辑器（AudioEditorView）共用，只是 Kind 配置不同。
 @MainActor
@@ -73,7 +73,6 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
         if let existing = entries.first(where: { $0.model.sourceURL.standardizedFileURL == url.standardizedFileURL }) {
             NSApp.activate(ignoringOtherApps: true)
             existing.window.makeKeyAndOrderFront(nil)
-            existing.window.orderFrontRegardless()
             return
         }
         let model = WorkbenchViewModel(url: url)
@@ -85,11 +84,8 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
         window.title = String(format: kind.titleFormat, url.lastPathComponent)
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
-        // 菜单栏应用：悬浮于其他应用之上、跟随所有空间，点别处不会被压到后面
-        window.level = .floating
-        window.collectionBehavior = kind == .workbench
-            ? [.canJoinAllSpaces, .fullScreenPrimary]
-            : [.canJoinAllSpaces, .fullScreenAuxiliary]
+        WindowPresentation.configure(window, supportsFullScreen: kind == .workbench)
+        model.presentationWindow = window
         // 远程桌面与录屏里不可见
         window.sharingType = .readOnly
         if let minSize = kind.minSize { window.minSize = minSize }
@@ -104,7 +100,6 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
         entries.append((window, model, kind))
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
 
         observe(window: window, kind: kind)
     }
@@ -137,7 +132,7 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
               let entry = entries.first(where: { $0.window === window }) else { return }
         if isFullscreen { entry.model.prepareForFullscreen() }
         entry.model.isFullscreen = isFullscreen
-        window.level = isFullscreen ? .normal : .floating
+        WindowPresentation.setFullScreen(isFullscreen, for: window)
     }
 
     private func removeEntry(for closed: NSWindow) {

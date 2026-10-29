@@ -239,7 +239,7 @@ final class WebsiteCapture: NSObject, NSApplicationDelegate {
         let png = media.appendingPathComponent("\(scene).png")
         try writePNG(image, to: png)
         let data = try ImageConversionWorker.encodedData(source: png,
-            options: ImageConversionOptions(format: .webp, quality: 0.88, longEdgeLimit: 2200))
+            options: ImageConversionOptions(format: .webp, quality: 0.88))
         try data.write(to: output.appendingPathComponent("\(scene).webp"), options: .atomic)
         print("Saved private-safe screenshot: \(scene).webp (\(image.width) × \(image.height))")
         fflush(stdout)

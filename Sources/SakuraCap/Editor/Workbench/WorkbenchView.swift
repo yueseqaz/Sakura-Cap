@@ -409,6 +409,7 @@ struct PlayerView: NSViewRepresentable {
             // AVKit creates its own fullscreen window. A floating auxiliary editor
             // would follow it into that Space and cover the movie.
             window.level = .normal
+            MainActor.assumeIsolated { WindowPresentation.setFullScreen(true, for: window) }
             window.collectionBehavior.remove([.canJoinAllSpaces, .fullScreenAuxiliary])
         }
 
@@ -431,6 +432,7 @@ struct PlayerView: NSViewRepresentable {
             if let window = editorWindow, let saved = savedPresentation {
                 window.collectionBehavior = saved.behavior
                 window.level = saved.level
+                MainActor.assumeIsolated { WindowPresentation.setFullScreen(false, for: window) }
                 if show && saved.visible { window.makeKeyAndOrderFront(nil) }
             }
             savedPresentation = nil

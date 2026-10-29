@@ -559,11 +559,9 @@ struct PanelView: View {
 
     private func requestMicrophonePermission() {
         if PermissionCenter.microphoneAccess == .notDetermined {
-            StatusItemController.holdSettingsOnDesktop()
             PermissionCenter.requestMicrophone { _ in
                 Task { @MainActor in
                     viewModel.refreshPermissions()
-                    StatusItemController.releaseSettingsFromDesktop()
                 }
             }
         } else {
@@ -572,10 +570,8 @@ struct PanelView: View {
     }
 
     private func requestCameraPermission() {
-        StatusItemController.holdSettingsOnDesktop()
         camera.requestPermission {
             viewModel.refreshPermissions()
-            StatusItemController.releaseSettingsFromDesktop()
             if PermissionCenter.cameraAccess != .authorized {
                 PermissionCenter.openCameraSettings()
             }

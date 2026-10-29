@@ -20,6 +20,7 @@ final class OnboardingWindowController {
                                   styleMask: [.titled, .closable],
                                   backing: .buffered, defer: false)
             window.title = L("欢迎使用 Sakura-Cap")
+            WindowPresentation.configure(window, allowsPinning: false)
             window.isReleasedWhenClosed = false
             window.sharingType = .readOnly
             window.contentView = NSHostingView(rootView: OnboardingView(model: model))

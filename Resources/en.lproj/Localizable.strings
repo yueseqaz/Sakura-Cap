@@ -794,16 +794,28 @@
 "请检查屏幕录制权限后重试" = "Check Screen Recording permission and try again";
 
 /* 图片格式转换 Image format conversion */
+"已打开的窗口" = "Open Windows";
+"没有已打开的窗口" = "No Open Windows";
+"置顶" = "Always on Top";
+"取消置顶" = "Turn Off Always on Top";
 "图片格式转换…" = "Convert Image Format…";
 "图片格式转换" = "Convert Image Format";
 "输出格式" = "Output format";
-"长边限制" = "Long edge limit";
 "不限制" = "No limit";
 "转换" = "Convert";
 "移除所选" = "Remove selected";
 "文件" = "File";
 "添加图片…" = "Add Images…";
 "质量" = "Quality";
+"预览" = "Preview";
+"None：保持每张图片的原始格式，只压缩；若未变小则保留原始数据" = "None: keep each image's original format and only compress; keep the original bytes if encoding would be larger";
+"None：不主动降低画质，只转换格式；有损格式使用最高质量，WebP 使用无损编码" = "None: convert without intentional quality reduction; lossy formats use maximum quality, WebP uses lossless encoding";
+"0–100：数值越低压缩越强；PNG/TIFF 通过降低颜色精度压缩，尺寸与透明度保持不变" = "0–100: lower values compress more; PNG/TIFF reduce color precision while keeping dimensions and transparency";
+"原格式" = "Original";
+"此格式不支持质量调节" = "This format has no adjustable quality";
+"当前设置的实际输出预览" = "Actual output preview for the current settings";
+"保持原格式时保留动画和多页图片；更改格式时仅转换首帧" = "Keeping the format preserves animations and multiple pages; changing formats converts only the first frame";
+"正在计算输出大小… %d / %d" = "Calculating output size… %d / %d";
 "拖入图片到这里，或点击「添加图片」" = "Drop images here, or click Add Images";
 "已添加 %d 张，输出格式 %@" = "%d image(s) added; output format %@";
 "转换中 %d / %d…" = "Converting %d / %d…";
@@ -825,7 +837,7 @@
 "无法估算" = "Unavailable";
 "部分图片无法估算，请检查源文件或更换格式" = "Some sizes are unavailable; check the source files or choose another format";
 "GIF 为静态图片" = "GIF output is a still image";
-"WebP 的宽高不能超过 16383 像素，请设置长边限制" = "WebP dimensions cannot exceed 16383 pixels; set a long-edge limit";
+"WebP 的宽高不能超过 16383 像素，请先缩小图片或选择其他格式" = "WebP dimensions cannot exceed 16383 pixels; resize the image first or choose another format";
 "动画及多页图片仅转换首帧；GIF 输出为静态图片" = "Only the first frame/page is converted; GIF output is a still image";
 
 /* In-place screenshot annotation */

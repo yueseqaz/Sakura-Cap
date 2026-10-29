@@ -11,7 +11,7 @@ enum UpdateInstaller {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 350, height: 110),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.title = L("正在更新 Sakura-Cap")
-        window.level = .floating
+        WindowPresentation.configure(window, allowsPinning: false)
         let label = NSTextField(labelWithString: L("正在下载并验证更新，请稍候…"))
         label.frame = NSRect(x: 22, y: 65, width: 306, height: 22)
         let indicator = NSProgressIndicator(frame: NSRect(x: 22, y: 32, width: 306, height: 16))
@@ -21,7 +21,7 @@ enum UpdateInstaller {
         window.contentView?.addSubview(label)
         window.contentView?.addSubview(indicator)
         window.center()
-        window.orderFrontRegardless()
+        window.orderFront(nil)
         progressWindow = window
 
         Task {

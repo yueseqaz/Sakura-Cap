@@ -6,6 +6,7 @@ import SwiftUI
 final class AIHistoryViewModel: ObservableObject {
     @Published private(set) var sessions: [AIChatSession] = []
     @Published var selected: AIChatViewModel?
+    weak var presentationWindow: NSWindow?
 
     init() {
         reload()
@@ -31,7 +32,7 @@ final class AIHistoryViewModel: ObservableObject {
         alert.alertStyle = .warning
         alert.addButton(withTitle: L("取消"))
         alert.addButton(withTitle: L("删除"))
-        guard runModalAlert(alert) == .alertSecondButtonReturn else { return }
+        guard runModalAlert(alert, for: presentationWindow) == .alertSecondButtonReturn else { return }
         AIChatStore.shared.delete(session)
         if selected?.session.id == session.id { selected = nil }
         reload()
@@ -51,7 +52,6 @@ final class AIHistoryPresenter {
         model.reload()
         if let window {
             window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
             return
         }
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1400, height: 900)
@@ -63,8 +63,8 @@ final class AIHistoryPresenter {
         window.title = L("聊天记录")
         window.isReleasedWhenClosed = false
         window.sharingType = .readOnly
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        WindowPresentation.configure(window)
+        model.presentationWindow = window
         window.minSize = NSSize(width: 680, height: 460)
         window.contentView = NSHostingView(rootView: AIHistoryView(model: model))
         window.center()

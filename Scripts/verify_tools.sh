@@ -6,6 +6,7 @@ trap 'rm -rf "$TEMP_DIR"' EXIT
 swift build --product SakuraWebP
 BIN_DIR="$(swift build --show-bin-path)"
 swiftc -parse-as-library -framework SwiftUI -I ThirdParty/libwebp/include \
+    Sources/SakuraCap/Platform/WindowPresentation.swift \
     Sources/SakuraCap/UI/ImageConvertWindow.swift \
     Sources/SakuraCap/UI/ColorPickerOverlay.swift \
     Sources/SakuraCap/Support/ImageConversion.swift \

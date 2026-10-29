@@ -6,25 +6,31 @@ final class UpdateReleaseWindow: NSWindowController {
     private var pageURL: URL?
     private var onInstall: () -> Void
 
-    static func show(version: String, notes: String, isNewer: Bool, pageURL: URL?, onInstall: @escaping () -> Void) {
+    static func show(version: String, notes: String, isNewer: Bool, pageURL: URL?,
+                     activate: Bool = true, onInstall: @escaping () -> Void) {
         // 复用已有窗口时必须原地刷新内容——否则再次检查更新只会把
         // 上一次的旧版本信息原样顶到前面（窗口没关时尤为明显）
         if let current {
             current.pageURL = pageURL
             current.onInstall = onInstall
             current.buildPage(version: version, notes: notes, isNewer: isNewer)
-            current.showWindow(nil)
-            current.window?.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            current.present(activate: activate)
             return
         }
         let controller = UpdateReleaseWindow(version: version, notes: notes, isNewer: isNewer,
                                              pageURL: pageURL, onInstall: onInstall)
         current = controller
-        controller.showWindow(nil)
         controller.window?.center()
-        controller.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        controller.present(activate: activate)
+    }
+
+    private func present(activate: Bool) {
+        if activate {
+            NSApp.activate(ignoringOtherApps: true)
+            window?.makeKeyAndOrderFront(nil)
+        } else {
+            window?.orderFront(nil)
+        }
     }
 
     private init(version: String, notes: String, isNewer: Bool, pageURL: URL?, onInstall: @escaping () -> Void) {
@@ -34,6 +40,7 @@ final class UpdateReleaseWindow: NSWindowController {
                               styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.title = L("Sakura-Cap 更新")
+        WindowPresentation.configure(window)
         super.init(window: window)
         buildPage(version: version, notes: notes, isNewer: isNewer)
     }

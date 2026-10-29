@@ -5,6 +5,7 @@ TEMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 swiftc -parse-as-library -target "$(uname -m)-apple-macos13.0" \
     Sources/SakuraCap/Support/ImageStitching.swift \
+    Sources/SakuraCap/Platform/WindowPresentation.swift \
     Sources/SakuraCap/UI/ImageStitchWindow.swift \
     Scripts/verify_image_stitch.swift -o "$TEMP_DIR/verify-image-stitch"
 for language in zh en; do

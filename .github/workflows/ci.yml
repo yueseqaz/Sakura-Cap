@@ -31,6 +31,9 @@ jobs:
       - name: Coordinate assertions
         run: swift Scripts/verify_coordinates.swift
 
+      - name: Window levels, pinning, recovery and alert regressions
+        run: bash Scripts/verify_window_presentation.sh
+
       - name: Tool window and color picker regressions
         run: bash Scripts/verify_tools.sh
 

@@ -28,6 +28,7 @@ enum ChatAppearanceChecks {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         Task { @MainActor in
+            await verifyDocumentWindows()
             await verifySurfaces()
             await verifyFullscreen()
             await verifyStreamingFollow()
@@ -41,6 +42,56 @@ enum ChatAppearanceChecks {
         }
         app.run()
         preconditionFailure("AppKit exited before regression checks completed")
+    }
+
+    private static func verifyDocumentWindows() async {
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4,
+                                      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                      isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let image = bitmap.cgImage!
+        ImageConvertToolController.shared.show()
+        ImageStitchToolController.shared.show()
+        ImageCompareToolController.shared.show()
+        TranslationPresenter.shared.present()
+        AIChatPresenter.shared.open(session: AIChatSession())
+        AIHistoryPresenter.shared.open()
+        AIChatImageViewer.shared.show(image, title: "Policy image preview")
+        let editor = AnnotationEditorWindow(image: image, suggestedName: "test", source: .existingFile, onClose: { _ in })
+        editor.makeKeyAndOrderFront(nil)
+        MediaEditorWindowPresenter.shared.show(url: URL(fileURLWithPath: "/nonexistent/policy.mp4"), origin: .manual, kind: .workbench)
+        MediaEditorWindowPresenter.shared.show(url: URL(fileURLWithPath: "/nonexistent/policy.m4a"), origin: .manual, kind: .audioEditor)
+        UpdateReleaseWindow.show(version: "0.0.0", notes: "Policy test", isNewer: false, pageURL: nil, activate: false, onInstall: {})
+        let status = StatusItemController(controller: RecordingController())
+        status.showSettings()
+        let documents = WindowPresentation.openedWindows
+        check(documents.count == 12, "All twelve ordinary window types must be registered for recovery: \(documents.map(\.title))")
+        for window in documents {
+            check(window.level == .normal, "Ordinary window must not float: \(window.title)")
+            check(!window.collectionBehavior.contains(.canJoinAllSpaces)
+                  && !window.collectionBehavior.contains(.fullScreenAuxiliary), "Ordinary window must stay out of other Spaces: \(window.title)")
+            check(!WindowPresentation.isPinned(window), "Pinning must be opt-in: \(window.title)")
+            check(window.styleMask.contains(.miniaturizable), "Ordinary window must allow minimization: \(window.title)")
+            check(window.titlebarAccessoryViewControllers.contains {
+                $0.view.subviews.contains { $0.identifier?.rawValue == "windowPinToggle" }
+            }, "Ordinary window must offer a discoverable pin button: \(window.title)")
+            await settle(window)
+        }
+        let before = documents.count
+        ImageConvertToolController.shared.show()
+        ImageCompareToolController.shared.show()
+        AIHistoryPresenter.shared.open()
+        check(WindowPresentation.openedWindows.count == before, "Reusing a document must not duplicate window-menu entries")
+        let workbench = documents.first { $0.title.contains("policy.mp4") }!
+        let presenter = MediaEditorWindowPresenter.shared
+        presenter.windowDidFailToEnterFullScreen(workbench)
+        check(workbench.level == .normal, "Failed native fullscreen entry must not make an unpinned editor float")
+        WindowPresentation.setPinned(true, for: workbench)
+        presenter.windowDidFailToEnterFullScreen(workbench)
+        check(workbench.level == .floating, "Failed native fullscreen entry must preserve the user's explicit pin")
+        WindowPresentation.setPinned(false, for: workbench)
+        for window in documents { window.orderOut(nil) }
+        editor.close()
+        withExtendedLifetime(status) {}
     }
 
     private static func pixel(_ view: NSView) -> NSColor {
@@ -100,8 +151,7 @@ enum ChatAppearanceChecks {
                               styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         defer { window.orderOut(nil) }
         window.contentView = host
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenPrimary]
+        WindowPresentation.configure(window, supportsFullScreen: true)
         window.orderFront(nil)
         await settle(window)
         let player = descendants(host).compactMap { $0 as? AVPlayerView }.first!
@@ -122,10 +172,10 @@ enum ChatAppearanceChecks {
         var restored = false
         coordinator.playerView(player, restoreUserInterfaceForFullScreenExitWithCompletionHandler: { restored = $0 })
         check(restored && window.isVisible && window.level == .normal,
-              "AVKit exit must restore its destination before restoring floating presentation")
+              "AVKit exit must restore its destination without floating above other apps")
         coordinator.playerViewDidExitFullScreen(player)
-        check(window.level == .floating
-              && window.collectionBehavior == [.canJoinAllSpaces, .fullScreenPrimary],
+        check(window.level == .normal
+              && window.collectionBehavior == [.fullScreenPrimary],
               "Leaving AVKit fullscreen must restore the original window presentation")
 
         model.isFullscreen = true
@@ -143,8 +193,14 @@ enum ChatAppearanceChecks {
         coordinator.playerViewWillEnterFullScreen(player)
         coordinator.restoreEditorWindow()
         coordinator.restoreEditorWindow()
-        check(window.level == .floating && window.collectionBehavior.contains(.canJoinAllSpaces),
+        check(window.level == .normal && window.collectionBehavior == [.fullScreenPrimary],
               "Dismantling the player must safely restore its editor window")
+        WindowPresentation.setPinned(true, for: window)
+        coordinator.playerViewWillEnterFullScreen(player)
+        check(window.level == .normal, "A manually pinned editor must also yield to fullscreen playback")
+        coordinator.restoreEditorWindow()
+        check(window.level == .floating && !window.collectionBehavior.contains(.canJoinAllSpaces),
+              "AVKit exit must restore only the user's explicit pin, not all-Spaces behavior")
     }
 
     private final class FlippedDocument: NSView {

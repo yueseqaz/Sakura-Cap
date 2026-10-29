@@ -41,13 +41,13 @@ final class AnnotationEditorActions: NSObject {
     private func showAlert(_ alert: NSAlert) {
         suspend()
         defer { resume() }
-        runModalAlert(alert)
+        runModalAlert(alert, for: canvas.window)
     }
 
     private func showFailure(_ error: Error) {
         suspend()
         defer { resume() }
-        showOCRFailureAlert(error)
+        showOCRFailureAlert(error, for: canvas.window)
     }
 
     @objc func pinTapped() {

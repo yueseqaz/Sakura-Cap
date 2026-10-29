@@ -74,9 +74,7 @@ final class TranslationPresenter {
         window.title = L("翻译")
         window.isReleasedWhenClosed = false
         window.sharingType = .readOnly
-        // 菜单栏应用：悬浮于其他应用之上、跟随所有空间，点别处不会被压到后面
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        WindowPresentation.configure(window)
         window.minSize = NSSize(width: 360, height: 340)
         window.contentView = NSHostingView(rootView: TranslationView(model: model))
         model.onClose = { [weak window] in window?.close() }

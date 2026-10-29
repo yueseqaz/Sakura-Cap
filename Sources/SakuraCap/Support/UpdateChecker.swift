@@ -26,7 +26,7 @@ enum UpdateChecker {
                                       assetURL: release.assetURL, digest: release.digest)
                 }
                 if newer {
-                    presentAvailable(release)
+                    presentAvailable(release, activate: manual)
                 } else if manual {
                     presentUpToDate(release)
                 }
@@ -135,9 +135,9 @@ enum UpdateChecker {
 
     // MARK: - 更新页面
 
-    private static func presentAvailable(_ release: Release) {
+    private static func presentAvailable(_ release: Release, activate: Bool) {
         UpdateReleaseWindow.show(version: release.version, notes: release.notes, isNewer: true,
-                                 pageURL: release.pageURL) {
+                                 pageURL: release.pageURL, activate: activate) {
             guard let assetURL = release.assetURL else { return }
             UpdateInstaller.install(from: assetURL, version: release.version, digest: release.digest,
                                     pageURL: release.pageURL)

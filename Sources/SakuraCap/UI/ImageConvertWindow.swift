@@ -14,12 +14,14 @@ final class ImageConvertToolController: NSObject {
     private let formats = ImageOutputFormat.available
     private let worker = ImageConversionWorker()
     private var estimateTask: Task<Void, Never>?
+    private var estimateWaiting = false
     private var estimateID = UUID()
     private var estimatedSizes: [URL: Int] = [:]
+    private var previewImages: [URL: NSImage] = [:]
     private var estimateFailures = Set<URL>()
-    private var format: ImageOutputFormat = .jpeg
+    private var format: ImageOutputFormat?
     private var quality = 0.9
-    private var longEdgeLimit: Int = 0 // 0 = 不限制
+    private var skipsCompression = false
 
     private var tableView: NSTableView!
     private var hintLabel: NSTextField!
@@ -28,11 +30,11 @@ final class ImageConvertToolController: NSObject {
     private var qualityTitleLabel: NSTextField!
     private var convertButton: NSButton!
     private var formatPopup: NSPopUpButton!
-    private var longEdgePopup: NSPopUpButton!
+    private var noCompressionButton: NSButton!
     private var estimateLabel: NSTextField!
 
     private var options: ImageConversionOptions {
-        ImageConversionOptions(format: format, quality: quality, longEdgeLimit: longEdgeLimit)
+        ImageConversionOptions(format: format, quality: skipsCompression ? nil : quality)
     }
 
     func show() {
@@ -48,16 +50,20 @@ final class ImageConvertToolController: NSObject {
         window.title = L("图片格式转换")
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 640, height: 400)
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        WindowPresentation.configure(window)
         window.sharingType = .readOnly
         window.delegate = self
 
         // 列表
         tableView = NSTableView()
+        let previewColumn = NSTableColumn(identifier: .init("preview"))
+        previewColumn.title = L("预览")
+        previewColumn.width = 64
+        previewColumn.minWidth = 64
+        previewColumn.maxWidth = 64
         let nameColumn = NSTableColumn(identifier: .init("name"))
         nameColumn.title = L("文件")
-        nameColumn.width = 260
+        nameColumn.width = 196
         nameColumn.minWidth = 120
         let sizeColumn = NSTableColumn(identifier: .init("size"))
         sizeColumn.title = L("尺寸")
@@ -68,11 +74,11 @@ final class ImageConvertToolController: NSObject {
         let estimatedColumn = NSTableColumn(identifier: .init("estimated"))
         estimatedColumn.title = L("预计输出大小")
         estimatedColumn.width = 120
-        for column in [nameColumn, sizeColumn, bytesColumn, estimatedColumn] {
+        for column in [previewColumn, nameColumn, sizeColumn, bytesColumn, estimatedColumn] {
             tableView.addTableColumn(column)
         }
         tableView.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
-        tableView.rowHeight = 26
+        tableView.rowHeight = 60
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.allowsMultipleSelection = true
         tableView.style = .inset
@@ -99,27 +105,25 @@ final class ImageConvertToolController: NSObject {
         removeButton.bezelStyle = .rounded
 
         formatPopup = NSPopUpButton()
+        formatPopup.addItem(withTitle: "None")
         for item in formats { formatPopup.addItem(withTitle: item.title) }
-        formatPopup.selectItem(at: formats.firstIndex(of: format) ?? 0)
+        formatPopup.selectItem(at: 0)
+        formatPopup.toolTip = L("None：保持每张图片的原始格式，只压缩；若未变小则保留原始数据")
         formatPopup.target = self
         formatPopup.action = #selector(formatChanged)
         let formatLabel = NSTextField(labelWithString: L("输出格式"))
 
-        qualitySlider = NSSlider(value: 0.9, minValue: 0.1, maxValue: 1.0, target: self, action: #selector(qualityChanged))
+        qualitySlider = NSSlider(value: 90, minValue: 0, maxValue: 100, target: self, action: #selector(qualityChanged))
+        qualitySlider.identifier = .init("conversionQuality")
         qualitySlider.controlSize = .small
         qualitySlider.isContinuous = true
         qualityLabel = NSTextField(labelWithString: "90%")
         qualityLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         qualityTitleLabel = NSTextField(labelWithString: L("质量"))
-
-        longEdgePopup = NSPopUpButton()
-        for (title, value) in [(L("不限制"), 0), ("4096 px", 4096), ("2560 px", 2560), ("1920 px", 1920), ("1280 px", 1280)] {
-            longEdgePopup.addItem(withTitle: title)
-            longEdgePopup.lastItem?.representedObject = value
-        }
-        longEdgePopup.target = self
-        longEdgePopup.action = #selector(longEdgeChanged)
-        let longEdgeLabel = NSTextField(labelWithString: L("长边限制"))
+        noCompressionButton = NSButton(checkboxWithTitle: "None", target: self, action: #selector(compressionChanged))
+        noCompressionButton.identifier = .init("conversionNoCompression")
+        noCompressionButton.toolTip = L("None：不主动降低画质，只转换格式；有损格式使用最高质量，WebP 使用无损编码")
+        qualitySlider.toolTip = L("0–100：数值越低压缩越强；PNG/TIFF 通过降低颜色精度压缩，尺寸与透明度保持不变")
 
         hintLabel = NSTextField(labelWithString: L("拖入图片到这里，或点击「添加图片」"))
         hintLabel.font = .systemFont(ofSize: 12)
@@ -147,17 +151,16 @@ final class ImageConvertToolController: NSObject {
         bar.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(estimateLabel)
         let fileRow = NSStackView(views: [addButton, removeButton, hintLabel])
-        let qualityRow = NSStackView(views: [qualitySlider, qualityLabel])
+        let qualityRow = NSStackView(views: [qualitySlider, qualityLabel, noCompressionButton])
         qualityRow.spacing = 6
         let formatGroup = NSStackView(views: [formatLabel, formatPopup])
         let qualityGroup = NSStackView(views: [qualityTitleLabel, qualityRow])
-        let longEdgeGroup = NSStackView(views: [longEdgeLabel, longEdgePopup])
-        for group in [formatGroup, qualityGroup, longEdgeGroup] {
+        for group in [formatGroup, qualityGroup] {
             group.orientation = .vertical
             group.alignment = .leading
             group.spacing = 4
         }
-        let settingsRow = NSStackView(views: [formatGroup, qualityGroup, longEdgeGroup, NSView(), convertButton])
+        let settingsRow = NSStackView(views: [formatGroup, qualityGroup, NSView(), convertButton])
         for row in [fileRow, settingsRow] {
             row.orientation = .horizontal
             row.spacing = 8
@@ -169,7 +172,7 @@ final class ImageConvertToolController: NSObject {
         footnote.font = .systemFont(ofSize: 11)
         footnote.textColor = .secondaryLabelColor
         footnote.lineBreakMode = .byTruncatingTail
-        footnote.toolTip = L("动画及多页图片仅转换首帧；GIF 输出为静态图片")
+        footnote.toolTip = L("保持原格式时保留动画和多页图片；更改格式时仅转换首帧")
         footnote.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView(frame: NSRect(origin: .zero, size: window.contentLayoutRect.size))
@@ -198,10 +201,9 @@ final class ImageConvertToolController: NSObject {
             estimateLabel.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
             estimateLabel.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
             estimateLabel.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -8),
-            qualitySlider.widthAnchor.constraint(equalToConstant: 100),
+            qualitySlider.widthAnchor.constraint(equalToConstant: 180),
             qualityLabel.widthAnchor.constraint(equalToConstant: 38),
             formatPopup.widthAnchor.constraint(equalToConstant: 120),
-            longEdgePopup.widthAnchor.constraint(equalToConstant: 92),
             footnote.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
             footnote.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
             footnote.centerXAnchor.constraint(equalTo: container.centerXAnchor),
@@ -233,59 +235,67 @@ final class ImageConvertToolController: NSObject {
 
     private func refreshUI() {
         tableView?.reloadData()
-        setQualityVisible(format.supportsQuality)
-        qualitySlider.isEnabled = format.supportsQuality && !converting
+        let adjustable = format?.supportsCompressionQuality ?? true
+        qualitySlider.isEnabled = adjustable && !skipsCompression && !converting
+        qualityLabel.stringValue = skipsCompression || !adjustable ? "None" : "\(Int((quality * 100).rounded()))%"
+        noCompressionButton.isEnabled = !converting
         formatPopup.isEnabled = !converting
-        longEdgePopup.isEnabled = !converting
         convertButton.isEnabled = !items.isEmpty && !converting
         if !converting {
             hintLabel.stringValue = items.isEmpty
                 ? L("拖入图片到这里，或点击「添加图片」")
-                : String(format: L("已添加 %d 张，输出格式 %@"), items.count, format.title)
+                : String(format: L("已添加 %d 张，输出格式 %@"), items.count, format?.title ?? L("原格式"))
             if format == .gif { hintLabel.stringValue += " · " + L("GIF 为静态图片") }
+            if !adjustable { hintLabel.stringValue += " · " + L("此格式不支持质量调节") }
             scheduleEstimates()
         }
-    }
-
-    private func setQualityVisible(_ visible: Bool) {
-        // 无损/固定压缩格式不提供有损质量滑块。
-        qualityTitleLabel.isHidden = !visible
-        qualitySlider.isHidden = !visible
-        qualityLabel.isHidden = !visible
     }
 
     // MARK: - 编码大小预览
 
     private func scheduleEstimates() {
-        estimateTask?.cancel()
-        let id = UUID()
-        estimateID = id
+        estimateID = UUID()
         estimatedSizes.removeAll()
+        previewImages.removeAll()
         estimateFailures.removeAll()
         tableView.reloadData()
         guard !items.isEmpty else {
+            estimateTask?.cancel()
+            estimateWaiting = false
             estimateLabel.stringValue = L("添加图片以预览输出大小")
             return
         }
         guard window?.isVisible == true else { return }
         estimateLabel.stringValue = L("正在计算输出大小…")
-        let snapshot = items
-        let settings = options
+        // Throttle rather than debounce: a continuous drag must not postpone the
+        // first encode forever. Read the newest controls when this short wait ends.
+        guard !estimateWaiting else { return }
+        estimateTask?.cancel()
+        estimateWaiting = true
         estimateTask = Task { @MainActor in
             do {
-                // 连续拖动时只编码最新设置，避免每一个鼠标事件都重新压缩整批图片。
-                try await Task.sleep(nanoseconds: 200_000_000)
+                try await Task.sleep(nanoseconds: 80_000_000)
+                try Task.checkCancellation()
+                self.estimateWaiting = false
+                let snapshot = self.items
+                let settings = self.options
+                let id = self.estimateID
                 for item in snapshot {
                     do {
-                        let size = try await worker.estimatedSize(source: item.url, options: settings)
+                        let preview = try await worker.preview(source: item.url, options: settings)
                         guard !Task.isCancelled, self.estimateID == id else { return }
-                        self.estimatedSizes[item.url] = size
+                        self.estimatedSizes[item.url] = preview.byteCount
+                        self.previewImages[item.url] = preview.thumbnail.flatMap { NSImage(data: $0) }
                     } catch is CancellationError { return }
                     catch {
                         guard !Task.isCancelled, self.estimateID == id else { return }
                         self.estimateFailures.insert(item.url)
                     }
-                    self.tableView.reloadData()
+                    if let row = self.items.firstIndex(where: { $0.url == item.url }) {
+                        self.tableView.reloadData(forRowIndexes: IndexSet(integer: row),
+                                                  columnIndexes: IndexSet(integersIn: 0..<self.tableView.numberOfColumns))
+                    }
+                    self.updateEstimateSummary()
                 }
                 self.updateEstimateSummary()
             } catch { /* A newer slider value or a closed window cancels this preview. */ }
@@ -295,6 +305,11 @@ final class ImageConvertToolController: NSObject {
     private func updateEstimateSummary() {
         let original = items.reduce(Int64(0)) { $0 + Int64($1.fileSize) }
         let output = estimatedSizes.values.reduce(Int64(0)) { $0 + Int64($1) }
+        let completed = estimatedSizes.count + estimateFailures.count
+        if completed < items.count {
+            estimateLabel.stringValue = String(format: L("正在计算输出大小… %d / %d"), completed, items.count)
+            return
+        }
         guard estimateFailures.isEmpty else {
             estimateLabel.stringValue = L("部分图片无法估算，请检查源文件或更换格式")
             return
@@ -321,6 +336,7 @@ final class ImageConvertToolController: NSObject {
         }
         converting = true
         estimateTask?.cancel()
+        estimateWaiting = false
         estimateID = UUID()
         let snapshot = items
         let settings = options
@@ -379,22 +395,24 @@ final class ImageConvertToolController: NSObject {
     }
 
     @objc private func formatChanged() {
-        guard !converting, formats.indices.contains(formatPopup.indexOfSelectedItem) else { return }
-        format = formats[formatPopup.indexOfSelectedItem]
+        guard !converting else { return }
+        let index = formatPopup.indexOfSelectedItem
+        guard index == 0 || formats.indices.contains(index - 1) else { return }
+        format = index == 0 ? nil : formats[index - 1]
         refreshUI()
     }
 
     @objc private func qualityChanged() {
         guard !converting else { return }
-        quality = (qualitySlider.doubleValue * 100).rounded() / 100
+        quality = qualitySlider.doubleValue.rounded() / 100
         qualityLabel.stringValue = "\(Int((quality * 100).rounded()))%"
         scheduleEstimates()
     }
 
-    @objc private func longEdgeChanged() {
+    @objc private func compressionChanged() {
         guard !converting else { return }
-        longEdgeLimit = longEdgePopup.selectedItem?.representedObject as? Int ?? 0
-        scheduleEstimates()
+        skipsCompression = noCompressionButton.state == .on
+        refreshUI()
     }
 }
 
@@ -403,6 +421,7 @@ final class ImageConvertToolController: NSObject {
 extension ImageConvertToolController: NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         estimateTask?.cancel()
+        estimateWaiting = false
         estimateID = UUID()
     }
 
@@ -412,6 +431,13 @@ extension ImageConvertToolController: NSTableViewDataSource, NSTableViewDelegate
         guard row < items.count else { return nil }
         let item = items[row]
         let identifier = tableColumn?.identifier ?? .init("name")
+        if identifier.rawValue == "preview" {
+            let view = NSImageView()
+            view.imageScaling = .scaleProportionallyUpOrDown
+            view.image = previewImages[item.url]
+            view.toolTip = L("当前设置的实际输出预览")
+            return view
+        }
         let cell = NSTextField(labelWithString: "")
         cell.lineBreakMode = .byTruncatingMiddle
         cell.font = .systemFont(ofSize: 12)

@@ -26,9 +26,7 @@ final class ImageCompareToolController: NSObject {
         window.title = L("对比")
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 640, height: 420)
-        // 与其它工具窗口一致：悬浮、跟随所有空间、不进录屏/远程共享
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        WindowPresentation.configure(window)
         window.sharingType = .readOnly
 
         let left = ImageComparePane()

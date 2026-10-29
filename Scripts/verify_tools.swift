@@ -69,11 +69,14 @@ enum ToolRegressionChecks {
         let table = views.compactMap { $0 as? NSTableView }.first!
         let drop = views.compactMap { $0 as? ImageConvertDropView }.first!
         check(window.isVisible && window.frame.width >= 640, "Conversion window must not collapse to zero width")
+        check(window.level == .normal && !window.collectionBehavior.contains(.canJoinAllSpaces), "Conversion must behave as a normal document, not a desktop overlay")
         check(!bar.translatesAutoresizingMaskIntoConstraints, "Toolbar must use Auto Layout")
         check(!convert.isEnabled, "Empty conversion list must disable Convert")
-        check(format.itemTitles == ImageOutputFormat.available.map(\.title), "Offer every supported output format, but no unsupported encoders")
+        check(format.itemTitles == ["None"] + ImageOutputFormat.available.map(\.title), "Offer every supported output format, but no unsupported encoders")
         check(format.numberOfItems >= 7, "Common TIFF, BMP, GIF, and JPEG 2000 formats must be offered")
         check(format.itemTitles.contains("WebP"), "Bundled WebP encoder must always be available, even without ImageIO encoding support")
+        check(format.titleOfSelectedItem == "None", "Default output format must preserve the source format")
+        check(views.compactMap { $0 as? NSPopUpButton }.count == 1, "Remove the long-edge selector")
 
         for size in [NSSize(width: 760, height: 480), NSSize(width: 640, height: 400), NSSize(width: 1000, height: 600)] {
             window.setContentSize(size)
@@ -101,38 +104,81 @@ enum ToolRegressionChecks {
         check(table.numberOfRows == 1 && convert.isEnabled, "Adding an image must populate the table without duplicates")
         let slider = views.compactMap { $0 as? NSSlider }.first!
         let summary = views.compactMap { $0 as? NSTextField }.first { $0.identifier?.rawValue == "conversionEstimateSummary" }!
+        let noCompression = views.compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "conversionNoCompression" }!
         check(slider.isContinuous, "Output sizes must update while dragging, not just on mouse up")
-        for value in [0.25, 0.9] {
-            slider.doubleValue = value
+        check(slider.minValue == 0 && slider.maxValue == 100, "Quality must span the full 0–100 range")
+        var updatedDuringDrag = false
+        for value in 20..<30 {
+            slider.doubleValue = Double(value)
+            slider.sendAction(slider.action, to: slider.target)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            if estimatedCell(tool: tool, table: table) != "…" { updatedDuringDrag = true }
+        }
+        check(updatedDuringDrag, "Continuous slider events must not defer all previews until the drag stops")
+        for value in [0.0, 0.25, 1.0] {
+            slider.doubleValue = value * 100
             slider.sendAction(slider.action, to: slider.target)
             try await waitForEstimate(tool: tool, table: table)
             let data = try ImageConversionWorker.encodedData(source: fixture,
-                options: ImageConversionOptions(format: .jpeg, quality: value, longEdgeLimit: 0))
+                options: ImageConversionOptions(format: .jpeg, quality: value))
             check(estimatedCell(tool: tool, table: table) == byteString(data.count), "Slider preview must reflect the actual encoder's output")
             check(summary.stringValue.contains(byteString(data.count)), "Summary must show the estimated total")
         }
         for value in [0.1, 0.95, 0.4] {
-            slider.doubleValue = value
+            slider.doubleValue = value * 100
             slider.sendAction(slider.action, to: slider.target)
         }
         try await waitForEstimate(tool: tool, table: table)
         let latest = try ImageConversionWorker.encodedData(source: fixture,
-            options: ImageConversionOptions(format: .jpeg, quality: 0.4, longEdgeLimit: 0))
+            options: ImageConversionOptions(format: .jpeg, quality: 0.4))
         check(estimatedCell(tool: tool, table: table) == byteString(latest.count), "Rapid slider changes must not publish stale estimates")
         format.selectItem(withTitle: "PNG")
         format.sendAction(format.action, to: format.target)
         try await waitForEstimate(tool: tool, table: table)
-        check(slider.isHidden && !slider.isEnabled, "Lossless formats must not offer a misleading quality slider")
+        check(!slider.isHidden && slider.isEnabled, "PNG must offer real color-precision compression")
         let png = try ImageConversionWorker.encodedData(source: fixture,
-            options: ImageConversionOptions(format: .png, quality: 0.4, longEdgeLimit: 0))
+            options: ImageConversionOptions(format: .png, quality: 0.4))
         check(estimatedCell(tool: tool, table: table) == byteString(png.count), "Changing formats must recompute the output size")
+        let previewColumn = table.tableColumns.first { $0.identifier.rawValue == "preview" }!
+        check((tool.tableView(table, viewFor: previewColumn, row: 0) as? NSImageView)?.image != nil,
+              "Image rows must show the encoded output, not only its byte count")
+        noCompression.performClick(nil)
+        try await waitForEstimate(tool: tool, table: table)
+        check(!slider.isEnabled && !slider.isHidden, "Quality None disables, but does not hide, the slider")
+        let originalSize = try Data(contentsOf: fixture).count
+        check(estimatedCell(tool: tool, table: table) == byteString(originalSize), "Same-format Quality None must retain original data")
+        noCompression.performClick(nil)
         format.selectItem(withTitle: "WebP")
         format.sendAction(format.action, to: format.target)
         check(!slider.isHidden && slider.isEnabled, "WebP must support the compression quality slider")
         try await waitForEstimate(tool: tool, table: table)
         let webp = try ImageConversionWorker.encodedData(source: fixture,
-            options: ImageConversionOptions(format: .webp, quality: 0.4, longEdgeLimit: 0))
+            options: ImageConversionOptions(format: .webp, quality: 0.4))
         check(estimatedCell(tool: tool, table: table) == byteString(webp.count), "WebP size preview must use the actual bundled encoder")
+        let secondFixture = folder.appendingPathComponent("second.jpg")
+        let jpeg = try ImageConversionWorker.encodedData(source: fixture,
+            options: ImageConversionOptions(format: .jpeg, quality: 0.3))
+        try jpeg.write(to: secondFixture)
+        drop.onDrop?([secondFixture])
+        format.selectItem(withTitle: "None")
+        format.sendAction(format.action, to: format.target)
+        for value in [10.0, 95.0, 55.0] {
+            slider.doubleValue = value
+            slider.sendAction(slider.action, to: slider.target)
+        }
+        try await waitForEstimate(tool: tool, table: table)
+        check(table.numberOfRows == 2, "Batch compression must retain both files")
+        var total = 0
+        for (row, source) in [fixture, secondFixture].enumerated() {
+            let result = try ImageConversionWorker.encodedData(source: source,
+                options: ImageConversionOptions(format: nil, quality: 0.55))
+            total += result.count
+            check(estimatedCell(tool: tool, table: table, row: row) == byteString(result.count),
+                  "Every row must reflect the latest quality using its own source format")
+            let sourceSize = try Data(contentsOf: source).count
+            check(result.count <= sourceSize, "Compression must not inflate any batch item")
+        }
+        check(summary.stringValue.contains(byteString(total)), "Batch summary must add every output size")
         if let directory = ProcessInfo.processInfo.environment["SAKURA_TEST_RENDER_DIR"] {
             let folder = URL(fileURLWithPath: directory, isDirectory: true)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -146,7 +192,7 @@ enum ToolRegressionChecks {
             let language = ProcessInfo.processInfo.environment["SAKURA_TEST_LANGUAGE"] ?? "zh"
             try bitmap.representation(using: .png, properties: [:])!.write(to: folder.appendingPathComponent("conversion-\(language).png"))
         }
-        table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        table.selectRowIndexes(IndexSet(integersIn: 0..<table.numberOfRows), byExtendingSelection: false)
         remove.performClick(nil)
         check(table.numberOfRows == 0 && !convert.isEnabled, "Removing the image must update Convert")
         check(summary.stringValue == L("添加图片以预览输出大小"), "Removing all images must clear the size summary")
@@ -159,14 +205,14 @@ enum ToolRegressionChecks {
         ByteCountFormatter.string(fromByteCount: Int64(count), countStyle: .file)
     }
 
-    private static func estimatedCell(tool: ImageConvertToolController, table: NSTableView) -> String {
+    private static func estimatedCell(tool: ImageConvertToolController, table: NSTableView, row: Int = 0) -> String {
         let column = table.tableColumns.first { $0.identifier.rawValue == "estimated" }!
-        return (tool.tableView(table, viewFor: column, row: 0) as! NSTextField).stringValue
+        return (tool.tableView(table, viewFor: column, row: row) as! NSTextField).stringValue
     }
 
     private static func waitForEstimate(tool: ImageConvertToolController, table: NSTableView) async throws {
         for _ in 0..<300 {
-            if estimatedCell(tool: tool, table: table) != "…" { return }
+            if (0..<table.numberOfRows).allSatisfy({ estimatedCell(tool: tool, table: table, row: $0) != "…" }) { return }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         preconditionFailure("Background size estimate timed out")
@@ -263,40 +309,91 @@ enum ToolRegressionChecks {
         let original = try Data(contentsOf: source)
         let worker = ImageConversionWorker()
         for format in ImageOutputFormat.available {
-            let settings = ImageConversionOptions(format: format, quality: 0.7, longEdgeLimit: 128)
+            let settings = ImageConversionOptions(format: format, quality: 0.7)
             let estimate = try await worker.estimatedSize(source: source, options: settings)
             let output = try await worker.convert(source: source, options: settings)
             let data = try Data(contentsOf: output)
             check(abs(data.count - estimate) < 100, "Preview and export must share the same encoder for \(format.title)")
             let decoded = CGImageSourceCreateWithURL(output as CFURL, nil)!
             let image = CGImageSourceCreateImageAtIndex(decoded, 0, nil)!
-            check(image.width == 128 && image.height == 96, "Every format must apply the long-edge setting")
+            check(image.width == 256 && image.height == 192, "Quality must not change pixel dimensions")
             check(CGImageSourceGetCount(decoded) == 1, "GIF and multipage conversions must explicitly export a still image")
             check(CGImageSourceGetType(decoded) as String? == format.rawValue, "Export must use the selected file format")
             if format == .webp {
                 check(data.prefix(4) == Data("RIFF".utf8) && data.subdata(in: 8..<12) == Data("WEBP".utf8),
                       "WebP output must be a real WebP container, not a renamed PNG")
-                let transparent = ScreenCapturer.color(in: image, at: .zero, viewSize: NSSize(width: 128, height: 96))!
-                let translucent = ScreenCapturer.color(in: image, at: NSPoint(x: 12, y: 2), viewSize: NSSize(width: 128, height: 96))!
+                let transparent = ScreenCapturer.color(in: image, at: .zero, viewSize: NSSize(width: 256, height: 192))!
+                let translucent = ScreenCapturer.color(in: image, at: NSPoint(x: 24, y: 2), viewSize: NSSize(width: 256, height: 192))!
                 check(transparent.alphaComponent < 0.05, "WebP must preserve transparent pixels and image orientation")
                 check(abs(translucent.alphaComponent - 128.0 / 255) < 0.02, "WebP must preserve partial transparency")
             }
             if format.requiresOpaqueImage {
-                let color = ScreenCapturer.color(in: image, at: .zero, viewSize: NSSize(width: 128, height: 96))!
+                let color = ScreenCapturer.color(in: image, at: .zero, viewSize: NSSize(width: 256, height: 192))!
                 check(color.redComponent > 0.95 && color.greenComponent > 0.95 && color.blueComponent > 0.95,
                       "JPEG/BMP must flatten transparency onto white, not black")
             }
         }
         let low = try ImageConversionWorker.encodedData(source: source,
-            options: ImageConversionOptions(format: .jpeg, quality: 0.2, longEdgeLimit: 0))
+            options: ImageConversionOptions(format: .jpeg, quality: 0.2))
         let high = try ImageConversionWorker.encodedData(source: source,
-            options: ImageConversionOptions(format: .jpeg, quality: 0.95, longEdgeLimit: 0))
+            options: ImageConversionOptions(format: .jpeg, quality: 0.95))
         check(low.count < high.count, "Quality slider must change real encoded bytes")
         let webpLow = try ImageConversionWorker.encodedData(source: source,
-            options: ImageConversionOptions(format: .webp, quality: 0.2, longEdgeLimit: 0))
+            options: ImageConversionOptions(format: .webp, quality: 0.2))
         let webpHigh = try ImageConversionWorker.encodedData(source: source,
-            options: ImageConversionOptions(format: .webp, quality: 0.95, longEdgeLimit: 0))
+            options: ImageConversionOptions(format: .webp, quality: 0.95))
         check(webpLow.count < webpHigh.count, "WebP quality slider must affect the encoded size")
+        let unchanged = try ImageConversionWorker.encodedData(source: source,
+            options: ImageConversionOptions(format: nil, quality: nil))
+        check(unchanged == original, "Both None options must preserve every source byte")
+        let losslessWebP = try ImageConversionWorker.encodedData(source: source,
+            options: ImageConversionOptions(format: .webp, quality: nil))
+        // VP8L is the lossless bitstream; it must not silently fall back to lossy quality 100.
+        check(losslessWebP.subdata(in: 12..<16) == Data("VP8L".utf8), "Quality None must use true lossless WebP")
+        let pngLow = try ImageConversionWorker.encodedData(source: source,
+            options: ImageConversionOptions(format: nil, quality: 0))
+        let pngHigh = try ImageConversionWorker.encodedData(source: source,
+            options: ImageConversionOptions(format: nil, quality: 1))
+        check(pngLow.count < pngHigh.count && pngHigh.count <= original.count, "PNG quality must affect compression without inflating files")
+        let pngSource = CGImageSourceCreateWithData(pngLow as CFData, nil)!
+        check(CGImageSourceGetType(pngSource) as String? == ImageOutputFormat.png.rawValue, "Format None must not disguise another format as PNG")
+        let pngImage = CGImageSourceCreateImageAtIndex(pngSource, 0, nil)!
+        let translucentPNG = ScreenCapturer.color(in: pngImage, at: NSPoint(x: 24, y: 2), viewSize: NSSize(width: 256, height: 192))!
+        check(abs(translucentPNG.alphaComponent - 128.0 / 255) < 0.02, "PNG compression must preserve partial transparency")
+        let jpegSource = folder.appendingPathComponent("small.jpg")
+        try low.write(to: jpegSource)
+        let recompressed = try ImageConversionWorker.encodedData(source: jpegSource,
+            options: ImageConversionOptions(format: nil, quality: 1))
+        check(recompressed == low, "High quality must keep an already-small JPEG instead of making it larger")
+        let sameFormat = try ImageConversionWorker.encodedData(source: jpegSource,
+            options: ImageConversionOptions(format: .jpeg, quality: 1))
+        check(sameFormat == low, "Explicit same-format compression also needs the size safeguard")
+        let bmp = try ImageConversionWorker.encodedData(source: jpegSource,
+            options: ImageConversionOptions(format: .bmp, quality: nil))
+        check(bmp.count > low.count, "A requested format conversion must not be replaced by the original just because it is larger")
+        let animation = folder.appendingPathComponent("animated.gif")
+        let gif = CGImageDestinationCreateWithURL(animation as CFURL, ImageOutputFormat.gif.rawValue as CFString, 2, nil)!
+        CGImageDestinationAddImage(gif, encodingFixture(), nil)
+        CGImageDestinationAddImage(gif, encodingFixture(), nil)
+        check(CGImageDestinationFinalize(gif), "Animated fixture must encode")
+        let animationOriginal = try Data(contentsOf: animation)
+        for quality: Double? in [nil, 0.5] {
+            let result = try ImageConversionWorker.encodedData(source: animation,
+                options: ImageConversionOptions(format: nil, quality: quality))
+            check(result == animationOriginal, "Keep-format mode must not destroy animation or additional pages")
+        }
+        let originalExport = try await worker.convert(source: source,
+            options: ImageConversionOptions(format: nil, quality: nil))
+        let exportedOriginal = try Data(contentsOf: originalExport)
+        check(originalExport.pathExtension == "png" && exportedOriginal == original,
+              "Keep-format export must retain both the source extension and original bytes")
+        let rotated = folder.appendingPathComponent("rotated.png")
+        try writeFixture(encodingFixture(), to: rotated, orientation: 6)
+        let rotatedData = try ImageConversionWorker.encodedData(source: rotated,
+            options: ImageConversionOptions(format: .jpeg, quality: nil))
+        let rotatedSource = CGImageSourceCreateWithData(rotatedData as CFData, nil)!
+        let rotatedImage = CGImageSourceCreateImageAtIndex(rotatedSource, 0, nil)!
+        check(rotatedImage.width == 192 && rotatedImage.height == 256, "Conversion must apply camera orientation without resizing")
         let oversized = folder.appendingPathComponent("wide.png")
         let wideContext = CGContext(data: nil, width: 16384, height: 16, bitsPerComponent: 8, bytesPerRow: 0,
                                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -304,17 +401,12 @@ enum ToolRegressionChecks {
         try writeFixture(wideContext.makeImage()!, to: oversized)
         do {
             _ = try ImageConversionWorker.encodedData(source: oversized,
-                options: ImageConversionOptions(format: .webp, quality: 0.8, longEdgeLimit: 0))
+                options: ImageConversionOptions(format: .webp, quality: 0.8))
             preconditionFailure("Oversized WebP dimensions must report a useful error")
         } catch ImageConversionWorker.ConversionError.webpDimensions {
             check(true, "Oversized WebP input reports the format limit")
         }
-        let limited = try ImageConversionWorker.encodedData(source: oversized,
-            options: ImageConversionOptions(format: .webp, quality: 0.8, longEdgeLimit: 1280))
-        let limitedSource = CGImageSourceCreateWithData(limited as CFData, nil)!
-        let limitedImage = CGImageSourceCreateImageAtIndex(limitedSource, 0, nil)!
-        check(limitedImage.width == 1280 && limitedImage.height >= 1, "Long-edge limits must make oversized WebP inputs convertible")
-        let settings = ImageConversionOptions(format: .jpeg, quality: 0.9, longEdgeLimit: 0)
+        let settings = ImageConversionOptions(format: .jpeg, quality: 0.9)
         let first = try await worker.convert(source: source, options: settings)
         let second = try await worker.convert(source: source, options: settings)
         check(first != second, "Existing output files must never be overwritten")

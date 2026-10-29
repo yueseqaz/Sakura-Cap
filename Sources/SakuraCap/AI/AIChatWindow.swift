@@ -232,7 +232,6 @@ final class AIChatPresenter {
         if let window {
             window.contentView = NSHostingView(rootView: AIChatView(model: model))
             window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
             return
         }
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 900)
@@ -244,8 +243,7 @@ final class AIChatPresenter {
         window.title = L("AI 助手")
         window.isReleasedWhenClosed = false
         window.sharingType = .readOnly
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        WindowPresentation.configure(window)
         window.minSize = NSSize(width: 380, height: 460)
         window.contentView = NSHostingView(rootView: AIChatView(model: model))
         window.center()
@@ -678,8 +676,7 @@ final class AIChatImageViewer {
                               backing: .buffered, defer: false)
         window.title = title.isEmpty ? L("图片") : title
         window.isReleasedWhenClosed = false
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        WindowPresentation.configure(window)
         let imageView = NSImageView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         imageView.image = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
         imageView.imageScaling = .scaleProportionallyUpOrDown

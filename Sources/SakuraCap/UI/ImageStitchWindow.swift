@@ -30,8 +30,7 @@ final class ImageStitchToolController: NSObject, NSWindowDelegate {
         window.title = L("图片拼接")
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 860, height: 580)
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        WindowPresentation.configure(window)
         window.sharingType = .readOnly
         window.delegate = self
         self.window = window

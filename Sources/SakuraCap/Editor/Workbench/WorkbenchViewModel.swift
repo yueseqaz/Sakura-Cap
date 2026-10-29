@@ -21,6 +21,7 @@ final class WorkbenchViewModel: ObservableObject {
     /// 程序主动关闭（导出成功/删除）时跳过关窗确认
     var isProgrammaticClose = false
     var requestClose: (() -> Void)?
+    weak var presentationWindow: NSWindow?
 
     let player: AVPlayer
     /// 加载成功才有值（load 失败时为 nil，调用方须判空——IUO 曾是崩溃隐患）
@@ -755,7 +756,7 @@ final class WorkbenchViewModel: ObservableObject {
         alert.accessoryView = checkbox
         alert.addButton(withTitle: L("导出"))
         alert.addButton(withTitle: L("取消"))
-        guard runModalAlert(alert) == .alertFirstButtonReturn else { return }
+        guard runModalAlert(alert, for: presentationWindow) == .alertFirstButtonReturn else { return }
         let deleteOriginal = checkbox.state == .on
         Task { await self.export(deleteOriginal: deleteOriginal, to: outURL) }
     }
@@ -819,7 +820,7 @@ final class WorkbenchViewModel: ObservableObject {
             alert.messageText = L("导出失败")
             alert.informativeText = error.localizedDescription
             alert.addButton(withTitle: L("好"))
-            runModalAlert(alert)
+            runModalAlert(alert, for: presentationWindow)
         }
     }
 
@@ -842,7 +843,7 @@ final class WorkbenchViewModel: ObservableObject {
         alert.accessoryView = accessory
         alert.addButton(withTitle: L("导出"))
         alert.addButton(withTitle: L("取消"))
-        guard runModalAlert(alert) == .alertFirstButtonReturn else { return }
+        guard runModalAlert(alert, for: presentationWindow) == .alertFirstButtonReturn else { return }
         let index = max(0, min(popup.indexOfSelectedItem, GIFSize.allCases.count - 1))
         let size = GIFSize.allCases[index]
         Task { await self.exportGIF(size: size, to: outURL) }
@@ -878,7 +879,7 @@ final class WorkbenchViewModel: ObservableObject {
             alert.messageText = L("导出失败")
             alert.informativeText = error.localizedDescription
             alert.addButton(withTitle: L("好"))
-            runModalAlert(alert)
+            runModalAlert(alert, for: presentationWindow)
         }
     }
 
@@ -920,7 +921,7 @@ final class WorkbenchViewModel: ObservableObject {
         alert.alertStyle = .warning
         alert.addButton(withTitle: L("取消"))
         alert.addButton(withTitle: L("删除"))
-        guard runModalAlert(alert) == .alertSecondButtonReturn else { return }
+        guard runModalAlert(alert, for: presentationWindow) == .alertSecondButtonReturn else { return }
 
         player.pause()
         isPlaying = false
@@ -935,7 +936,7 @@ final class WorkbenchViewModel: ObservableObject {
             fail.messageText = L("删除失败")
             fail.informativeText = error.localizedDescription
             fail.addButton(withTitle: L("好"))
-            runModalAlert(fail)
+            runModalAlert(fail, for: presentationWindow)
         }
     }
 
@@ -954,7 +955,7 @@ final class WorkbenchViewModel: ObservableObject {
         }
         alert.addButton(withTitle: L("确定"))
         alert.addButton(withTitle: L("取消"))
-        guard runModalAlert(alert) == .alertFirstButtonReturn else { return false }
+        guard runModalAlert(alert, for: presentationWindow) == .alertFirstButtonReturn else { return false }
 
         if deleteCheckbox?.state == .on {
             player.pause()

@@ -143,6 +143,7 @@ final class StatusItemController: NSObject {
         toolsMenu.addItem(makeItem(L("图片格式转换…"), #selector(menuImageConvert)))
         tools.submenu = toolsMenu
         menu.addItem(tools)
+        menu.addItem(WindowPresentation.windowsMenuItem())
         menu.addItem(makeItem(L("设置…"), #selector(menuSettings)))
         menu.addItem(makeItem(L("退出"), #selector(menuQuit)))
         return menu
@@ -323,33 +324,6 @@ final class StatusItemController: NSObject {
         controller.showSettings()
     }
 
-    /// 设置窗口的静态引用：TCC 授权弹窗会夺走焦点，系统可能顺势把普通窗口从桌面
-    /// 收走（切 Space / 窗口收纳），菜单栏应用又没有 Dock 图标可以找回。
-    /// 授权期间临时把窗口提为悬浮 + 跟随所有空间（不受收纳机制影响），
-    /// 授权结束立刻恢复普通层级——平时它就是个正常的文档窗口。
-    private static weak var activeSettingsWindow: NSWindow?
-    private static weak var heldSettingsWindow: NSWindow?
-
-    static func holdSettingsOnDesktop() {
-        DispatchQueue.main.async {
-            guard let window = activeSettingsWindow, window.isVisible, heldSettingsWindow == nil else { return }
-            window.level = .floating
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            heldSettingsWindow = window
-        }
-    }
-
-    static func releaseSettingsFromDesktop() {
-        DispatchQueue.main.async {
-            guard let window = heldSettingsWindow else { return }
-            heldSettingsWindow = nil
-            window.level = .normal
-            window.collectionBehavior = []
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-        }
-    }
-
     private func ensureSettingsWindow() -> NSWindow {
         if let window = settingsWindow { return window }
         // 880 宽让「录制」页的成对控件默认并排显示（不够宽时会自动竖排，不裁切）
@@ -358,14 +332,12 @@ final class StatusItemController: NSObject {
                               backing: .buffered, defer: false)
         window.title = "Sakura-Cap"
         window.minSize = NSSize(width: 640, height: 520)
-        // 平时按普通文档窗口对待；授权弹窗期间由 holdSettingsOnDesktop 临时提悬浮
-        window.level = .normal
+        WindowPresentation.configure(window)
         window.isReleasedWhenClosed = false
         window.sharingType = .readOnly
         window.contentView = NSHostingView(rootView: PanelView(viewModel: viewModel))
         window.center()
         settingsWindow = window
-        Self.activeSettingsWindow = window
         return window
     }
 
