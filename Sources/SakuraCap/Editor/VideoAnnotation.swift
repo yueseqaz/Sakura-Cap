@@ -14,7 +14,7 @@ enum VideoMarkTool: String, CaseIterable, Identifiable {
         case .arrow: return "arrow.up.right"
         case .oval: return "circle"
         case .rectangle: return "rectangle"
-        case .text: return "textformat"
+        case .text: return "text.alignleft"
         case .mosaic: return "square.grid.3x3.fill"
         case .number: return "1.circle.fill"
         }
@@ -38,12 +38,15 @@ struct VideoMark: Equatable {
     var tool: VideoMarkTool
     var points: [CGPoint]
     var text: String = ""
+    /// Normalized width of a text box, so committed text keeps its editor wrap.
+    var textWidth: CGFloat? = nil
     var color: NSColor = .systemRed
     var lineWidth: CGFloat = 4
     var mosaicStyle: MosaicStyle = .pixelate
 
     static func == (lhs: VideoMark, rhs: VideoMark) -> Bool {
         lhs.tool == rhs.tool && lhs.points == rhs.points && lhs.text == rhs.text
+            && lhs.textWidth == rhs.textWidth
             && lhs.lineWidth == rhs.lineWidth && lhs.mosaicStyle == rhs.mosaicStyle
             && lhs.color.isEqual(rhs.color)
     }
@@ -128,12 +131,19 @@ final class VideoAnnotationCanvas: NSView, NSTextFieldDelegate {
             onChange?()
         } else if tool == .text {
             textPoint = normalized(p)
-            let input = NSTextField(frame: CGRect(x: p.x, y: p.y - 12, width: 230, height: 32))
+            let input = NSTextField(frame: editingFrame(for: ""))
+            input.isBordered = false
+            input.drawsBackground = false
+            input.focusRingType = .none
             input.placeholderString = L("输入标注文字")
             input.font = .boldSystemFont(ofSize: 20)
+            input.usesSingleLineMode = false
+            input.maximumNumberOfLines = 0
+            input.lineBreakMode = .byCharWrapping
+            input.cell?.wraps = true
+            input.cell?.isScrollable = false
+            input.cell?.lineBreakMode = .byCharWrapping
             input.delegate = self
-            input.target = self
-            input.action = #selector(commitText)
             addSubview(input)
             field = input
             window?.makeFirstResponder(input)
@@ -184,16 +194,48 @@ final class VideoAnnotationCanvas: NSView, NSTextFieldDelegate {
         onChange?()
     }
 
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field else { return }
+        field.frame = editingFrame(for: field.stringValue)
+        needsDisplay = true
+    }
+
     func controlTextDidEndEditing(_ obj: Notification) { commitText() }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard commandSelector == #selector(NSResponder.insertNewline(_:)) ||
+              commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)) else { return false }
+        textView.insertNewlineIgnoringFieldEditor(nil)
+        return true
+    }
+
+    private func editingFrame(for text: String) -> NSRect {
+        let width = min(230, max(1, bounds.width))
+        let font = NSFont.boldSystemFont(ofSize: 20)
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byCharWrapping
+        let measured = NSAttributedString(string: text.isEmpty ? " " : text,
+                                           attributes: [.font: font, .paragraphStyle: style])
+            .boundingRect(with: CGSize(width: width, height: 10_000),
+                          options: [.usesLineFragmentOrigin, .usesFontLeading]).integral
+        let height = min(max(32, measured.height + 10), max(32, bounds.height))
+        return NSRect(x: min(max(0, pX(for: textPoint)), max(0, bounds.width - width)),
+                      y: min(max(0, pY(for: textPoint) - 8), max(0, bounds.height - height)),
+                      width: width, height: height)
+    }
+
+    private func pX(for point: CGPoint) -> CGFloat { point.x * bounds.width }
+    private func pY(for point: CGPoint) -> CGFloat { point.y * bounds.height }
 
     @objc private func commitText() {
         guard let field else { return }
         let text = field.stringValue
+        let textWidth = max(1, field.bounds.width / max(bounds.width, 1))
         field.removeFromSuperview()
         self.field = nil
         if !text.isEmpty {
             undoStack.append(marks)
-            marks.append(VideoMark(tool: .text, points: [textPoint], text: text, color: color))
+            marks.append(VideoMark(tool: .text, points: [textPoint], text: text, textWidth: textWidth, color: color))
             onChange?()
         }
     }
@@ -300,8 +342,17 @@ final class VideoAnnotationCanvas: NSView, NSTextFieldDelegate {
                 let attrs: [NSAttributedString.Key: Any] = [
                     .font: NSFont.boldSystemFont(ofSize: max(16, rect.width / 30)),
                     .foregroundColor: mark.color,
+                    .paragraphStyle: textParagraphStyle,
                 ]
-                NSAttributedString(string: mark.text, attributes: attrs).draw(at: a)
+                let width = min(rect.width, max(1, (mark.textWidth ?? 1) * rect.width))
+                let measured = NSAttributedString(string: mark.text, attributes: attrs).boundingRect(
+                    with: CGSize(width: width, height: 10_000),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading]
+                )
+                NSAttributedString(string: mark.text, attributes: attrs).draw(
+                    with: CGRect(x: a.x, y: a.y, width: width, height: max(1, measured.height)),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading]
+                )
             case .number:
                 let radius = max(13, rect.width / 80)
                 let circle = NSBezierPath(ovalIn: CGRect(x: a.x - radius, y: a.y - radius,
@@ -319,6 +370,13 @@ final class VideoAnnotationCanvas: NSView, NSTextFieldDelegate {
             }
             path.stroke()
         }
+    }
+
+    private static var textParagraphStyle: NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byCharWrapping
+        style.lineSpacing = 0
+        return style
     }
 
     static func image(marks: [VideoMark], size: CGSize) -> CGImage? {

@@ -13,7 +13,7 @@ enum AnnotationTool: Int, CaseIterable {
         case .pen: return "pencil"
         case .arrow: return "arrow.up.right"
         case .rectangle: return "rectangle"
-        case .text: return "textformat"
+        case .text: return "text.alignleft"
         case .number: return "1.circle"
         case .mosaic: return "square.grid.3x3.fill"
         case .crop: return "crop"
@@ -47,6 +47,9 @@ struct Annotation {
     var tool: AnnotationTool
     var points: [CGPoint]
     var text: String = ""
+    /// Width of a text box in source-image coordinates. Keeping this width
+    /// with the annotation preserves the editor's soft wrapping after commit.
+    var textWidth: CGFloat? = nil
     var color: NSColor
     var mosaicStyle: MosaicStyle = .pixelate
     var mosaicStrength: CGFloat = 4
@@ -282,6 +285,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         return bounds.size
     }
 
+    private var textBounds: CGRect {
+        // Keep text layout independent from the live crop rectangle. Resizing
+        // a selection must not reflow or hide characters that are already on
+        // the canvas; export cropping clips the final bitmap afterward.
+        CGRect(origin: .zero, size: imageSize)
+    }
+
     private var fitScale: CGFloat {
         let size = imageSize
         guard size.width > 0, size.height > 0, bounds.width > 0, bounds.height > 0 else { return 1 }
@@ -412,11 +422,27 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             path.stroke()
         case .text:
             guard let point = annotation.points.first else { return }
+            let layout = textLayout(for: annotation.text, at: point, lineWidth: annotation.lineWidth,
+                                    textWidth: annotation.textWidth)
+            guard !layout.rect.isEmpty else { return }
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: max(12, annotation.lineWidth * 7) * displayScale, weight: .bold),
+                .font: layout.font,
                 .foregroundColor: annotation.color,
+                .paragraphStyle: textParagraphStyle,
             ]
-            NSAttributedString(string: annotation.text, attributes: attributes).draw(at: viewPoint(point))
+            let viewRect = NSRect(origin: viewPoint(layout.rect.origin),
+                                   size: CGSize(width: layout.rect.width * displayScale,
+                                                height: layout.rect.height * displayScale))
+            // Keep annotation text inside the source image, including when a
+            // user starts typing close to an edge or drags it past the edge.
+            NSGraphicsContext.saveGraphicsState()
+            let imageRect = NSRect(origin: viewPoint(.zero),
+                                    size: CGSize(width: imageSize.width * displayScale,
+                                                 height: imageSize.height * displayScale))
+            NSBezierPath(rect: imageRect).addClip()
+            NSAttributedString(string: annotation.text, attributes: attributes)
+                .draw(with: viewRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+            NSGraphicsContext.restoreGraphicsState()
         case .number:
             guard let point = annotation.points.first else { return }
             drawNumber(annotation.text, at: viewPoint(point), color: annotation.color)
@@ -658,9 +684,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).insetBy(dx: -8, dy: -8)
         case .text:
             guard let p = a.points.first else { return .zero }
-            let font = NSFont.systemFont(ofSize: max(12, a.lineWidth * 7), weight: .bold)
-            let textSize = NSAttributedString(string: a.text, attributes: [.font: font]).size()
-            return CGRect(x: p.x, y: p.y, width: textSize.width, height: textSize.height).insetBy(dx: -4, dy: -4)
+            return textLayout(for: a.text, at: p, lineWidth: a.lineWidth, textWidth: a.textWidth)
+                .rect.insetBy(dx: -4, dy: -4)
         case .number:
             guard let p = a.points.first else { return .zero }
             return CGRect(x: p.x - 20, y: p.y - 20, width: 40, height: 40)
@@ -1187,41 +1212,153 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     // MARK: 文字（原地输入）
 
+    private struct TextLayout {
+        let rect: CGRect
+        let font: NSFont
+    }
+
+    private var textParagraphStyle: NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byCharWrapping
+        style.lineSpacing = 0
+        return style
+    }
+
+    /// Measures text in image coordinates and constrains it to the source
+    /// image. The same layout is used by drawing, hit testing, and editing so
+    /// a wrapped annotation cannot be painted outside the screenshot.
+    private func measuredTextSize(_ text: String, font: NSFont, width: CGFloat) -> CGSize {
+        let attributed = NSAttributedString(string: text,
+                                             attributes: [.font: font, .paragraphStyle: textParagraphStyle])
+        let measured = attributed.boundingRect(
+            with: CGSize(width: max(1, width), height: 10_000_000),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        ).integral
+        return CGSize(width: max(1, measured.width), height: max(1, measured.height))
+    }
+
+    private func textLayout(for text: String, at point: CGPoint, lineWidth: CGFloat? = nil,
+                            textWidth: CGFloat? = nil) -> TextLayout {
+        let requestedFontSize = max(12, (lineWidth ?? self.lineWidth) * 7)
+        let bounds = textBounds
+        let anchor = CGPoint(x: min(max(bounds.minX, point.x), max(bounds.minX, bounds.maxX - 1)),
+                             y: min(max(bounds.minY, point.y), max(bounds.minY, bounds.maxY - 1)))
+        // A committed annotation uses the same box width as its editor. Older
+        // annotations have no stored width and continue to use the full image.
+        let availableWidth = min(max(1, bounds.width), max(1, textWidth ?? bounds.width))
+        let availableHeight = max(1, bounds.height)
+
+        // Wrap within the complete crop width, then reduce the requested size
+        // only when the full text would exceed the crop height. This preserves
+        // every character when a user increases the font near an edge.
+        var effectiveFontSize = requestedFontSize
+        var measured = measuredTextSize(text, font: NSFont.systemFont(ofSize: effectiveFontSize, weight: .bold),
+                                         width: availableWidth)
+        if measured.height > availableHeight {
+            var low: CGFloat = 6
+            var high = requestedFontSize
+            for _ in 0..<10 {
+                let candidate = (low + high) / 2
+                let candidateSize = measuredTextSize(text,
+                                                     font: NSFont.systemFont(ofSize: candidate, weight: .bold),
+                                                     width: availableWidth)
+                if candidateSize.height <= availableHeight { low = candidate } else { high = candidate }
+            }
+            effectiveFontSize = low
+            measured = measuredTextSize(text,
+                                        font: NSFont.systemFont(ofSize: effectiveFontSize, weight: .bold),
+                                        width: availableWidth)
+        }
+
+        // Keep the full text-box width for drawing. Using measured.width here
+        // would make AppKit reflow the text with a narrower rectangle and lose
+        // the exact soft wraps that were visible while editing.
+        let size = CGSize(width: availableWidth,
+                          height: min(availableHeight, measured.height))
+        let origin = CGPoint(x: min(anchor.x, max(bounds.minX, bounds.maxX - size.width)),
+                             y: min(anchor.y, max(bounds.minY, bounds.maxY - size.height)))
+        let font = NSFont.systemFont(ofSize: effectiveFontSize * displayScale, weight: .bold)
+        return TextLayout(rect: CGRect(origin: origin, size: size), font: font)
+    }
+
+    private func editingFrame(for text: String) -> NSRect {
+        let scale = max(displayScale, 0.01)
+        let point = pendingTextPoint
+        let bounds = textBounds
+        let widthInImage = min(320 / scale, max(1, bounds.width))
+        let fontSize = max(12, lineWidth * 7)
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        let attributed = NSAttributedString(string: text.isEmpty ? " " : text,
+                                             attributes: [.font: font, .paragraphStyle: textParagraphStyle])
+        let measured = attributed.boundingRect(
+            with: CGSize(width: widthInImage, height: 10_000_000),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        ).integral
+        let width = widthInImage * scale
+        let height = max(38, measured.height + 10) * scale
+        let imageViewRect = NSRect(origin: displayOrigin,
+                                   size: CGSize(width: bounds.width * scale, height: bounds.height * scale))
+        let origin = viewPoint(point)
+        let clampedX = min(max(imageViewRect.minX, origin.x), max(imageViewRect.minX, imageViewRect.maxX - width))
+        let clampedY = min(max(imageViewRect.minY, origin.y), max(imageViewRect.minY, imageViewRect.maxY - height))
+        return NSRect(x: clampedX, y: clampedY, width: width,
+                      height: min(height, imageViewRect.height))
+    }
+
     private func beginTextInput(at point: CGPoint) {
         awaitingTextSelectionClick = false
         window?.makeKey()
         pendingTextPoint = point
-        let view = viewPoint(point)
-        let field = NSTextField(frame: NSRect(x: view.x, y: view.y - 8, width: 260, height: 38))
+        let field = NSTextField(frame: editingFrame(for: ""))
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = NSFont.systemFont(ofSize: 26, weight: .bold)
+        field.font = NSFont.systemFont(ofSize: max(12, lineWidth * 7) * max(displayScale, 0.01), weight: .bold)
         field.textColor = color
         field.placeholderString = L("输入文字")
+        field.usesSingleLineMode = false
+        field.maximumNumberOfLines = 0
+        field.lineBreakMode = .byCharWrapping
+        field.cell?.wraps = true
+        field.cell?.isScrollable = false
+        field.cell?.lineBreakMode = .byCharWrapping
         field.delegate = self
-        field.target = self
-        field.action = #selector(textCommitted)
         addSubview(field)
         activeField = field
         window?.makeFirstResponder(field)
     }
 
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = activeField else { return }
+        field.frame = editingFrame(for: field.stringValue)
+        needsDisplay = true
+    }
+
     func controlTextDidEndEditing(_ obj: Notification) { commitActiveField() }
-    @objc private func textCommitted() { commitActiveField() }
+
+    /// NSTextField normally treats Return as its action key. Let the field
+    /// editor insert a newline instead; clicking away or switching tools still
+    /// commits the annotation through `commitActiveField()`.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard commandSelector == #selector(NSResponder.insertNewline(_:)) ||
+              commandSelector == #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)) else { return false }
+        textView.insertNewlineIgnoringFieldEditor(nil)
+        return true
+    }
 
     private func commitActiveField() {
         guard let field = activeField else { return }
         let text = field.stringValue
         let textColor = field.textColor ?? color
         let point = pendingTextPoint
+        let textWidth = max(1, field.bounds.width / max(displayScale, 0.01))
         // Removing a focused field can synchronously send an end-editing callback.
         // Retire it first so that callback cannot commit the same text again.
         activeField = nil
         field.delegate = nil
         field.removeFromSuperview()
         if !text.isEmpty {
-            commit(Annotation(tool: .text, points: [point], text: text, color: textColor))
+            commit(Annotation(tool: .text, points: [point], text: text, textWidth: textWidth, color: textColor))
             awaitingTextSelectionClick = true
             window?.makeFirstResponder(self)
         }
@@ -1238,6 +1375,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         guard let baseImage else { return nil }
         let copy = AnnotationCanvas(frame: NSRect(origin: .zero, size: imageSize))
         copy.baseImage = baseImage
+        copy.usesExportCrop = usesExportCrop
+        copy.exportRegion = exportRegion
         copy.annotations = annotations
         // Create an explicitly sized bitmap. NSView's convenience bitmap rep
         // can use the Retina backing scale, which makes a small crop export at
