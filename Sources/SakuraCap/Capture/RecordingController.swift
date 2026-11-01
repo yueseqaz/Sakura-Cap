@@ -55,6 +55,7 @@ final class RecordingController: ObservableObject {
     /// 取消「待开始」状态
     func cancelArmed() {
         guard state == .ready else { return }
+        WindowCaptureStore.shared.clear()
         state = .idle
     }
 

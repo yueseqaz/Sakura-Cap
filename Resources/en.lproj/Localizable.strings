@@ -182,6 +182,7 @@
 "截图" = "Screenshot";
 "全屏截图" = "Full Screen";
 "区域截图" = "Select Region";
+"窗口截图…" = "Capture Window…";
 "识别文字（OCR）" = "Recognize Text (OCR)";
 "选择并移动" = "Select and move";
 "未识别到二维码或条形码" = "No QR code or barcode recognized";
@@ -327,6 +328,10 @@
 /* 窗口录制 */
 "窗口录制…" = "Record Window…";
 "窗口录制需要 macOS 14 或更高版本" = "Window recording requires macOS 14 or later";
+"窗口截图需要 macOS 14 或更高版本" = "Window capture requires macOS 14 or later";
+"窗口截图失败" = "Window capture failed";
+"没有获取到选中的窗口" = "The selected window could not be captured";
+"选中的窗口没有可截图的内容" = "The selected window has no capturable content";
 "窗口" = "Window";
 
 /* 鼠标跟随放大 */

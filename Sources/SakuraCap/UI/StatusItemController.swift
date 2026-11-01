@@ -90,6 +90,7 @@ final class StatusItemController: NSObject {
             let shotMenu = NSMenu()
             shotMenu.addItem(makeItem(L("全屏截图"), #selector(screenshotDisplay)))
             shotMenu.addItem(makeItem(L("区域截图"), #selector(screenshotRegion)))
+            shotMenu.addItem(makeItem(L("窗口截图…"), #selector(screenshotWindow)))
             shotMenu.addItem(makeItem(L("识别文字（OCR）"), #selector(ocrRegion)))
             shotMenu.addItem(makeItem(L("识别二维码"), #selector(qrRegion)))
             shotMenu.addItem(makeItem(L("滚动截屏…"), #selector(scrollingCapture)))
@@ -220,6 +221,7 @@ final class StatusItemController: NSObject {
     func recordRegionSelection() { beginSelection(.regionOnly) }
     func screenshotFullScreen() { beginSelection(.displayOnly, purpose: .screenshot) }
     func screenshotRegionSelection() { beginSelection(.regionOnly, purpose: .screenshot) }
+    func screenshotWindowSelection() { startWindowScreenshot() }
     func recognizeText() { beginSelection(.regionOnly, purpose: .ocr) }
     func scrollingScreenshot() { beginSelection(.regionOnly, purpose: .scrolling) }
 
@@ -227,6 +229,7 @@ final class StatusItemController: NSObject {
     @objc private func recordRegion() { recordRegionSelection() }
     @objc private func screenshotDisplay() { screenshotFullScreen() }
     @objc private func screenshotRegion() { screenshotRegionSelection() }
+    @objc private func screenshotWindow() { screenshotWindowSelection() }
     @objc private func ocrRegion() { recognizeText() }
     @objc private func qrRegion() { beginSelection(.regionOnly, purpose: .qr) }
     @objc private func translateRegion() { beginSelection(.regionOnly, purpose: .translate) }
@@ -251,7 +254,37 @@ final class StatusItemController: NSObject {
                 PermissionCenter.openScreenCaptureSettings()
                 return
             }
+            WindowCaptureStore.shared.clear()
             WindowPicker.shared.onPicked = { [weak self] in self?.controller.arm() }
+            WindowPicker.shared.present()
+        }
+    }
+
+    func startWindowScreenshot() {
+        Task { @MainActor in
+            guard #available(macOS 14.0, *) else {
+                let alert = NSAlert()
+                alert.messageText = L("窗口截图需要 macOS 14 或更高版本")
+                alert.addButton(withTitle: L("好"))
+                runModalAlert(alert)
+                return
+            }
+            guard PermissionCenter.screenCaptureGranted() else {
+                PermissionCenter.openScreenCaptureSettings()
+                return
+            }
+            WindowCaptureStore.shared.clear()
+            WindowPicker.shared.onPicked = {
+                guard let selection = WindowCaptureStore.shared.consume() else {
+                    let alert = NSAlert()
+                    alert.messageText = L("窗口截图失败")
+                    alert.informativeText = L("没有获取到选中的窗口")
+                    alert.addButton(withTitle: L("好"))
+                    runModalAlert(alert)
+                    return
+                }
+                ScreenshotController.shared.captureWindow(selection.filter, name: selection.name)
+            }
             WindowPicker.shared.present()
         }
     }

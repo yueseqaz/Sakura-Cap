@@ -11,10 +11,12 @@ final class ScreenshotController {
     private enum ScreenshotError: LocalizedError {
         case unsupported
         case displayMissing
+        case windowEmpty
         var errorDescription: String? {
             switch self {
             case .unsupported: return L("截图需要 macOS 14 或更高版本")
             case .displayMissing: return L("找不到该显示器")
+            case .windowEmpty: return L("选中的窗口没有可截图的内容")
             }
         }
     }
@@ -25,6 +27,13 @@ final class ScreenshotController {
 
     func captureRegion(_ region: RegionSelection) {
         Task { await openEditor(displayID: region.displayID, region: region) }
+    }
+
+    /// Captures the complete window selected by the system sharing picker and
+    /// sends it through the same annotation/save flow as other screenshots.
+    @available(macOS 14.0, *)
+    func captureWindow(_ filter: SCContentFilter, name: String) {
+        Task { await openEditor(windowFilter: filter, name: name) }
     }
 
     func ocrDisplay(_ id: CGDirectDisplayID) {
@@ -67,6 +76,19 @@ final class ScreenshotController {
             let image = try await captureImage(displayID: displayID, region: region)
             let name = FileName.make(ext: "png")
             AnnotationEditorController.shared.open(image: image, suggestedName: name, source: .newCapture)
+        } catch {
+            showError(error)
+        }
+    }
+
+    @available(macOS 14.0, *)
+    private func openEditor(windowFilter filter: SCContentFilter, name: String) async {
+        do {
+            let image = try await captureImage(windowFilter: filter)
+            let suggestedName = "\(FileName.base()) - \(FileName.sanitize(name)).png"
+            AnnotationEditorController.shared.open(image: image,
+                                                   suggestedName: suggestedName,
+                                                   source: .newCapture)
         } catch {
             showError(error)
         }
@@ -168,6 +190,28 @@ final class ScreenshotController {
         config.showsCursor = false
         config.captureResolution = .best
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+    }
+
+    @available(macOS 14.0, *)
+    private func captureImage(windowFilter filter: SCContentFilter) async throws -> CGImage {
+        let scale = CGFloat(filter.pointPixelScale)
+        let width = Int((filter.contentRect.width * scale).rounded())
+        let height = Int((filter.contentRect.height * scale).rounded())
+        guard width > 0, height > 0 else { throw ScreenshotError.windowEmpty }
+
+        let config = SCStreamConfiguration()
+        // The window filter already limits the source to the selected window.
+        // Keeping sourceRect at zero matches window recording and avoids applying
+        // the window's point origin a second time.
+        config.sourceRect = .zero
+        config.width = width
+        config.height = height
+        config.showsCursor = false
+        config.captureResolution = .best
+        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        guard image.width > 0, image.height > 0 else { throw ScreenshotError.windowEmpty }
+        Log.app.debug("窗口截图: \(image.width)x\(image.height, privacy: .public)")
+        return image
     }
 
     private static func nativeDisplayImage(displayID: CGDirectDisplayID,

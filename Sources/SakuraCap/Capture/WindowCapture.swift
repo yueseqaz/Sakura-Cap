@@ -20,6 +20,11 @@ final class WindowCaptureStore {
         return (pending, pendingName)
     }
 
+    func clear() {
+        pending = nil
+        pendingName = ""
+    }
+
     var hasPending: Bool { pending != nil }
 }
 
@@ -29,6 +34,12 @@ final class WindowCaptureStore {
 final class WindowPicker: NSObject, @preconcurrency SCContentSharingPickerObserver {
     static let shared = WindowPicker()
     var onPicked: (() -> Void)?
+
+    private func finishPicking() {
+        let callback = onPicked
+        onPicked = nil
+        callback?()
+    }
 
     func present() {
         let picker = SCContentSharingPicker.shared
@@ -45,16 +56,19 @@ final class WindowPicker: NSObject, @preconcurrency SCContentSharingPickerObserv
         picker.isActive = false
         picker.remove(self)
         WindowCaptureStore.shared.set(filter, name: L("窗口"))
-        onPicked?()
+        finishPicking()
     }
 
     func contentSharingPicker(_ picker: SCContentSharingPicker, didCancelFor stream: SCStream?) {
         picker.isActive = false
         picker.remove(self)
+        WindowCaptureStore.shared.clear()
+        onPicked = nil
     }
 
     func contentSharingPickerStartDidFailWithError(_ error: Error) {
         SCContentSharingPicker.shared.isActive = false
+        onPicked = nil
         Log.app.error("共享选择器启动失败: \(error.localizedDescription, privacy: .public)")
     }
 }
