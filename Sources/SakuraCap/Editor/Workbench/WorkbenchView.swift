@@ -34,10 +34,10 @@ struct WorkbenchView: View {
 
     private var timelineHeight: CGFloat {
         if model.isAudioOnly {
-            let rows = 24 + 44 + model.document.lanes.count * 44
+            let rows = 24 + 44 + model.document.lanes.count * 44 + 26
             return CGFloat(rows) + 46
         }
-        let rows = 24 + 64 + model.document.lanes.count * 44 + 26 * 2
+        let rows = 24 + 64 + model.document.lanes.count * 44 + 26 * 3
         return CGFloat(rows) + 46
     }
 
@@ -103,10 +103,12 @@ struct WorkbenchView: View {
             } else {
                 Button { model.transcribeTapped() } label: { Text(L("转写字幕")) }
                     .buttonStyle(.bordered)
-                    .disabled(model.isExporting || model.duration <= 0)
-                    .help(L("用系统语音识别为当前剪辑生成字幕"))
+                    .disabled(model.isExporting || model.duration <= 0 || !model.subtitleCues.isEmpty)
+                    .help(model.subtitleCues.isEmpty
+                          ? L("用系统语音识别为当前剪辑生成字幕（跟随系统语言）")
+                          : L("已生成字幕；删除全部字幕后可重新转写"))
             }
-            Button { model.exportSRTTapped() } label: { Text(L("SRT")) }
+            Button { model.exportSRTTapped() } label: { Text(L("导出字幕")) }
                 .buttonStyle(.bordered)
                 .disabled(model.isExporting || model.subtitleCues.isEmpty)
                 .help(L("把字幕导出为 SRT 文件"))
@@ -199,6 +201,7 @@ struct WorkbenchView: View {
                 case .focus(let id): focusProperties(id)
                 case .annotation(let id): annotationProperties(id)
                 case .audioGain(let id): gainProperties(id)
+                case .cue(let id): cueProperties(id)
                 case nil: documentProperties()
                 }
                 if let status = model.status {
@@ -365,6 +368,28 @@ struct WorkbenchView: View {
                     Button(L("删除音量段"), role: .destructive) { model.removeGain(id) }
                         .buttonStyle(.bordered)
                 }
+            }
+        }
+    }
+
+    /// 字幕条属性：就地编辑文本（识别错了直接改）、删除
+    private func cueProperties(_ id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle(L("字幕"))
+            if let cue = model.document.subtitles.first(where: { $0.id == id }) {
+                TextField(L("字幕文本"),
+                          text: Binding(get: { cue.text },
+                                        set: { model.updateCueText(id: id, text: $0) }),
+                          axis: .vertical)
+                    .lineLimit(2...5)
+                    .textFieldStyle(.roundedBorder)
+                    .font(SettingsAppearance.detailFont)
+                LabeledRow(label: L("范围"),
+                           value: "\(CompletionNotifier.format(cue.start)) – \(CompletionNotifier.format(cue.end))")
+                Text(L("两端夹点可在时间轴字幕轨上拖动调整。"))
+                    .font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
+                Button(L("删除字幕"), role: .destructive) { model.removeCue(id) }
+                    .buttonStyle(.bordered)
             }
         }
     }

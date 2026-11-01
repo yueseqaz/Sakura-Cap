@@ -13,6 +13,7 @@ final class WorkbenchViewModel: ObservableObject {
         case focus(UUID)
         case annotation(UUID)
         case audioGain(UUID)
+        case cue(UUID)
     }
 
     let sourceURL: URL
@@ -235,6 +236,8 @@ final class WorkbenchViewModel: ObservableObject {
             if !document.annotations.contains(where: { $0.id == id }) { self.selection = nil }
         case .audioGain(let id):
             if !document.audioGains.contains(where: { $0.id == id }) { self.selection = nil }
+        case .cue(let id):
+            if !document.subtitles.contains(where: { $0.id == id }) { self.selection = nil }
         case .lane(let index):
             if index >= document.lanes.count { self.selection = nil }
         }
@@ -760,46 +763,33 @@ final class WorkbenchViewModel: ObservableObject {
 
     // MARK: - 字幕转写（实验特性）
 
-    @Published private(set) var subtitleCues: [SubtitleCue] = []
     @Published private(set) var isTranscribing = false
     /// 已识别到的秒数 / 总时长（0–1），工具栏进度提示用
     @Published private(set) var transcriptionProgress: Double = 0
 
-    /// 播放头当前所在的字幕条（预览浮层用）
+    /// 字幕条（锚定【源时间】，与聚焦/标注一致；按开始时间排序）
+    var subtitleCues: [SubtitleCue] { document.subtitles.sorted { $0.start < $1.start } }
+
+    /// 播放头当前所在的字幕条（预览浮层用；字幕源时间 → 时间轴投影后判断）
     var currentSubtitleCue: SubtitleCue? {
         let t = currentTime
-        return subtitleCues.first { $0.start <= t && t < $0.end }
+        return document.subtitles.first { cue in
+            let s = document.timelineTime(forSource: cue.start)
+            let e = document.timelineTime(forSource: cue.end)
+            return s <= t && t < e
+        }
     }
 
+    /// 直接开始转写，语言跟随系统设置
     func transcribeTapped() {
         guard !isTranscribing, duration > 0.05, !isExporting else { return }
-        let languages: [(title: String, id: String)] = [
-            (L("跟随系统"), ""),
-            (L("中文（普通话）"), "zh-CN"),
-            ("English", "en-US"),
-            (L("日本語"), "ja-JP"),
-        ]
-        let alert = NSAlert()
-        alert.messageText = L("转写字幕")
-        alert.informativeText = L("用系统语音识别为当前剪辑生成字幕（本地离线处理；旧系统首次会请求「语音识别」权限）。")
-        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
-        popup.addItems(withTitles: languages.map(\.title))
-        popup.selectItem(at: 0)
-        let accessory = NSStackView(views: [NSTextField(labelWithString: L("语言")), popup])
-        accessory.orientation = .horizontal
-        accessory.spacing = 8
-        accessory.frame = NSRect(x: 0, y: 0, width: 240, height: 28)
-        alert.accessoryView = accessory
-        alert.addButton(withTitle: L("转写"))
-        alert.addButton(withTitle: L("取消"))
-        guard runModalAlert(alert, for: presentationWindow) == .alertFirstButtonReturn else { return }
-        let languageID = languages[max(0, min(popup.indexOfSelectedItem, languages.count - 1))].id
-        Task { await transcribe(localeID: languageID) }
+        Task { await transcribe() }
     }
 
-    private func transcribe(localeID: String) async {
+    private func transcribe() async {
         guard let media else { return }
         isTranscribing = true
+        transcriptionProgress = 0
         status = L("正在提取音频…")
         defer { isTranscribing = false }
         do {
@@ -813,23 +803,90 @@ final class WorkbenchViewModel: ObservableObject {
                 audioMix: WorkbenchEngine.audioMix(document: document, audioTrackIDs: built.audioTrackIDs),
                 to: tempURL)
             status = L("正在转写…")
-            let locale = localeID.isEmpty ? Locale.current : Locale(identifier: localeID)
             let total = max(0.1, timelineDuration)
-            let cues = try await SubtitleTranscriber.recognize(audioURL: tempURL, locale: locale) { seconds in
+            let cues = try await SubtitleTranscriber.recognize(audioURL: tempURL, locale: Locale.current) { seconds in
                 let progress = min(0.99, seconds / total)
                 Task { @MainActor in self.transcriptionProgress = progress }
             }
-            subtitleCues = cues
-            status = cues.isEmpty
-                ? L("转写完成，但没有识别到语音。")
-                : String(format: L("已生成 %d 条字幕，播放预览可见，可导出 SRT。"), cues.count)
+            guard !cues.isEmpty else {
+                status = L("转写完成，但没有识别到语音。")
+                return
+            }
+            // 转写结果锚定到【源时间】：与聚焦/标注一致，之后再剪辑也能跟着内容走
+            let sourceCues = cues.compactMap { cue -> SubtitleCue? in
+                guard let s = document.sourceTime(atTimeline: cue.start),
+                      let e = document.sourceTime(atTimeline: cue.end),
+                      e > s + 0.05 else { return nil }
+                return SubtitleCue(id: cue.id, start: s, end: e, text: cue.text)
+            }
+            guard !sourceCues.isEmpty else {
+                status = L("转写完成，但没有识别到语音。")
+                return
+            }
+            pushUndo()
+            document.subtitles = sourceCues.sorted { $0.start < $1.start }
+            validateSelection()
+            status = String(format: L("已生成 %d 条字幕，可在下方字幕轨编辑，或导出字幕。"), sourceCues.count)
         } catch {
             status = String(format: L("转写失败：%@"), error.localizedDescription)
         }
     }
 
+    // MARK: - 字幕条编辑（字幕轨选中 / 拖边调时 / 拖动移动 / 属性面板改文本）
+
+    func addCue(start: Double, end: Double) {
+        guard duration > 0 else { return }
+        let s = max(0, min(start, duration - 0.2))
+        let e = max(s + 0.5, min(duration, end))
+        pushUndo()
+        let cue = SubtitleCue(start: s, end: e, text: L("新字幕"))
+        document.subtitles.append(cue)
+        document.subtitles.sort { $0.start < $1.start }
+        selection = .cue(cue.id)
+    }
+
+    func updateCueText(id: UUID, text: String) {
+        guard let index = document.subtitles.firstIndex(where: { $0.id == id }) else { return }
+        document.subtitles[index].text = text
+    }
+
+    /// 拖动字幕条两端调整时间（源时间；拖动开始时已压撤销快照）
+    func updateCueRange(id: UUID, start: Double, end: Double) {
+        guard let index = document.subtitles.firstIndex(where: { $0.id == id }),
+              let mediaDuration = media?.duration, mediaDuration > 0 else { return }
+        let newStart = max(0, min(start, end - 0.2))
+        let newEnd = max(newStart + 0.2, min(mediaDuration, end))
+        document.subtitles[index].start = newStart
+        document.subtitles[index].end = newEnd
+    }
+
+    /// 拖动字幕条整体移动（源时间整体平移）
+    func shiftCue(id: UUID, delta: Double) {
+        guard let index = document.subtitles.firstIndex(where: { $0.id == id }),
+              let mediaDuration = media?.duration, mediaDuration > 0 else { return }
+        let cue = document.subtitles[index]
+        let length = cue.end - cue.start
+        let newStart = max(0, min(mediaDuration - length, cue.start + delta))
+        document.subtitles[index].start = newStart
+        document.subtitles[index].end = newStart + length
+    }
+
+    func removeCue(_ id: UUID) {
+        guard document.subtitles.contains(where: { $0.id == id }) else { return }
+        pushUndo()
+        document.subtitles.removeAll { $0.id == id }
+        if selection == .cue(id) { selection = nil }
+    }
+
     func exportSRTTapped() {
-        guard !subtitleCues.isEmpty, !isExporting else { return }
+        // SRT 跟随导出视频（时间轴时间）：字幕源时间投影回时间轴
+        let cues = subtitleCues.compactMap { cue -> (start: Double, end: Double, text: String)? in
+            let s = document.timelineTime(forSource: cue.start)
+            let e = document.timelineTime(forSource: cue.end)
+            guard e > s else { return nil }
+            return (s, e, cue.text)
+        }
+        guard !cues.isEmpty, !isExporting else { return }
         let dir = sourceURL.deletingLastPathComponent()
         let base = sourceURL.deletingPathExtension().lastPathComponent
         var url = dir.appendingPathComponent("\(base).srt")
@@ -839,7 +896,7 @@ final class WorkbenchViewModel: ObservableObject {
             index += 1
         }
         do {
-            try Self.srtText(cues: subtitleCues).write(to: url, atomically: true, encoding: .utf8)
+            try Self.srtText(cues: cues).write(to: url, atomically: true, encoding: .utf8)
             status = String(format: L("已导出 %@"), url.lastPathComponent)
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
@@ -854,7 +911,7 @@ final class WorkbenchViewModel: ObservableObject {
         return String(format: "%02d:%02d:%02d,%03d", total / 3600, (total % 3600) / 60, total % 60, milliseconds)
     }
 
-    private static func srtText(cues: [SubtitleCue]) -> String {
+    private static func srtText(cues: [(start: Double, end: Double, text: String)]) -> String {
         var lines: [String] = []
         for (index, cue) in cues.enumerated() {
             lines.append("\(index + 1)")
@@ -924,6 +981,7 @@ final class WorkbenchViewModel: ObservableObject {
         if !document.focuses.isEmpty { return true }
         if document.annotations.contains(where: { !$0.marks.isEmpty }) { return true }
         if !document.audioGains.isEmpty { return true }
+        if !document.subtitles.isEmpty { return true }
         return false
     }
 

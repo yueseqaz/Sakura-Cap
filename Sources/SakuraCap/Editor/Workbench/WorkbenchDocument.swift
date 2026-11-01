@@ -65,6 +65,8 @@ struct WorkbenchDocument: Equatable {
     var focuses: [WorkbenchFocus] = []
     var annotations: [WorkbenchAnnotation] = []
     var audioGains: [WorkbenchAudioGain] = []
+    /// 字幕条：与【时间轴时间】对齐（转写自当前合成），可在时间轴字幕轨上编辑
+    var subtitles: [SubtitleCue] = []
 
     var duration: Double { clips.reduce(0) { $0 + $1.duration } }
 
@@ -122,6 +124,7 @@ struct WorkbenchDocument: Equatable {
         focuses.removeAll { $0.sourceIn >= sourceIn - 0.001 && $0.sourceOut <= sourceOut + 0.001 }
         annotations.removeAll { $0.sourceIn >= sourceIn - 0.001 && $0.sourceOut <= sourceOut + 0.001 }
         audioGains.removeAll { $0.sourceIn >= sourceIn - 0.001 && $0.sourceOut <= sourceOut + 0.001 }
+        subtitles.removeAll { $0.start >= sourceIn - 0.001 && $0.end <= sourceOut + 0.001 }
     }
 }
 

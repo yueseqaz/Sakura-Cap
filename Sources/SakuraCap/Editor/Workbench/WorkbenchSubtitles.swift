@@ -4,9 +4,17 @@ import Speech
 
 /// 字幕条：时间与工作台「当前合成」的时间轴对齐（含剪辑/静音效果），start/end 单位秒。
 struct SubtitleCue: Equatable {
+    let id: UUID
     var start: Double
     var end: Double
-    let text: String
+    var text: String
+
+    init(id: UUID = UUID(), start: Double, end: Double, text: String) {
+        self.id = id
+        self.start = start
+        self.end = end
+        self.text = text
+    }
 }
 
 /// 语音转写：把工作台当前合成的音轨导出为临时 m4a，再用系统 SFSpeechRecognizer 识别。

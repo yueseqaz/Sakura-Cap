@@ -938,3 +938,12 @@
 "无法读取音频时长" = "Unable to read audio duration";
 "离线语音模型不可用：%@" = "On-device speech model unavailable: %@";
 "用系统语音识别为当前剪辑生成字幕（本地离线处理；旧系统首次会请求「语音识别」权限）。" = "Generate captions with on-system speech recognition (processed locally; older systems ask for Speech Recognition permission the first time).";
+"字幕" = "Captions";
+"导出字幕" = "Export Captions";
+"字幕文本" = "Caption Text";
+"删除字幕" = "Delete Caption";
+"两端夹点可在时间轴字幕轨上拖动调整。" = "Drag the handles on the captions lane to adjust timing.";
+"已生成 %d 条字幕，可在下方字幕轨编辑，或导出字幕。" = "Generated %d caption lines. Edit them on the captions lane below, or export.";
+"新字幕" = "New Caption";
+"已生成字幕；删除全部字幕后可重新转写" = "Captions already generated; delete them all to re-transcribe";
+"用系统语音识别为当前剪辑生成字幕（跟随系统语言）" = "Generate captions with on-system speech recognition (system language)";

@@ -415,7 +415,7 @@ final class WorkbenchHeaderColumn: NSView {
             case .audio:
                 NSColor.labelColor.withAlphaComponent(0.02).setFill()
                 rect.fill()
-            case .focusLane, .annotationLane:
+            case .focusLane, .annotationLane, .subtitleLane:
                 NSColor.clear.setFill()
                 rect.fill()
             }
@@ -437,6 +437,7 @@ final class WorkbenchHeaderColumn: NSView {
             drawLabel(L("画面聚焦"), row: WorkbenchTimelineCanvas.rowYRow(for: .focusLane, laneCount: laneCount))
             drawLabel(L("标注"), row: WorkbenchTimelineCanvas.rowYRow(for: .annotationLane, laneCount: laneCount))
         }
+        drawLabel(L("字幕"), row: WorkbenchTimelineCanvas.rowYRow(for: .subtitleLane, laneCount: laneCount, audioOnly: audioOnly))
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -462,6 +463,7 @@ final class WorkbenchTimelineCanvas: NSView {
         case audio(Int)
         case focusLane
         case annotationLane
+        case subtitleLane
     }
 
     struct Row {
@@ -491,6 +493,10 @@ final class WorkbenchTimelineCanvas: NSView {
         case effectEdge(UUID, isFocus: Bool, left: Bool)
         case gainMove(UUID)
         case gainEdge(UUID, left: Bool)
+        /// 字幕条两端夹点拖动调时
+        case cueEdge(UUID, left: Bool)
+        /// 字幕条整体拖动移动
+        case cueMove(UUID)
         /// 轨道上拖拽创建新段（聚焦 / 标注 / 音量），两端夹点由拖拽范围决定
         case createRange(RowKind)
         /// 视频轨拖拽框选时间范围：松开后弹出删除/静音/淡入淡出菜单
@@ -536,6 +542,7 @@ final class WorkbenchTimelineCanvas: NSView {
             push(.focusLane, TimelineMetrics.effectLaneHeight)
             push(.annotationLane, TimelineMetrics.effectLaneHeight)
         }
+        push(.subtitleLane, TimelineMetrics.effectLaneHeight)
         return rows
     }
 
@@ -607,6 +614,9 @@ final class WorkbenchTimelineCanvas: NSView {
                          isEmpty: document.annotations.isEmpty)
         }
 
+        // 字幕轨（时间轴时间；音频模式也有）
+        drawSubtitleLane(model: model)
+
         // 拖拽创建段的预览框
         if case .createRange(let kind) = drag {
             drawCreationPreview(kind: kind, model: model)
@@ -652,7 +662,8 @@ final class WorkbenchTimelineCanvas: NSView {
         switch kind {
         case .focusLane: row = Self.rowYRow(for: .focusLane, laneCount: model.document.lanes.count)
         case .annotationLane: row = Self.rowYRow(for: .annotationLane, laneCount: model.document.lanes.count)
-        case .audio(let index): row = Self.rowYRow(for: .audio(index), laneCount: model.document.lanes.count)
+        case .audio(let index): row = Self.rowYRow(for: .audio(index), laneCount: model.document.lanes.count, audioOnly: audioOnly)
+        case .subtitleLane: row = Self.rowYRow(for: .subtitleLane, laneCount: model.document.lanes.count, audioOnly: audioOnly)
         default: return
         }
         let x0 = x(for: min(createAnchor, createCurrent))
@@ -987,6 +998,8 @@ final class WorkbenchTimelineCanvas: NSView {
             if !handleEffectMouseDown(p, model: model, isFocus: false) {
                 beginCreateRange(.annotationLane, at: p, model: model)
             }
+        case .subtitleLane:
+            handleCueMouseDown(p, model: model)
         }
     }
 
@@ -1168,6 +1181,13 @@ final class WorkbenchTimelineCanvas: NSView {
             stretchGain(id: id, left: left, atTimeline: time(forX: p.x), model: model)
             needsDisplay = true
 
+        case .cueEdge(let id, let left):
+            stretchCue(id: id, left: left, atTimeline: time(forX: p.x), model: model)
+
+        case .cueMove(let id):
+            model.shiftCue(id: id, delta: dt)
+            needsDisplay = true
+
         case .createRange:
             createCurrent = max(0, min(model.duration, time(forX: p.x)))
             needsDisplay = true
@@ -1194,7 +1214,7 @@ final class WorkbenchTimelineCanvas: NSView {
         case .effectMove, .effectEdge:
             model.refreshOverlays()
             needsDisplay = true
-        case .gainMove, .gainEdge:
+        case .gainMove, .gainEdge, .cueEdge, .cueMove:
             needsDisplay = true
         case .createRange(let kind):
             commitCreateRange(kind, model: model)
@@ -1219,6 +1239,11 @@ final class WorkbenchTimelineCanvas: NSView {
             model.createAnnotationRange(timelineStart: a, timelineEnd: b)
         case .audio(let laneIndex):
             model.createGainRange(laneIndex: laneIndex, timelineStart: a, timelineEnd: b)
+        case .subtitleLane:
+            if let s = model.document.sourceTime(atTimeline: a),
+               let e = model.document.sourceTime(atTimeline: b), e > s {
+                model.addCue(start: s, end: e)
+            }
         default:
             break
         }
@@ -1264,6 +1289,78 @@ final class WorkbenchTimelineCanvas: NSView {
     @objc private func rangeClearFadeTapped() {
         guard let model, let range = pendingRange else { return }
         model.setTimelineRangeFade(range.t0, range.t1, value: 0)
+    }
+
+    /// 字幕轨绘制：字幕条（源时间 → 时间轴投影）+ 选中高亮 + 文本（超出裁剪）
+    private func drawSubtitleLane(model: WorkbenchViewModel) {
+        let row = Self.rowYRow(for: .subtitleLane, laneCount: model.document.lanes.count, audioOnly: audioOnly)
+        let document = model.document
+        for cue in document.subtitles {
+            let x0 = x(for: document.timelineTime(forSource: cue.start))
+            let x1 = x(for: document.timelineTime(forSource: cue.end))
+            let rect = NSRect(x: x0, y: row.y + 2, width: max(4, x1 - x0), height: row.height - 4)
+            guard rect.maxX >= 0, rect.minX <= frame.width else { continue }
+            let isSelected = model.selection == .cue(cue.id)
+            let path = NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5)
+            SettingsAppearance.accent.withAlphaComponent(isSelected ? 0.5 : 0.3).setFill()
+            path.fill()
+            if isSelected {
+                SettingsAppearance.accent.setStroke()
+                path.lineWidth = 1.5
+                path.stroke()
+            }
+            if rect.width > 30 {
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 10),
+                    .foregroundColor: SettingsAppearance.text,
+                ]
+                NSGraphicsContext.saveGraphicsState()
+                NSBezierPath(rect: rect.insetBy(dx: 4, dy: 1)).setClip()
+                let size = (cue.text as NSString).size(withAttributes: attrs)
+                (cue.text as NSString).draw(at: NSPoint(x: rect.minX + 4, y: rect.midY - size.height / 2),
+                                            withAttributes: attrs)
+                NSGraphicsContext.restoreGraphicsState()
+            }
+        }
+    }
+
+    /// 字幕轨命中：边缘 → 拖动调时；内部 → 整体移动；空白 → 拖拽创建新字幕
+    private func handleCueMouseDown(_ p: NSPoint, model: WorkbenchViewModel) {
+        let document = model.document
+        for cue in document.subtitles {
+            let x0 = x(for: document.timelineTime(forSource: cue.start))
+            let x1 = x(for: document.timelineTime(forSource: cue.end))
+            guard p.x >= x0 - TimelineMetrics.edgeHit, p.x <= x1 + TimelineMetrics.edgeHit else { continue }
+            model.selection = .cue(cue.id)
+            if abs(p.x - x0) <= TimelineMetrics.edgeHit {
+                drag = .cueEdge(cue.id, left: true)
+                model.beginUndoableDrag()
+                model.beginScrub()
+            } else if abs(p.x - x1) <= TimelineMetrics.edgeHit {
+                drag = .cueEdge(cue.id, left: false)
+                model.beginUndoableDrag()
+                model.beginScrub()
+            } else {
+                drag = .cueMove(cue.id)
+                model.beginUndoableDrag()
+                model.beginScrub()
+            }
+            needsDisplay = true
+            return
+        }
+        beginCreateRange(.subtitleLane, at: p, model: model)
+    }
+
+    private func stretchCue(id: UUID, left: Bool, atTimeline t: Double, model: WorkbenchViewModel) {
+        let clamped = max(0, min(model.timelineDuration, t))
+        guard let cue = model.document.subtitles.first(where: { $0.id == id }),
+              let source = model.document.sourceTime(atTimeline: clamped) else { return }
+        if left {
+            model.updateCueRange(id: id, start: source, end: cue.end)
+        } else {
+            model.updateCueRange(id: id, start: cue.start, end: source)
+        }
+        needsDisplay = true
     }
 
     private func shiftGain(id: UUID, delta: Double, model: WorkbenchViewModel) {
