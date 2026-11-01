@@ -57,16 +57,13 @@ struct WorkbenchTimeline: NSViewRepresentable {
     }
 }
 
-// MARK: - 容器：左轨头 + 右滚动区 + 缩放控件
+// MARK: - 容器：左轨头 + 右滚动区
 
 final class WorkbenchTimelineContainer: NSView {
     private let headerColumn = WorkbenchHeaderColumn(frame: .zero)
     private let scrollView = NSScrollView()
     private let canvas = WorkbenchTimelineCanvas(frame: .zero)
     private let playhead = PlayheadOverlayView(frame: .zero)
-    private let zoomOut = NSButton(title: "", target: nil, action: nil)
-    private let zoomIn = NSButton(title: "", target: nil, action: nil)
-    private let zoomSlider = NSSlider(value: 0.4, minValue: 0, maxValue: 1, target: nil, action: nil)
 
     private var model: WorkbenchViewModel?
     private var audioOnly = false
@@ -104,23 +101,6 @@ final class WorkbenchTimelineContainer: NSView {
 
         // 播放头浮层与画布共用滚动坐标：叠在 scrollView 之上，横向偏移由 sync 计算
         addSubview(playhead)
-
-        configureZoomButton(zoomOut, symbol: "minus.magnifyingglass") { [weak self] in self?.zoom(by: 1 / 1.4) }
-        configureZoomButton(zoomIn, symbol: "plus.magnifyingglass") { [weak self] in self?.zoom(by: 1.4) }
-        zoomSlider.isContinuous = true
-        zoomSlider.controlSize = .small
-        zoomSlider.target = self
-        zoomSlider.action = #selector(zoomSliderChanged)
-        zoomSlider.minValue = 0
-        zoomSlider.maxValue = 1
-        let zoomStack = NSStackView(views: [zoomOut, zoomSlider, zoomIn])
-        zoomStack.orientation = .horizontal
-        zoomStack.spacing = 4
-        zoomStack.edgeInsets = NSEdgeInsets(top: 3, left: 6, bottom: 3, right: 6)
-        SettingsAppearance.applySurface(to: zoomStack, fill: SettingsAppearance.sidebar,
-                                        border: SettingsAppearance.separator, radius: 6)
-        addSubview(zoomStack)
-        self.zoomStack = zoomStack
 
         // 滚动偏移变化时重绘播放头浮层（它按视口坐标画线）；滚动时收起悬停预览
         scrollView.contentView.postsBoundsChangedNotifications = true
@@ -198,7 +178,7 @@ final class WorkbenchTimelineContainer: NSView {
 
         // The callback point is in this container's coordinate system. Keep
         // the preview inside the actual timeline viewport (rather than the
-        // header/zoom controls), and scale it down when the window is narrow.
+        // header column), and scale it down when the window is narrow.
         let visibleRect = scrollView.frame.insetBy(dx: 4, dy: 4)
         let size = hoverPreview.sizeThatFits(visibleRect.size)
         var origin = NSPoint(x: state.point.x - size.width / 2,
@@ -214,26 +194,7 @@ final class WorkbenchTimelineContainer: NSView {
         hoverPreview.frame = NSRect(origin: origin, size: size)
     }
 
-    private var zoomStack: NSStackView?
-
     required init?(coder: NSCoder) { fatalError("unsupported") }
-
-    private func configureZoomButton(_ button: NSButton, symbol: String, action: @escaping () -> Void) {
-        button.bezelStyle = .regularSquare
-        button.isBordered = false
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-        button.contentTintColor = .secondaryLabelColor
-        button.target = self
-        button.action = #selector(zoomButtonAction(_:))
-        button.identifier = NSUserInterfaceItemIdentifier(symbol)
-        self.zoomAction[symbol] = action
-    }
-
-    private var zoomAction: [String: () -> Void] = [:]
-
-    @objc private func zoomButtonAction(_ sender: NSButton) {
-        zoomAction[sender.identifier?.rawValue ?? ""]?()
-    }
 
     /// 动态缩放下限：时间轴最小时恰好铺满整个可视宽度（不显示视频之外的空白）。
     /// 视频很长装不下时退回静态 minPPS，允许滚动。
@@ -247,43 +208,6 @@ final class WorkbenchTimelineContainer: NSView {
         max(minZoomPPS(for: model), min(TimelineMetrics.maxPPS, pps))
     }
 
-    private func syncZoomSlider(_ pps: Double, for model: WorkbenchViewModel) {
-        let minPPS = minZoomPPS(for: model)
-        zoomSlider.doubleValue = log(max(pps, minPPS) / minPPS) / log(TimelineMetrics.maxPPS / minPPS)
-    }
-
-    private func zoom(by factor: Double) {
-        guard let model else { return }
-        setZoom(model.pixelsPerSecond * factor, anchorTime: visibleCenterTime())
-    }
-
-    @objc private func zoomSliderChanged() {
-        guard let model else { return }
-        let minPPS = minZoomPPS(for: model)
-        let value = zoomSlider.doubleValue
-        let pps = minPPS * pow(TimelineMetrics.maxPPS / minPPS, value)
-        setZoom(pps, anchorTime: visibleCenterTime())
-    }
-
-    private func visibleCenterTime() -> Double {
-        let visible = scrollView.contentView.bounds
-        return Double(visible.minX + visible.width / 2) / max(model?.pixelsPerSecond ?? 1, 0.001)
-    }
-
-    private func setZoom(_ pps: Double, anchorTime anchor: Double) {
-        guard let model else { return }
-        let clamped = clampZoom(pps, for: model)
-        guard abs(clamped - model.pixelsPerSecond) > 0.001 else { return }
-        let visibleWidth = scrollView.contentView.bounds.width
-        model.pixelsPerSecond = clamped
-        relayoutContent()
-        // 保持锚点时间在视口中的位置不变
-        let anchorX = CGFloat(anchor) * CGFloat(clamped)
-        let targetOffset = max(0, anchorX - visibleWidth / 2)
-        scrollView.contentView.setBoundsOrigin(NSPoint(x: targetOffset, y: 0))
-        syncZoomSlider(clamped, for: model)
-    }
-
     // MARK: 布局
 
     override var isFlipped: Bool { true }
@@ -295,10 +219,6 @@ final class WorkbenchTimelineContainer: NSView {
         scrollView.frame = NSRect(x: headerW, y: 0,
                                   width: bounds.width - headerW, height: bounds.height)
         playhead.frame = scrollView.frame
-        zoomStack?.frame = NSRect(x: bounds.width - (zoomStack?.fittingSize.width ?? 120) - 8,
-                                  y: bounds.height - (zoomStack?.fittingSize.height ?? 26) - 6,
-                                  width: zoomStack?.fittingSize.width ?? 120,
-                                  height: zoomStack?.fittingSize.height ?? 26)
         if let model {
             enforceZoomFloor(model)
         }
@@ -360,7 +280,6 @@ final class WorkbenchTimelineContainer: NSView {
             playhead.needsDisplay = true
             if model.isPlaying { autoScrollToPlayhead(model) }
         }
-        syncZoomSlider(model.pixelsPerSecond, for: model)
     }
 
     private func relayoutContentIfNeeded(_ model: WorkbenchViewModel) {
@@ -429,7 +348,6 @@ final class WorkbenchTimelineContainer: NSView {
         relayoutContent()
         let targetOffset = max(0, CGFloat(anchor) * CGFloat(clamped) - pointerX)
         scrollView.contentView.setBoundsOrigin(NSPoint(x: targetOffset, y: 0))
-        syncZoomSlider(clamped, for: model)
     }
 }
 
