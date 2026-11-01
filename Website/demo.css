@@ -1,0 +1,47 @@
+/* Adapted from stageshow/static-card: one gutter, a bled window, a foreground payoff. */
+.sakura-demo {
+  & .ss-stage { overflow: hidden; background: transparent; --gutter: 24px; }
+  & .sakura-editor { position: absolute; left: 24px; top: 24px; width: 572px; height: 484px; box-shadow: var(--ss-shadow-hero); }
+  & .demo-canvas { height: 100%; position: relative; background: #e3eaf1; }
+  & .demo-paper { position: absolute; top: 28px; left: 26px; right: 26px; height: 230px; overflow: hidden; background: #fbfcfe; box-shadow: 0 3px 10px #314b610d; }
+  & .demo-paper-tag { position: absolute; top: 27px; left: 30px; font-size: 10px; letter-spacing: .12em; color: #60768b; font-weight: 650; }
+  & .demo-headline { position: absolute; top: 58px; left: 30px; font: 500 34px/1.22 'Iowan Old Style', 'Songti SC', Georgia, serif; letter-spacing: -.045em; color: #3e5a73; }
+  & .demo-paper-foot { position: absolute; bottom: 23px; left: 30px; font-size: 11px; line-height: 1.4; color: #60768b; }
+  & .demo-art { position: absolute; right: 25px; top: 24px; width: 157px; height: 180px; display: block; }
+  & .demo-highlight { position: absolute; left: 18px; top: 49px; width: 257px; height: 110px; pointer-events: none; }
+  & .demo-highlight>div { border: 2px solid #b56383; }
+  & .demo-toolbar { position: absolute; left: 101px; top: 280px; display: flex; gap: 4px; align-items: center; padding: 9px; background: #f8fafc; color: #536c81; border: 1px solid #ccd8e2; border-radius: 10px; box-shadow: 0 5px 14px #314b611c; }
+  & .demo-tool { display: inline-flex; justify-content: center; align-items: center; width: 28px; height: 28px; flex: none; border-radius: 5px; }
+  & .demo-tool[data-active], & .demo-tool[data-hover] { background: #dce6ef; color: #314b61; }
+  & .demo-tool[data-pressed] { background: #ccdce9; }
+  & .demo-divider { height: 16px; width: 1px; background: #ccd8e2; margin: 0 3px; }
+  & .demo-color::before { content: ''; width: 14px; height: 14px; background: #b56383; border-radius: 50%; }
+  & .demo-copy { position: relative; color: #4e6b84; }
+  & .demo-copy svg { position: absolute; transition: opacity .2s; }
+  & .demo-copy .demo-check-icon { opacity: 0; }
+  & .demo-copy[data-copied] .demo-copy-icon { opacity: 0; }
+  & .demo-copy[data-copied] .demo-check-icon { opacity: 1; }
+  & .demo-confirm-icon { width: 18px; height: 18px; flex: none; display: flex; align-items: center; justify-content: center; }
+  & .demo-confirmation .ss-text { line-height: 18px; }
+  & .demo-zoom { width: 36px; font-size: 11px; color: #60768b; text-align: right; }
+  & .demo-copy[data-copied] { background: #e9d4df; }
+  & .demo-confirmation { position: absolute; bottom: 24px; left: 215px; width: 190px; height: 40px; justify-content: center; display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-radius: 10px; background: #506d86; color: #fbfcfe; font-size: 12px; box-shadow: var(--ss-shadow-satellite); opacity: 0; transform: translateY(8px); will-change: transform; transition: opacity .25s ease, transform .25s ease; }
+  & .demo-confirmation[data-show] { opacity: 1; transform: translateY(0); }
+  & [data-layout='compact'] .sakura-editor { top: 16px; left: 16px; width: 400px; height: 390px; }
+  & [data-layout='compact'] .demo-paper { top: 16px; left: 16px; right: 16px; height: 168px; }
+  & [data-layout='compact'] .demo-paper-tag { top: 16px; left: 20px; font-size: 10px; }
+  & [data-layout='compact'] .demo-headline { top: 41px; left: 20px; font-size: 28px; }
+  & [data-layout='compact'] .demo-art { right: 16px; top: 16px; width: 119px; height: 136px; }
+  & [data-layout='compact'] .demo-paper-foot { bottom: 16px; left: 20px; font-size: 10px; }
+  & [data-layout='compact'] .demo-highlight { left: 10px; top: 33px; width: 205px; height: 80px; }
+  & [data-layout='compact'] .demo-toolbar { top: 204px; left: 16px; padding: 7px; gap: 3px; }
+  & [data-layout='compact'] .demo-tool { width: 27px; height: 28px; }
+  & [data-layout='compact'] .demo-undo { display: none; }
+  & [data-layout='compact'] .demo-divider { margin: 0 1px; }
+  & [data-layout='compact'] .demo-confirmation { bottom: 16px; left: 89px; width: 180px; height: 36px; font-size: 11px; padding: 8px 12px; }
+}
+#product-demo { position: relative; }
+.demo-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.demo-replay { position: absolute; right: 24px; top: 0; display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 4px; font-size: 11px; line-height: 1.5; color: #536c81; cursor: pointer; }
+.demo-replay:hover { color: #91516d; }
+@media (prefers-reduced-motion: reduce) { .demo-replay { display: none; } }

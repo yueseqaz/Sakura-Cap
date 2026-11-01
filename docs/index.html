@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f4f7f9">
+  <meta name="theme-color" content="#eef3f7">
   <meta name="description" content="Sakura-Cap 是一款为 Mac 设计的轻巧屏幕工具。录屏、录音、原地标注、长截图、图片拼接、OCR、AI 与音视频编辑，从捕捉到表达，一气呵成。">
   <meta property="og:title" content="Sakura-Cap — 把屏幕上的想法，清楚地留下">
   <meta property="og:description" content="录屏、截图、原地标注、图片拼接与 AI。一个轻巧原生的 Mac 菜单栏工具。">
@@ -14,8 +14,10 @@
   <link rel="alternate" hreflang="en" href="https://yueseqaz.github.io/Sakura-Cap/en.html">
   <link rel="canonical" href="https://yueseqaz.github.io/Sakura-Cap/">
   <link rel="icon" href="assets/app-icon.png">
-  <link rel="stylesheet" href="site.css?v=2.9.0">
-  <script src="site.js?v=2.9.0" defer></script>
+  <link rel="stylesheet" href="site.css?v=blue-pink-1">
+  <link rel="stylesheet" href="assets/demo/demo.css?v=2">
+  <script type="module" src="assets/demo/demo.js?v=2"></script>
+  <script src="site.js?v=blue-pink-1" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到内容</a>
@@ -28,18 +30,21 @@
     </div>
   </nav>
   <main id="main">
-        <section class="hero" id="top" aria-labelledby="hero-title">
-      <div class="container hero-content">
-        <p class="eyebrow entrance">SAKURA-CAP <span class="eyebrow-line"></span> FOR MAC</p>
-        <h1 id="hero-title" class="entrance">看见的，<br><span>都能好好表达。</span></h1>
-        <p class="hero-lede entrance">一张截图，一段录屏，一个需要被说清楚的细节。<br class="desktop-only">从原地标注、图片拼接到音视频剪辑，顺着你的思路完成。</p>
-        <div class="hero-actions entrance"><a class="button button-primary" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener noreferrer">下载 Sakura-Cap <span aria-hidden="true">↗</span></a><a class="quiet-link" href="#experience">看看它如何工作 <span aria-hidden="true">↓</span></a></div>
-        <p class="hero-note entrance">免费开源 <span>·</span> macOS 13+ <span>·</span> 常驻菜单栏</p>
+    <section class="hero hero-v2" id="top" aria-labelledby="hero-title">
+      <div class="hero-glow hero-glow-one" aria-hidden="true"></div><div class="hero-glow hero-glow-two" aria-hidden="true"></div>
+      <div class="container hero-grid">
+        <div class="hero-content">
+          <p class="hero-kicker entrance"><span>01</span> 桌面表达工具 <i></i> FOR MAC</p>
+          <h1 id="hero-title" class="entrance">看见的，<br><em>好好表达。</em></h1>
+          <p class="hero-lede entrance">截图、录屏、标注和剪辑，沿着同一条思路完成。<br class="desktop-only">Sakura-Cap 住在菜单栏里，等你把重点留下。</p>
+          <div class="hero-actions entrance"><a class="button button-primary" href="https://github.com/yueseqaz/Sakura-Cap/releases/latest" target="_blank" rel="noopener noreferrer">下载 Sakura-Cap <span aria-hidden="true">↗</span></a><a class="quiet-link" href="#experience">进入工作流 <span aria-hidden="true">↓</span></a></div>
+          <div class="hero-proof entrance"><span class="proof-dot"></span><span>免费开源</span><b>·</b><span>macOS 13+</span><b>·</b><span>原生菜单栏工具</span></div>
+        </div>
+        <figure class="hero-stage stage-show entrance">
+          <div id="product-demo" role="group" aria-label="截图标注交互演示"><a class="screenshot-link demo-fallback" href="assets/screenshots/inline.webp" target="_blank" rel="noopener"><img src="assets/screenshots/inline.webp" alt="Sakura-Cap 原地标注实机界面" fetchpriority="high" width="2200" height="1431"></a></div>
+          <figcaption><span>功能示意 · 框出重点，复制分享</span><a href="#experience">查看真实界面 ↗</a></figcaption>
+        </figure>
       </div>
-        <figure class="hero-stage entrance">
-        <a class="screenshot-link" href="assets/screenshots/inline.webp" target="_blank" rel="noopener" aria-label="查看原地标注实机截图大图"><img src="assets/screenshots/inline.webp" alt="Sakura-Cap 原地标注：桌面上的可调整选框、底部标注工具栏和右侧快捷操作" fetchpriority="high" width="2200" height="1431"></a>
-        <figcaption><span>原地标注 · 真实软件界面</span><span>不离开画面，也能把重点说清楚 ↗</span></figcaption>
-      </figure>
     </section>
 
         <section class="intro-band" aria-label="产品概览"><div class="container intro-grid"><p>一个工具。<br><strong>完整的表达路径。</strong></p><div><span>捕捉</span><b>→</b><span>理解</span><b>→</b><span>标注</span><b>→</b><span>分享</span></div></div></section>

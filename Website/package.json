@@ -1,0 +1,23 @@
+{
+  "name": "sakura-cap-website-demos",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5175",
+    "build": "vite build && node notices.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "lucide-react": "0.468.0"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "vite": "6.4.5",
+    "typescript": "5.9.3",
+    "playwright-core": "1.48.2",
+    "postcss": "8.5.6"
+  }
+}
