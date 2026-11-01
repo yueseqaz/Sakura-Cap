@@ -91,7 +91,8 @@ final class IndicatorEngine: ObservableObject {
     }
 
     private func spawn(at cgPoint: CGPoint, isRight: Bool) {
-        guard capturing, isMonitoring else { return }
+        // 点击记录（自动聚焦）始终工作；箭头标记只在用户开启「点击标记」时出现
+        guard capturing, isMonitoring, AppSettings.shared.clickIndicatorEnabled else { return }
         guard let screen = ScreenCoordinate.screen(containingCGPoint: cgPoint) else { return }
         let window = IndicatorWindow(atCGPoint: cgPoint, onScreen: screen) { [weak self] finished in
             self?.windows.removeAll { $0 === finished }
