@@ -16,6 +16,8 @@ struct StreamSpec {
     let cropRect: CGRect?            // 全屏采集后的像素裁剪区域；区域录制使用
     let capturesSystemAudio: Bool
     let displayName: String
+    /// 画面在全局屏幕坐标（点，左上原点）中的范围；点击位置 → 画面归一化坐标用
+    let captureBounds: CGRect
 }
 
 /// 单路 SCStream 会话：帧回调 → FileWriter 直通写入。
@@ -23,6 +25,13 @@ struct StreamSpec {
 final class StreamSession: NSObject, SCStreamOutput {
     let spec: StreamSpec
     let writer: FileWriter
+
+    /// 录制期间落在这一路画面内的点击（自动聚焦用；主线程写入）
+    private(set) var recordedClicks: [RecordedClick] = []
+
+    func recordClick(_ click: RecordedClick) {
+        recordedClicks.append(click)
+    }
 
     private let stream: SCStream
     private let frameQueue: DispatchQueue

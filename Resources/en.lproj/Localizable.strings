@@ -906,3 +906,35 @@
 "移动或缩放图片" = "Move or Resize Image";
 "移动图片" = "Move Image";
 "源图片过大，请先缩小到 6400 万像素以内。" = "The source image is too large. Resize it to 64 megapixels or less first.";
+
+/* Workbench: auto focus from clicks & subtitle transcription */
+"自动聚焦" = "Auto Focus";
+"按点击自动聚焦" = "Auto Focus from Clicks";
+"将根据录制的 %d 次点击生成聚焦段（2× 放大，可在属性面板调整），现有聚焦段会被替换，⌘Z 可撤销。" = "Creates focus segments from the %d recorded clicks (2× zoom, adjustable in the panel). Existing focus segments will be replaced. ⌘Z to undo.";
+"生成" = "Generate";
+"已生成 %d 个聚焦段，可在时间轴与属性面板微调。" = "Generated %d focus segments. Fine-tune them on the timeline or in the panel.";
+"没有生成聚焦段（点击过于集中或超出时长）。" = "No focus segments were created (clicks too concentrated or out of range).";
+"本次录制未记录点击（需在录制设置中开启点击标记）" = "No clicks were recorded for this capture (enable click markers in recording settings)";
+"按录制时记录的点击位置自动生成聚焦段" = "Auto-generate focus segments from the clicks recorded while capturing";
+"转写字幕" = "Transcribe Captions";
+"转写" = "Transcribe";
+"语言" = "Language";
+"跟随系统" = "System Default";
+"中文（普通话）" = "Chinese (Mandarin)";
+"日本語" = "日本語";
+"用系统语音识别为当前剪辑生成字幕（优先设备端离线识别，首次会请求「语音识别」权限）。" = "Generate captions for the current edit with on-system speech recognition (on-device preferred; asks for Speech Recognition permission the first time).";
+"用系统语音识别为当前剪辑生成字幕" = "Generate captions with on-system speech recognition";
+"正在提取音频…" = "Extracting audio…";
+"正在转写…" = "Transcribing…";
+"正在转写… %d%%" = "Transcribing… %d%%";
+"已生成 %d 条字幕，播放预览可见，可导出 SRT。" = "Generated %d caption lines. Visible in the preview; export as SRT.";
+"转写完成，但没有识别到语音。" = "Transcription finished, but no speech was detected.";
+"转写失败：%@" = "Transcription failed: %@";
+"未获得「语音识别」权限，请在系统设置 → 隐私与安全性中允许。" = "Speech Recognition permission is required. Allow it in System Settings → Privacy & Security.";
+"当前语言不支持语音识别。" = "Speech recognition is not available for this language.";
+"SRT" = "SRT";
+"把字幕导出为 SRT 文件" = "Export captions as an SRT file";
+"分段识别失败（成功 %d / 共 %d 段）" = "Chunked recognition failed (%d of %d chunks succeeded)";
+"无法读取音频时长" = "Unable to read audio duration";
+"离线语音模型不可用：%@" = "On-device speech model unavailable: %@";
+"用系统语音识别为当前剪辑生成字幕（本地离线处理；旧系统首次会请求「语音识别」权限）。" = "Generate captions with on-system speech recognition (processed locally; older systems ask for Speech Recognition permission the first time).";

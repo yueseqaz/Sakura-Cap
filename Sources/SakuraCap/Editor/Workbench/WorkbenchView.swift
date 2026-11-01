@@ -82,6 +82,12 @@ struct WorkbenchView: View {
 
             if model.isExporting { ProgressView().controlSize(.small) }
             if !model.isAudioOnly {
+                Button { model.autoFocusFromClicksTapped() } label: { Text(L("自动聚焦")) }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isExporting || !model.hasRecordedClicks)
+                    .help(model.hasRecordedClicks
+                          ? L("按录制时记录的点击位置自动生成聚焦段")
+                          : L("本次录制未记录点击（需在录制设置中开启点击标记）"))
                 Button { model.captureFrameTapped() } label: { Text(L("截帧")) }
                     .buttonStyle(.bordered)
                     .disabled(model.isExporting)
@@ -90,6 +96,20 @@ struct WorkbenchView: View {
                     .buttonStyle(.bordered)
                     .disabled(model.isExporting || model.duration <= 0)
             }
+            if model.isTranscribing {
+                ProgressView()
+                    .controlSize(.small)
+                    .help(transcribeProgressText)
+            } else {
+                Button { model.transcribeTapped() } label: { Text(L("转写字幕")) }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isExporting || model.duration <= 0)
+                    .help(L("用系统语音识别为当前剪辑生成字幕"))
+            }
+            Button { model.exportSRTTapped() } label: { Text(L("SRT")) }
+                .buttonStyle(.bordered)
+                .disabled(model.isExporting || model.subtitleCues.isEmpty)
+                .help(L("把字幕导出为 SRT 文件"))
             Button { model.deleteTapped() } label: {
                 Image(systemName: "trash")
             }
@@ -147,6 +167,25 @@ struct WorkbenchView: View {
                         .padding(.bottom, 8)
                 }
             }
+            .overlay(alignment: .bottom) {
+                if let cue = model.currentSubtitleCue {
+                    Text(cue.text)
+                        .font(.system(size: 15, weight: .medium))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.55), radius: 2, y: 1)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.6),
+                                    in: RoundedRectangle(cornerRadius: 8))
+                        .padding(.bottom, 14)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    private var transcribeProgressText: String {
+        String(format: L("正在转写… %d%%"), Int(model.transcriptionProgress * 100))
     }
 
     // MARK: 右侧属性面板

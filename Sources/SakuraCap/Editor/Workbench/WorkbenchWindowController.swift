@@ -9,7 +9,13 @@ enum TrimOrigin { case recording, manual }
 final class WorkbenchWindowController {
     static let shared = WorkbenchWindowController()
 
-    func show(url: URL, origin: TrimOrigin) {
-        MediaEditorWindowPresenter.shared.show(url: url, origin: origin, kind: .workbench)
+    func show(url: URL, origin: TrimOrigin, clicks: [RecordedClick] = []) {
+        // 自动打开路径直接带点击；手动打开最近录制时按文件回查
+        var resolved = clicks
+        if resolved.isEmpty, let controller = RecordingController.active {
+            resolved = controller.lastSavedRecordings
+                .first { $0.url.standardizedFileURL == url.standardizedFileURL }?.clicks ?? []
+        }
+        MediaEditorWindowPresenter.shared.show(url: url, origin: origin, kind: .workbench, clicks: resolved)
     }
 }

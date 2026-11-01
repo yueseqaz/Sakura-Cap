@@ -10,6 +10,9 @@ final class RecordingController: ObservableObject {
         case idle, ready, preparing, countdown, recording, finalizing
     }
 
+    /// 当前唯一实例（弱引用）：手动打开工作台时回查最近录制的点击记录
+    static weak var active: RecordingController?
+
     @Published private(set) var state: State = .idle
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var isPaused = false
@@ -17,6 +20,8 @@ final class RecordingController: ObservableObject {
     @Published var banner: String?
 
     private(set) var lastSavedFiles: [URL] = []
+    /// 每个保存文件对应的点击记录（自动聚焦用；与 lastSavedFiles 顺序一致）
+    private(set) var lastSavedRecordings: [(url: URL, clicks: [RecordedClick])] = []
 
     let settings = AppSettings.shared
 
@@ -31,6 +36,7 @@ final class RecordingController: ObservableObject {
     private let screenMonitor = ScreenChangeMonitor()
 
     init() {
+        RecordingController.active = self
         screenMonitor.onScreensChanged = { [weak self] in self?.handleScreensChanged() }
     }
 
@@ -153,12 +159,15 @@ final class RecordingController: ObservableObject {
             return
         }
 
-        // 5. 点击指示 / 按键显示（可选功能，失败不阻断录制）
-        if settings.clickIndicatorEnabled {
-            IndicatorEngine.shared.beginCapture()
-            if !IndicatorEngine.shared.isMonitoring {
-                banner = L("未获得「输入监控」权限，本次录制不含点击标记（不影响录制）。")
-            }
+        // 5. 点击记录 / 点击指示 / 按键显示（可选功能，失败不阻断录制）
+        // 点击记录（自动聚焦用）与「点击标记」显示解耦：权限可用就全程记录，
+        // 只有点击标记开启时才主动申请输入监控权限、展示失败提示
+        IndicatorEngine.shared.onAnyClick = { [weak self] point in
+            self?.recordClick(at: point)
+        }
+        IndicatorEngine.shared.beginCapture(requestIfNeeded: settings.clickIndicatorEnabled)
+        if settings.clickIndicatorEnabled, !IndicatorEngine.shared.isMonitoring {
+            banner = L("未获得「输入监控」权限，本次录制不含点击标记（不影响录制）。")
         }
         if settings.keyDisplayEnabled {
             KeyDisplay.shared.beginCapture()
@@ -315,6 +324,22 @@ final class RecordingController: ObservableObject {
         Log.app.info("开始录制：\(self.sessions.count) 路输出")
     }
 
+    /// 录制中的一次全局点击：换算成视频内时间（剔除暂停）与画面归一化位置，
+    /// 记到覆盖该点的哪一路会话上。点击标记未开启时不会收到回调。
+    private func recordClick(at cgPoint: CGPoint) {
+        guard state == .recording, !isPaused, let start = recordStart else { return }
+        let activePause = pauseStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+        let time = max(0, Date().timeIntervalSince(start) - pausedTotal - activePause)
+        for session in sessions {
+            let bounds = session.spec.captureBounds
+            guard bounds.width > 0, bounds.height > 0, bounds.contains(cgPoint) else { continue }
+            let normalized = CGPoint(x: min(1, max(0, (cgPoint.x - bounds.minX) / bounds.width)),
+                                     y: min(1, max(0, (cgPoint.y - bounds.minY) / bounds.height)))
+            session.recordClick(RecordedClick(time: time, point: normalized))
+            return
+        }
+    }
+
     /// 先启动麦克风并等待实测格式。格式必须在创建 FileWriter 前已知——
     /// AVAssetWriter 的所有轨道必须在 startWriting() 之前添加，懒建轨会抛异常闪退。
     private func startMicrophoneAndGetFormat() async -> (sampleRate: Double, channels: Int)? {
@@ -358,10 +383,12 @@ final class RecordingController: ObservableObject {
         mic?.stop(); mic = nil
 
         let duration = elapsed
-        let files = await teardownSessions(saveFiles: true)
-        lastSavedFiles = files
+        let saved = await teardownSessions(saveFiles: true)
+        lastSavedRecordings = saved
+        lastSavedFiles = saved.map(\.url)
         recordStart = nil
         elapsed = 0
+        IndicatorEngine.shared.onAnyClick = nil
         state = .idle
         if wasRecording, focusEnabledForRecording {
             focusEnabledForRecording = false
@@ -374,7 +401,7 @@ final class RecordingController: ObservableObject {
         }
 
         if wasRecording {
-            if files.isEmpty {
+            if saved.isEmpty {
                 let message = L("本次没有录到画面，文件未保存。请在「隐私与安全性 → 屏幕录制」中确认已允许 Sakura-Cap 访问，然后重试。")
                 Log.app.error("录制零帧: \(message, privacy: .public)")
                 banner = message
@@ -384,25 +411,25 @@ final class RecordingController: ObservableObject {
                 alert.addButton(withTitle: L("好"))
                 runModalAlert(alert)
             } else {
-                for url in files {
-                    CompletionNotifier.shared.postSaved(url: url, duration: duration)
+                for entry in saved {
+                    CompletionNotifier.shared.postSaved(url: entry.url, duration: duration)
                 }
                 // 保存/通知等原有逻辑不变，按设置可自动打开裁剪页处理刚保存的视频
-                if let first = files.first, settings.autoTrimAfterRecording {
-                    WorkbenchWindowController.shared.show(url: first, origin: .recording)
+                if let first = saved.first, settings.autoTrimAfterRecording {
+                    WorkbenchWindowController.shared.show(url: first.url, origin: .recording, clicks: first.clicks)
                 }
             }
         }
-        Log.app.notice("停止录制，保存 \(files.count) 个文件，时长 \(duration)")
+        Log.app.notice("停止录制，保存 \(saved.count) 个文件，时长 \(duration)，点击记录 \(saved.map(\.clicks.count), privacy: .public)")
     }
 
-    private func teardownSessions(saveFiles: Bool) async -> [URL] {
+    private func teardownSessions(saveFiles: Bool) async -> [(url: URL, clicks: [RecordedClick])] {
         let pending = sessions
         sessions.removeAll()
-        var files: [URL] = []
+        var files: [(url: URL, clicks: [RecordedClick])] = []
         for session in pending {
             if let url = await session.finish(discardFiles: !saveFiles) {
-                files.append(url)
+                files.append((url: url, clicks: session.recordedClicks))
             }
         }
         return files

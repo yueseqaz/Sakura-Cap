@@ -33,7 +33,8 @@ enum StreamPlanner {
                                     pixelHeight: h,
                                     cropRect: nil,
                                     capturesSystemAudio: settings.recordSystemAudio,
-                                    displayName: pending.name))
+                                    displayName: pending.name,
+                                    captureBounds: filter.contentRect))
             return specs
         }
 
@@ -73,7 +74,8 @@ enum StreamPlanner {
                                         pixelHeight: h,
                                         cropRect: nil,
                                         capturesSystemAudio: capturesAudio,
-                                        displayName: info.name))
+                                        displayName: info.name,
+                                        captureBounds: CGDisplayBounds(info.id)))
             }
         case .region:
             guard let region = settings.lastRegion else { throw RecordingError.noRegion }
@@ -95,6 +97,11 @@ enum StreamPlanner {
             // 并按输出分辨率缩小。
             let (w, h) = outputSize(native, resolution: settings.outputResolution)
             let (fullWidth, fullHeight) = evenDimensions(info.widthPx, info.heightPx)
+            // sckRect 是该屏本地（左上原点）坐标，映射全局点击位置时补上显示器原点
+            let displayOrigin = CGDisplayBounds(region.displayID).origin
+            let regionBounds = CGRect(origin: CGPoint(x: displayOrigin.x + region.sckRect.minX,
+                                                      y: displayOrigin.y + region.sckRect.minY),
+                                      size: region.sckRect.size)
             specs.append(StreamSpec(displayID: region.displayID,
                                     filter: filter,
                                     config: baseConfig(settings: settings, width: fullWidth, height: fullHeight, source: .zero,
@@ -104,7 +111,8 @@ enum StreamPlanner {
                                     pixelHeight: h,
                                     cropRect: crop,
                                     capturesSystemAudio: settings.recordSystemAudio,
-                                    displayName: "区域"))
+                                    displayName: "区域",
+                                    captureBounds: regionBounds))
         }
 
         guard !specs.isEmpty else { throw RecordingError.noSpecs }

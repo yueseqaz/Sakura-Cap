@@ -16,12 +16,25 @@ final class IndicatorEngine: ObservableObject {
     private var capturing = false
     private var settingsCancellable: AnyCancellable?
 
+    /// 录制期间的原始点击回调（无论点击标记是否显示），自动聚焦用它记录点击位置。
+    /// 仅在 beginCapture() 之后、endCapture() 之前触发。
+    var onAnyClick: ((CGPoint) -> Void)?
+
     private init() {
-        monitor.onLeftClick = { [weak self] point in self?.spawn(at: point, isRight: false) }
+        monitor.onLeftClick = { [weak self] point in
+            self?.noteRawClick(point)
+            self?.spawn(at: point, isRight: false)
+        }
         monitor.onRightClick = { [weak self] point in
+            self?.noteRawClick(point)
             guard let self, AppSettings.shared.indicatorIncludeRightClick else { return }
             self.spawn(at: point, isRight: true)
         }
+    }
+
+    private func noteRawClick(_ point: CGPoint) {
+        guard capturing else { return }
+        onAnyClick?(point)
     }
 
     /// 订阅设置：开关打开即监听、关闭即停止（订阅时先按当前值执行一次）。
@@ -38,10 +51,10 @@ final class IndicatorEngine: ObservableObject {
 
     /// 启动监听（面板打开开关或开始录制时调用）。返回 false = 缺输入监控权限。
     @discardableResult
-    func start() -> Bool {
+    func start(requestIfNeeded: Bool = true) -> Bool {
         permissionDenied = false
         // CGEvent.tapCreate 无权限时也可能返回非 nil 但收不到事件，故先用 preflight 判定
-        if !PermissionCenter.inputMonitoringGranted() {
+        if !PermissionCenter.inputMonitoringGranted(), requestIfNeeded {
             PermissionCenter.requestInputMonitoring()
         }
         let granted = PermissionCenter.inputMonitoringGranted()
@@ -60,9 +73,11 @@ final class IndicatorEngine: ObservableObject {
         clearWindows()
     }
 
-    func beginCapture() {
+    /// requestIfNeeded=false 时不主动申请权限（无权限则监听静默不可用），
+    /// 供点击记录在「点击标记关闭」时也能复用已有权限工作。
+    func beginCapture(requestIfNeeded: Bool = true) {
         capturing = true
-        start()
+        start(requestIfNeeded: requestIfNeeded)
     }
 
     func endCapture() {

@@ -69,7 +69,7 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
     /// 否则 NotificationCenter 会无限累积 block 注册。
     private var observers: [NSWindow: [NSObjectProtocol]] = [:]
 
-    func show(url: URL, origin: TrimOrigin, kind: Kind) {
+    func show(url: URL, origin: TrimOrigin, kind: Kind, clicks: [RecordedClick] = []) {
         if let existing = entries.first(where: { $0.model.sourceURL.standardizedFileURL == url.standardizedFileURL }) {
             NSApp.activate(ignoringOtherApps: true)
             existing.window.makeKeyAndOrderFront(nil)
@@ -77,6 +77,7 @@ final class MediaEditorWindowPresenter: NSObject, NSWindowDelegate {
         }
         let model = WorkbenchViewModel(url: url)
         model.origin = origin
+        model.recordedClicks = clicks
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 900)
         let window = KeyHandlingWindow(contentRect: NSRect(origin: .zero, size: kind.contentSize(screen: screen)),
                                        styleMask: kind.styleMask,

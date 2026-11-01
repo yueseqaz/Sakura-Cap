@@ -694,6 +694,177 @@ final class WorkbenchViewModel: ObservableObject {
         refreshOverlays()
     }
 
+    // MARK: - 点击自动聚焦（实验特性）
+
+    /// 录制时记录的点击（仅「录制后自动打开」的工作台有值；手动打开的文件没有）
+    var recordedClicks: [RecordedClick] = []
+    var hasRecordedClicks: Bool { !recordedClicks.isEmpty }
+
+    func autoFocusFromClicksTapped() {
+        guard !recordedClicks.isEmpty, !isAudioOnly, !isExporting else { return }
+        let alert = NSAlert()
+        alert.messageText = L("按点击自动聚焦")
+        alert.informativeText = String(
+            format: L("将根据录制的 %d 次点击生成聚焦段（2× 放大，可在属性面板调整），现有聚焦段会被替换，⌘Z 可撤销。"),
+            recordedClicks.count)
+        alert.addButton(withTitle: L("生成"))
+        alert.addButton(withTitle: L("取消"))
+        guard runModalAlert(alert, for: presentationWindow) == .alertFirstButtonReturn else { return }
+        generateFocusFromClicks()
+    }
+
+    /// 点击分组 → 聚焦段：1 秒内且位移不大的连续点击归为一段；
+    /// 段前后各留 0.5s / 1.5s 缓冲，相邻段不重叠。
+    private func generateFocusFromClicks() {
+        guard duration > 0 else { return }
+        let side: CGFloat = 0.36
+        var groups: [[RecordedClick]] = []
+        for click in recordedClicks.sorted(by: { $0.time < $1.time }) {
+            if var group = groups.last, let last = group.last,
+               click.time - last.time <= 1.0,
+               hypot(click.point.x - last.point.x, click.point.y - last.point.y) <= 0.3 {
+                group.append(click)
+                groups[groups.count - 1] = group
+            } else {
+                groups.append([click])
+            }
+        }
+
+        var focuses: [WorkbenchFocus] = []
+        var previousEnd = 0.0
+        for group in groups {
+            guard let first = group.first, let last = group.last else { continue }
+            let start = max(0, first.time - 0.5)
+            let end = min(duration, last.time + 1.5)
+            let clampedStart = max(start, previousEnd + 0.01)
+            guard end - clampedStart >= 0.2 else { continue }
+            previousEnd = end
+            let centerX = group.reduce(0) { $0 + $1.point.x } / CGFloat(group.count)
+            let centerY = group.reduce(0) { $0 + $1.point.y } / CGFloat(group.count)
+            let originX = max(0, min(1 - side, centerX - side / 2))
+            let originY = max(0, min(1 - side, centerY - side / 2))
+            focuses.append(WorkbenchFocus(id: UUID(), sourceIn: clampedStart, sourceOut: end,
+                                          rect: CGRect(x: originX, y: originY, width: side, height: side),
+                                          zoom: 2))
+        }
+        guard !focuses.isEmpty else {
+            status = L("没有生成聚焦段（点击过于集中或超出时长）。")
+            return
+        }
+        pushUndo()
+        document.focuses = focuses
+        selection = nil
+        status = String(format: L("已生成 %d 个聚焦段，可在时间轴与属性面板微调。"), focuses.count)
+        refreshOverlays()
+    }
+
+    // MARK: - 字幕转写（实验特性）
+
+    @Published private(set) var subtitleCues: [SubtitleCue] = []
+    @Published private(set) var isTranscribing = false
+    /// 已识别到的秒数 / 总时长（0–1），工具栏进度提示用
+    @Published private(set) var transcriptionProgress: Double = 0
+
+    /// 播放头当前所在的字幕条（预览浮层用）
+    var currentSubtitleCue: SubtitleCue? {
+        let t = currentTime
+        return subtitleCues.first { $0.start <= t && t < $0.end }
+    }
+
+    func transcribeTapped() {
+        guard !isTranscribing, duration > 0.05, !isExporting else { return }
+        let languages: [(title: String, id: String)] = [
+            (L("跟随系统"), ""),
+            (L("中文（普通话）"), "zh-CN"),
+            ("English", "en-US"),
+            (L("日本語"), "ja-JP"),
+        ]
+        let alert = NSAlert()
+        alert.messageText = L("转写字幕")
+        alert.informativeText = L("用系统语音识别为当前剪辑生成字幕（本地离线处理；旧系统首次会请求「语音识别」权限）。")
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.addItems(withTitles: languages.map(\.title))
+        popup.selectItem(at: 0)
+        let accessory = NSStackView(views: [NSTextField(labelWithString: L("语言")), popup])
+        accessory.orientation = .horizontal
+        accessory.spacing = 8
+        accessory.frame = NSRect(x: 0, y: 0, width: 240, height: 28)
+        alert.accessoryView = accessory
+        alert.addButton(withTitle: L("转写"))
+        alert.addButton(withTitle: L("取消"))
+        guard runModalAlert(alert, for: presentationWindow) == .alertFirstButtonReturn else { return }
+        let languageID = languages[max(0, min(popup.indexOfSelectedItem, languages.count - 1))].id
+        Task { await transcribe(localeID: languageID) }
+    }
+
+    private func transcribe(localeID: String) async {
+        guard let media else { return }
+        isTranscribing = true
+        status = L("正在提取音频…")
+        defer { isTranscribing = false }
+        do {
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("sakuracap-subtitle-\(UUID().uuidString).m4a")
+            defer { try? FileManager.default.removeItem(at: tempURL) }
+            let built = try await WorkbenchEngine.build(asset: media.asset, document: document,
+                                                        videoSource: videoTrack, audioSources: audioSourceTracks)
+            try await SubtitleTranscriber.exportTimelineAudio(
+                asset: built.composition,
+                audioMix: WorkbenchEngine.audioMix(document: document, audioTrackIDs: built.audioTrackIDs),
+                to: tempURL)
+            status = L("正在转写…")
+            let locale = localeID.isEmpty ? Locale.current : Locale(identifier: localeID)
+            let total = max(0.1, timelineDuration)
+            let cues = try await SubtitleTranscriber.recognize(audioURL: tempURL, locale: locale) { seconds in
+                let progress = min(0.99, seconds / total)
+                Task { @MainActor in self.transcriptionProgress = progress }
+            }
+            subtitleCues = cues
+            status = cues.isEmpty
+                ? L("转写完成，但没有识别到语音。")
+                : String(format: L("已生成 %d 条字幕，播放预览可见，可导出 SRT。"), cues.count)
+        } catch {
+            status = String(format: L("转写失败：%@"), error.localizedDescription)
+        }
+    }
+
+    func exportSRTTapped() {
+        guard !subtitleCues.isEmpty, !isExporting else { return }
+        let dir = sourceURL.deletingLastPathComponent()
+        let base = sourceURL.deletingPathExtension().lastPathComponent
+        var url = dir.appendingPathComponent("\(base).srt")
+        var index = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = dir.appendingPathComponent("\(base) \(index).srt")
+            index += 1
+        }
+        do {
+            try Self.srtText(cues: subtitleCues).write(to: url, atomically: true, encoding: .utf8)
+            status = String(format: L("已导出 %@"), url.lastPathComponent)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            status = String(format: L("导出失败：%@"), error.localizedDescription)
+        }
+    }
+
+    private static func srtTimestamp(_ seconds: Double) -> String {
+        let clamped = max(0, seconds)
+        let total = Int(clamped)
+        let milliseconds = Int((clamped - Double(total)) * 1000)
+        return String(format: "%02d:%02d:%02d,%03d", total / 3600, (total % 3600) / 60, total % 60, milliseconds)
+    }
+
+    private static func srtText(cues: [SubtitleCue]) -> String {
+        var lines: [String] = []
+        for (index, cue) in cues.enumerated() {
+            lines.append("\(index + 1)")
+            lines.append("\(srtTimestamp(cue.start)) --> \(srtTimestamp(cue.end))")
+            lines.append(cue.text)
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - 播放
 
     func prepareForFullscreen() {
