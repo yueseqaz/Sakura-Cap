@@ -29,6 +29,7 @@ final class AnnotationEditorWindow: NSWindow {
     private let onClose: ((AnnotationEditorWindow) -> Void)?
 
     private let toolSegment = NSSegmentedControl()
+    private let shapeFillSegment = NSSegmentedControl()
     private let mosaicSegment = NSSegmentedControl()
     private let mosaicLabel = NSTextField(labelWithString: L("马赛克"))
     private let mosaicStrengthLabel = NSTextField(labelWithString: L("程度"))
@@ -40,6 +41,8 @@ final class AnnotationEditorWindow: NSWindow {
     private let widthLabel = NSTextField(labelWithString: L("粗细"))
     private let widthSlider = NSSlider()
     private let widthValue = NSTextField(labelWithString: "4")
+    private let fontSizeLabel = NSTextField(labelWithString: L("字号"))
+    private let fontSizePopup = NSPopUpButton()
     private let zoomLabel = NSTextField(labelWithString: "100%")
     private let deleteButton = NSButton()
     private let discardImageButton = NSButton()
@@ -83,7 +86,7 @@ final class AnnotationEditorWindow: NSWindow {
         super.keyDown(with: event)
     }
 
-    private let allTools = AnnotationTool.allCases.filter { $0 != .magnifier }
+    private let allTools = AnnotationTool.toolbarCases.filter { $0 != .magnifier }
     private let magnifierButton = NSButton()
 
     init(image: CGImage, suggestedName: String, source: AnnotationImageSource,
@@ -158,6 +161,8 @@ final class AnnotationEditorWindow: NSWindow {
         widthLabel.isHidden = true
         widthSlider.isHidden = true
         widthValue.isHidden = true
+        fontSizeLabel.isHidden = true
+        fontSizePopup.isHidden = true
         bar.layoutSubtreeIfNeeded()
         let neededWidth = bar.fittingSize.width
         if neededWidth > frame.width {
@@ -186,6 +191,15 @@ final class AnnotationEditorWindow: NSWindow {
         toolSegment.selectedSegment = 0
         toolSegment.target = self
         toolSegment.action = #selector(toolChanged)
+
+        shapeFillSegment.segmentCount = 2
+        shapeFillSegment.trackingMode = .selectOne
+        shapeFillSegment.segmentStyle = .rounded
+        shapeFillSegment.setWidth(30, forSegment: 0)
+        shapeFillSegment.setWidth(30, forSegment: 1)
+        shapeFillSegment.target = self
+        shapeFillSegment.action = #selector(shapeFillChanged)
+        updateShapeFillControl(for: .rectangle)
 
         mosaicSegment.segmentCount = MosaicStyle.allCases.count
         mosaicSegment.trackingMode = .selectOne
@@ -218,6 +232,7 @@ final class AnnotationEditorWindow: NSWindow {
         widthSlider.action = #selector(widthChanged)
         widthSlider.widthAnchor.constraint(equalToConstant: 110).isActive = true
         widthValue.widthAnchor.constraint(equalToConstant: 22).isActive = true
+        configureFontSizePopup()
 
         let copyButton = NSButton(title: L("拷贝"), target: self, action: #selector(copyTapped))
         copyButton.bezelStyle = .rounded
@@ -265,9 +280,10 @@ final class AnnotationEditorWindow: NSWindow {
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let stack = NSStackView(views: [toolSegment, mosaicLabel, mosaicSegment,
+        let stack = NSStackView(views: [toolSegment, shapeFillSegment, mosaicLabel, mosaicSegment,
                                         mosaicStrengthLabel, mosaicStrengthSlider, mosaicStrengthValue,
                                         colorPicker,
+                                        fontSizeLabel, fontSizePopup,
                                         widthLabel, widthSlider, widthValue, undoButton, redoButton,
                                         deleteButton, clearButton, spacer,
                                         zoomOutButton, zoomLabel, zoomInButton, fitButton, pinButton,
@@ -345,6 +361,29 @@ final class AnnotationEditorWindow: NSWindow {
         button.widthAnchor.constraint(equalToConstant: 28).isActive = true
     }
 
+    private func configureFontSizePopup() {
+        fontSizePopup.removeAllItems()
+        for size in AnnotationCanvas.textFontSizes {
+            fontSizePopup.addItem(withTitle: "\(Int(size))")
+            fontSizePopup.lastItem?.representedObject = size
+            fontSizePopup.lastItem?.tag = Int(size)
+        }
+        fontSizePopup.target = self
+        fontSizePopup.action = #selector(fontSizeChanged)
+        fontSizePopup.toolTip = L("字号")
+        fontSizePopup.widthAnchor.constraint(equalToConstant: 58).isActive = true
+    }
+
+    private func updateShapeFillControl(for tool: AnnotationTool) {
+        let names = tool == .ellipse ? ["circle", "circle.fill"] : ["rectangle", "rectangle.fill"]
+        let labels = tool == .ellipse ? [L("空心椭圆"), L("实心椭圆")] : [L("空心矩形"), L("实心矩形")]
+        for index in 0..<2 {
+            shapeFillSegment.setImage(NSImage(systemSymbolName: names[index], accessibilityDescription: labels[index]),
+                                      forSegment: index)
+            shapeFillSegment.setToolTip(labels[index], forSegment: index)
+        }
+    }
+
     private func refresh() {
         ocrButton.isEnabled = !actions.isOCRBusy
         barcodeButton.isEnabled = !actions.isBarcodeBusy
@@ -360,6 +399,14 @@ final class AnnotationEditorWindow: NSWindow {
         SettingsAppearance.setToolActive(eyedropperButton, canvas.isPickingColor, inactiveColor: .labelColor)
         SettingsAppearance.setToolActive(measureButton, canvas.isMeasuring, inactiveColor: .labelColor)
         let showMosaic = canvas.tool == .mosaic
+        let showText = canvas.tool == .text || canvas.selectedAnnotation?.tool == .text
+        let propertyTool = canvas.selectedAnnotation?.tool ?? canvas.tool
+        let showShape = propertyTool == .rectangle || propertyTool == .ellipse
+        shapeFillSegment.isHidden = !showShape
+        if showShape {
+            updateShapeFillControl(for: propertyTool)
+            shapeFillSegment.selectedSegment = (canvas.selectedAnnotation?.isFilled ?? canvas.shapeFilled) ? 1 : 0
+        }
         mosaicLabel.isHidden = !showMosaic
         mosaicSegment.isHidden = !showMosaic
         mosaicStrengthLabel.isHidden = !showMosaic
@@ -367,8 +414,16 @@ final class AnnotationEditorWindow: NSWindow {
         mosaicStrengthValue.isHidden = !showMosaic
         // 马赛克不需要线宽，用同一条位置换成“程度”滑块
         widthLabel.isHidden = showMosaic
-        widthSlider.isHidden = showMosaic
-        widthValue.isHidden = showMosaic
+        widthSlider.isHidden = showMosaic || showText
+        widthValue.isHidden = showMosaic || showText
+        widthLabel.isHidden = showMosaic || showText
+        fontSizeLabel.isHidden = !showText
+        fontSizePopup.isHidden = !showText
+        let fontSize = canvas.currentTextFontSize
+        fontSizePopup.selectItem(withTag: Int(fontSize.rounded()))
+        if fontSizePopup.selectedItem == nil {
+            fontSizePopup.selectItem(withTitle: "\(Int(fontSize.rounded()))")
+        }
         let strength = canvas.currentMosaicStrength
         mosaicStrengthSlider.doubleValue = Double(strength)
         mosaicStrengthValue.stringValue = "\(Int(strength.rounded()))"
@@ -383,6 +438,10 @@ final class AnnotationEditorWindow: NSWindow {
     @objc private func toolChanged() {
         guard let tool = allTools[safe: toolSegment.selectedSegment] else { return }
         canvas.tool = tool
+        refresh()
+    }
+    @objc private func shapeFillChanged() {
+        canvas.applyShapeFilled(shapeFillSegment.selectedSegment == 1)
         refresh()
     }
     @objc private func magnifierTapped() {
@@ -402,6 +461,11 @@ final class AnnotationEditorWindow: NSWindow {
         let value = CGFloat(widthSlider.doubleValue)
         widthValue.stringValue = "\(Int(value))"
         canvas.applyLineWidth(value)
+    }
+    @objc private func fontSizeChanged() {
+        guard let value = fontSizePopup.selectedItem?.representedObject as? CGFloat else { return }
+        canvas.applyTextFontSize(value)
+        refresh()
     }
     @objc private func deleteTapped() { canvas.deleteSelected(); refresh() }
     @objc private func clearTapped() { canvas.clearAll(); refresh() }

@@ -196,13 +196,21 @@ final class WorkbenchTimelineContainer: NSView {
         hoverPreview.videoAspect = model?.videoAspect ?? 16 / 9
         hoverPreview.needsDisplay = true
 
-        let size = hoverPreview.preferredSize
-        var origin = NSPoint(x: state.point.x - size.width / 2, y: state.point.y - size.height - 14)
-        origin.x = max(4, min(bounds.width - size.width - 4, origin.x))
-        if origin.y < 4 {
-            // 上方放不下（贴着轨道顶部）就弹在光标下方
+        // The callback point is in this container's coordinate system. Keep
+        // the preview inside the actual timeline viewport (rather than the
+        // header/zoom controls), and scale it down when the window is narrow.
+        let visibleRect = scrollView.frame.insetBy(dx: 4, dy: 4)
+        let size = hoverPreview.sizeThatFits(visibleRect.size)
+        var origin = NSPoint(x: state.point.x - size.width / 2,
+                             y: state.point.y - size.height - 14)
+        origin.x = min(max(visibleRect.minX, origin.x), visibleRect.maxX - size.width)
+        if origin.y < visibleRect.minY {
+            // 上方放不下（贴着轨道顶部）就弹在光标下方。
             origin.y = state.point.y + 14
         }
+        // The track can be close to the bottom edge, so clamp after choosing
+        // the preferred side as well. This also handles a short timeline pane.
+        origin.y = min(max(visibleRect.minY, origin.y), visibleRect.maxY - size.height)
         hoverPreview.frame = NSRect(origin: origin, size: size)
     }
 
@@ -295,6 +303,9 @@ final class WorkbenchTimelineContainer: NSView {
             enforceZoomFloor(model)
         }
         relayoutContent()
+        if !hoverPreview.isHidden {
+            refreshHoverPreview()
+        }
     }
 
     /// 窗口变大后动态下限抬高：时间轴重新恰好铺满（不留视频外的空白）
@@ -1655,7 +1666,22 @@ final class HoverPreviewView: NSView {
         return NSSize(width: width, height: imageHeight + labelHeight + padding * 2)
     }
 
+    /// Returns the largest preview that fits in the timeline viewport while
+    /// preserving the image/label proportions.
+    func sizeThatFits(_ maxSize: NSSize) -> NSSize {
+        let ideal = preferredSize
+        guard ideal.width > 0, ideal.height > 0,
+              maxSize.width > 0, maxSize.height > 0 else { return ideal }
+        let scale = min(1, min(maxSize.width / ideal.width, maxSize.height / ideal.height))
+        return NSSize(width: ideal.width * scale, height: ideal.height * scale)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
+        // Use the current bounds so a constrained preview remains fully
+        // drawable after sizeThatFits scales it down.
+        let inset = min(padding, min(bounds.width, bounds.height) / 8)
+        let label = min(labelHeight, max(12, bounds.height * 0.2))
+        let imageHeight = max(1, bounds.height - label - inset * 2)
         let background = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
                                       xRadius: 8, yRadius: 8)
         NSColor.windowBackgroundColor.withAlphaComponent(0.97).setFill()
@@ -1664,8 +1690,8 @@ final class HoverPreviewView: NSView {
         background.lineWidth = 1
         background.stroke()
 
-        let imageRect = NSRect(x: padding, y: padding,
-                               width: bounds.width - padding * 2, height: imageHeight)
+        let imageRect = NSRect(x: inset, y: inset,
+                               width: max(1, bounds.width - inset * 2), height: imageHeight)
         if let frameImage {
             let aspect = max(0.1, CGFloat(frameImage.width) / CGFloat(frameImage.height))
             var drawRect = imageRect
@@ -1691,7 +1717,7 @@ final class HoverPreviewView: NSView {
         ]
         let size = (timeText as NSString).size(withAttributes: attrs)
         (timeText as NSString).draw(at: NSPoint(x: bounds.midX - size.width / 2,
-                                                y: padding + imageHeight + (labelHeight - size.height) / 2),
+                                                y: inset + imageHeight + (label - size.height) / 2),
                                     withAttributes: attrs)
     }
 }

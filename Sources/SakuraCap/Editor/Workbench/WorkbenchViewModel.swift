@@ -49,21 +49,30 @@ final class WorkbenchViewModel: ObservableObject {
     /// 媒体素材（缩略图/波形）生成进度计数，驱动时间轴刷新
     @Published private(set) var mediaStamp = 0
 
-    // 标注编辑（画布与工具状态沿用 VideoAnnotationCanvas）
+    // 标注编辑：与截图标注共用同一套画布和交互。
     @Published var editingAnnotationID: UUID?
     @Published var editingFocusID: UUID?
-    let annotationCanvas = VideoAnnotationCanvas(frame: .zero)
-    @Published var annotationTool: VideoMarkTool = .pen {
+    let annotationCanvas = AnnotationCanvas(frame: .zero)
+    @Published var annotationTool: AnnotationTool = .pen {
         didSet { annotationCanvas.tool = annotationTool }
     }
     @Published var annotationMosaicStyle: MosaicStyle = .pixelate {
-        didSet { annotationCanvas.mosaicStyle = annotationMosaicStyle }
+        didSet { annotationCanvas.applyMosaicStyle(annotationMosaicStyle) }
     }
     @Published var annotationColor: NSColor = .systemRed {
-        didSet { annotationCanvas.color = annotationColor }
+        didSet { annotationCanvas.applyColor(annotationColor) }
     }
     @Published var annotationLineWidth: CGFloat = 4 {
-        didSet { annotationCanvas.lineWidth = annotationLineWidth }
+        didSet { annotationCanvas.applyLineWidth(annotationLineWidth) }
+    }
+    @Published var annotationShapeFilled: Bool = false {
+        didSet { annotationCanvas.applyShapeFilled(annotationShapeFilled) }
+    }
+    @Published var annotationFontSize: CGFloat = 28 {
+        didSet { annotationCanvas.applyTextFontSize(annotationFontSize) }
+    }
+    @Published var annotationMosaicStrength: CGFloat = 4 {
+        didSet { annotationCanvas.applyMosaicStrength(annotationMosaicStrength) }
     }
 
     private var undoStack: [WorkbenchDocument] = []
@@ -620,12 +629,15 @@ final class WorkbenchViewModel: ObservableObject {
         editingAnnotationID = id
         selection = .annotation(id)
         if let segment = document.annotations.first(where: { $0.id == id }) {
-            annotationCanvas.loadMarks(segment.marks)
-            annotationCanvas.previewFrame = nil
+            annotationCanvas.loadAnnotations(segment.marks)
+            annotationCanvas.baseImage = nil
+            annotationCanvas.showsBaseImage = false
             annotationCanvas.tool = annotationTool
             annotationCanvas.mosaicStyle = annotationMosaicStyle
+            annotationCanvas.mosaicStrength = annotationMosaicStrength
             annotationCanvas.color = annotationColor
             annotationCanvas.lineWidth = annotationLineWidth
+            annotationCanvas.shapeFilled = annotationShapeFilled
             annotationCanvas.onChange = { [weak self] in self?.objectWillChange.send() }
             seek(to: document.timelineTime(forSource: (segment.sourceIn + segment.sourceOut) / 2),
                  updateTimeline: true)
@@ -649,20 +661,21 @@ final class WorkbenchViewModel: ObservableObject {
         let sourceSeconds = (segment.sourceIn + segment.sourceOut) / 2
         let frame = try? await generator.image(at: CMTime(seconds: sourceSeconds, preferredTimescale: 600)).image
         guard editingAnnotationID == id else { return }
-        annotationCanvas.previewFrame = frame
+        annotationCanvas.baseImage = frame
+        annotationCanvas.showsBaseImage = false
     }
 
     func finishAnnotationSelection(commit: Bool = true) {
         guard editingAnnotationID != nil else { return }
         if commit {
-            annotationCanvas.finishEditing()
+            annotationCanvas.finishTextEditing()
             if let id = editingAnnotationID,
                let index = document.annotations.firstIndex(where: { $0.id == id }) {
-                document.annotations[index].marks = annotationCanvas.marks
+                document.annotations[index].marks = annotationCanvas.annotations
             }
         }
         editingAnnotationID = nil
-        annotationCanvas.previewFrame = nil
+        annotationCanvas.baseImage = nil
         refreshOverlays()
     }
 

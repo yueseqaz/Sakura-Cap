@@ -135,7 +135,7 @@ struct WorkbenchView: View {
                     GeometryReader { geometry in
                         let width = min(geometry.size.width, geometry.size.height * max(model.videoAspect, 0.1))
                         let height = width / max(model.videoAspect, 0.1)
-                        VideoAnnotationView(canvas: model.annotationCanvas)
+                        WorkbenchAnnotationCanvasView(canvas: model.annotationCanvas)
                             .frame(width: width, height: height)
                             .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
                     }
@@ -637,24 +637,67 @@ private struct FocusRectEditor: NSViewRepresentable {
 struct AnnotationFloatingToolbar: View {
     @ObservedObject var model: WorkbenchViewModel
 
+    private var annotationTools: [AnnotationTool] {
+        AnnotationTool.toolbarCases.filter { $0 != .crop && $0 != .magnifier }
+    }
+
+    private var activeShapeTool: AnnotationTool {
+        model.annotationCanvas.selectedAnnotation?.tool ?? model.annotationTool
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             HStack(spacing: 4) {
-                ForEach(VideoMarkTool.allCases) { tool in
+                ForEach(annotationTools) { tool in
+                    let symbolName = tool.symbolName
                     Button { model.annotationTool = tool } label: {
-                        Image(systemName: tool.symbol).frame(width: 22, height: 18)
+                        Image(systemName: symbolName).frame(width: 22, height: 18)
                     }
                     .buttonStyle(.bordered)
                     .tint(model.annotationTool == tool ? SettingsAppearance.color(SettingsAppearance.accent) : nil)
                     .help(tool.label)
                 }
+                if activeShapeTool == .rectangle || activeShapeTool == .ellipse {
+                    Picker("", selection: Binding(
+                        get: { model.annotationCanvas.selectedAnnotation?.isFilled ?? model.annotationShapeFilled },
+                        set: { model.annotationShapeFilled = $0 }
+                    )) {
+                        Image(systemName: activeShapeTool == .ellipse ? "circle" : "rectangle")
+                            .tag(false as Bool)
+                        Image(systemName: activeShapeTool == .ellipse ? "circle.fill" : "rectangle.fill")
+                            .tag(true as Bool)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 72)
+                    .help(L(activeShapeTool == .ellipse ? "椭圆填充" : "矩形填充"))
+                }
                 Divider().frame(height: 18)
                 Button(L("撤回")) { model.annotationCanvas.undo() }
-                    .disabled(model.annotationCanvas.undoStack.isEmpty)
+                    .disabled(!model.annotationCanvas.canUndo)
                 Button(L("删除选中")) { model.annotationCanvas.deleteSelected() }
-                    .disabled(model.annotationCanvas.selectedIndex == nil)
-                Button(L("清空")) { model.annotationCanvas.clear() }
-                    .disabled(model.annotationCanvas.marks.isEmpty)
+                    .disabled(model.annotationCanvas.selectedAnnotation == nil)
+                Button(L("清空")) { model.annotationCanvas.clearAll() }
+                    .disabled(model.annotationCanvas.annotations.isEmpty)
+                Divider().frame(height: 18)
+                Button { model.annotationCanvas.zoomOut() } label: {
+                    Image(systemName: "minus.magnifyingglass")
+                }
+                .buttonStyle(.bordered)
+                .help(L("缩小"))
+                Text("\(Int((model.annotationCanvas.zoom * 100).rounded()))%")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 44)
+                Button { model.annotationCanvas.zoomIn() } label: {
+                    Image(systemName: "plus.magnifyingglass")
+                }
+                .buttonStyle(.bordered)
+                .help(L("放大"))
+                Button { model.annotationCanvas.resetZoom() } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .buttonStyle(.bordered)
+                .help(L("适应"))
                 Divider().frame(height: 18)
                 Button(L("完成标注")) { model.finishAnnotationSelection(commit: true) }
                     .buttonStyle(.borderedProminent)
@@ -666,6 +709,10 @@ struct AnnotationFloatingToolbar: View {
                         ForEach(MosaicStyle.allCases) { style in Text(style.label).tag(style) }
                     }
                     .pickerStyle(.segmented).labelsHidden().frame(width: 220)
+                    Text(L("程度")).font(SettingsAppearance.detailFont)
+                    Slider(value: Binding(get: { Double(model.annotationMosaicStrength) },
+                                          set: { model.annotationMosaicStrength = CGFloat($0) }), in: 1...10)
+                        .frame(width: 90)
                 } else {
                     Text(L("颜色")).font(SettingsAppearance.detailFont)
                     ForEach([NSColor.systemRed, .systemYellow, .systemBlue, .systemGreen, .white], id: \.self) { color in
@@ -676,15 +723,45 @@ struct AnnotationFloatingToolbar: View {
                                 .overlay(Circle().stroke(model.annotationColor == color ? Color.accentColor : .clear, lineWidth: 2))
                         }.buttonStyle(.plain)
                     }
-                    Text(L("粗细")).font(SettingsAppearance.detailFont)
-                    Slider(value: Binding(get: { Double(model.annotationLineWidth) },
-                                          set: { model.annotationLineWidth = CGFloat($0) }), in: 1...12)
-                        .frame(width: 90)
+                    ColorPicker("", selection: Binding(
+                        get: { Color(nsColor: model.annotationColor) },
+                        set: { model.annotationColor = NSColor($0) }
+                    ))
+                    .labelsHidden()
+                    .frame(width: 24)
+                    if model.annotationTool == .text || model.annotationCanvas.selectedAnnotation?.tool == .text {
+                        Text(L("字号")).font(SettingsAppearance.detailFont)
+                        Picker(L("字号"), selection: Binding(
+                            get: { Int(model.annotationCanvas.currentTextFontSize.rounded()) },
+                            set: { model.annotationFontSize = CGFloat($0) }
+                        )) {
+                            ForEach(AnnotationCanvas.textFontSizes, id: \.self) { size in
+                                Text("\(Int(size))").tag(Int(size))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    } else {
+                        Text(L("粗细")).font(SettingsAppearance.detailFont)
+                        Slider(value: Binding(get: { Double(model.annotationLineWidth) },
+                                              set: { model.annotationLineWidth = CGFloat($0) }), in: 1...20)
+                            .frame(width: 90)
+                    }
                 }
             }
             .font(SettingsAppearance.detailFont)
         }
         .padding(10)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// SwiftUI bridge for the shared screenshot/video annotation canvas.
+struct WorkbenchAnnotationCanvasView: NSViewRepresentable {
+    let canvas: AnnotationCanvas
+
+    func makeNSView(context: Context) -> AnnotationCanvas { canvas }
+    func updateNSView(_ view: AnnotationCanvas, context: Context) {
+        view.needsDisplay = true
     }
 }

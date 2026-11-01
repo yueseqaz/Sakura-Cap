@@ -4,8 +4,11 @@ import CoreImage.CIFilterBuiltins
 
 // MARK: - 模型
 
-enum AnnotationTool: Int, CaseIterable {
-    case select, pen, arrow, rectangle, text, number, mosaic, crop, magnifier
+enum AnnotationTool: Int, CaseIterable, Identifiable {
+    case select = 0, pen = 1, arrow = 2, rectangle = 3, ellipse = 4, text = 5,
+         number = 6, mosaic = 7, crop = 8, magnifier = 9
+
+    var id: Int { rawValue }
 
     var symbolName: String {
         switch self {
@@ -13,6 +16,7 @@ enum AnnotationTool: Int, CaseIterable {
         case .pen: return "pencil"
         case .arrow: return "arrow.up.right"
         case .rectangle: return "rectangle"
+        case .ellipse: return "circle"
         case .text: return "text.alignleft"
         case .number: return "1.circle"
         case .mosaic: return "square.grid.3x3.fill"
@@ -22,8 +26,24 @@ enum AnnotationTool: Int, CaseIterable {
     }
 
     var label: String {
-        L(["选择标注", "画笔", "箭头", "矩形", "文字", "序号", "马赛克", "裁剪", "放大镜"][rawValue])
+        switch self {
+        case .select: return L("选择标注")
+        case .pen: return L("画笔")
+        case .arrow: return L("箭头")
+        case .rectangle: return L("矩形")
+        case .text: return L("文字")
+        case .number: return L("序号")
+        case .mosaic: return L("马赛克")
+        case .crop: return L("裁剪")
+        case .magnifier: return L("放大镜")
+        case .ellipse: return L("椭圆")
+        }
     }
+
+    /// Shared order keeps the shape tools together in every toolbar.
+    static let toolbarCases: [AnnotationTool] = [
+        .select, .pen, .arrow, .rectangle, .ellipse, .text, .number, .mosaic, .crop, .magnifier
+    ]
 
     /// 直播覆盖层可用（裁剪只用于图片编辑）
     var availableLive: Bool { self != .crop && self != .magnifier }
@@ -43,17 +63,31 @@ enum MosaicStyle: Int, CaseIterable, Identifiable {
 }
 
 /// 一条标注，坐标一律用「图片坐标（像素，左上原点）」，与显示缩放无关。
-struct Annotation {
+struct Annotation: Equatable {
     var tool: AnnotationTool
     var points: [CGPoint]
     var text: String = ""
     /// Width of a text box in source-image coordinates. Keeping this width
     /// with the annotation preserves the editor's soft wrapping after commit.
     var textWidth: CGFloat? = nil
+    /// Explicit font size in source-image points. Older annotations fall back
+    /// to their historical lineWidth-derived size when this is nil.
+    var fontSize: CGFloat? = nil
     var color: NSColor
     var mosaicStyle: MosaicStyle = .pixelate
     var mosaicStrength: CGFloat = 4
     var lineWidth: CGFloat = 4
+    /// Solid rectangle/ellipse mode. Old annotations default to outline.
+    var isFilled: Bool = false
+
+    static func == (lhs: Annotation, rhs: Annotation) -> Bool {
+        lhs.tool == rhs.tool && lhs.points == rhs.points && lhs.text == rhs.text
+            && lhs.textWidth == rhs.textWidth && lhs.fontSize == rhs.fontSize
+            && lhs.mosaicStyle == rhs.mosaicStyle
+            && lhs.mosaicStrength == rhs.mosaicStrength && lhs.lineWidth == rhs.lineWidth
+            && lhs.isFilled == rhs.isFilled
+            && lhs.color.isEqual(rhs.color)
+    }
 }
 
 // MARK: - 画布
@@ -63,9 +97,16 @@ struct Annotation {
 final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     var tool: AnnotationTool = .select {
         didSet {
-            commitActiveField()
+            // A direct toolbar switch should keep the requested tool. Text
+            // commits triggered by focus loss switch back to selection below.
+            commitActiveField(switchToSelection: false)
             // 切换到绘制工具时清掉选中，避免下一个图形先被当成“编辑旧标注”
-            if tool != .select { selectedIndex = nil }
+            if tool != .select {
+                selectedIndex = nil
+                // A toolbar switch is an explicit new action, so it should
+                // not consume its first click as text-selection confirmation.
+                awaitingTextSelectionClick = false
+            }
             cancelTransient()
             needsDisplay = true
         }
@@ -74,12 +115,17 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     var mosaicStyle: MosaicStyle = .pixelate
     var mosaicStrength: CGFloat = 4
     var lineWidth: CGFloat = 4
+    var shapeFilled: Bool = false
+    var textFontSize: CGFloat = 28
     var measurementScale: CGFloat = 1
     var allowCrop = true
     var allowsImageNavigation = true
     // In-place captures keep the frozen desktop and its coordinates intact when cropping.
     var usesExportCrop = false
     var exportRegion: CGRect?
+    /// Video annotation uses this canvas over an AVPlayer frame, so the frame
+    /// supplies dimensions and mosaic samples without being painted twice.
+    var showsBaseImage = true
 
     /// 底图（图片编辑时提供；直播覆盖层为 nil）
     var baseImage: CGImage? {
@@ -137,6 +183,14 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var selectedIndex: Int?
     private var dragState: DragState = .none
     private var dragLast: CGPoint = .zero
+    private struct TextResizeStart {
+        let index: Int
+        let handle: Int
+        let rect: CGRect
+        let fontSize: CGFloat
+        let textWidth: CGFloat
+    }
+    private var textResizeStart: TextResizeStart?
     private var panning = false
     private var panStartView: CGPoint = .zero
     private var panStartOffset: CGPoint = .zero
@@ -150,6 +204,16 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         guard let selectedIndex else { return nil }
         return annotations[safe: selectedIndex]
     }
+
+    var currentTextFontSize: CGFloat {
+        if let selected = selectedAnnotation, selected.tool == .text {
+            return min(112, selected.fontSize ?? selected.lineWidth * 7)
+        }
+        return min(112, textFontSize)
+    }
+
+    static let textFontSizes: [CGFloat] = [12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 72,
+                                            84, 96, 112]
 
     /// 当前应显示的马赛克程度：选中的马赛克优先，否则用工具默认值
     var currentMosaicStrength: CGFloat {
@@ -379,7 +443,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     // MARK: 绘制
 
     override func draw(_ dirtyRect: NSRect) {
-        if let baseImage {
+        if showsBaseImage, let baseImage {
             NSImage(cgImage: baseImage, size: imageSize)
                 .draw(in: NSRect(origin: displayOrigin, size: CGSize(width: imageSize.width * displayScale,
                                                                      height: imageSize.height * displayScale)))
@@ -412,18 +476,23 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             guard annotation.points.count >= 2 else { return }
             drawArrow(from: viewPoint(annotation.points[0]), to: viewPoint(annotation.points[1]),
                       color: annotation.color, lineWidth: annotation.lineWidth)
-        case .rectangle:
+        case .rectangle, .ellipse:
             guard annotation.points.count >= 2 else { return }
             let a = viewPoint(annotation.points[0]), b = viewPoint(annotation.points[1])
             let rect = NSRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
-            let path = NSBezierPath(rect: rect)
-            path.lineWidth = annotation.lineWidth
-            annotation.color.setStroke()
-            path.stroke()
+            let path = annotation.tool == .ellipse ? NSBezierPath(ovalIn: rect) : NSBezierPath(rect: rect)
+            if annotation.isFilled {
+                annotation.color.setFill()
+                path.fill()
+            } else {
+                path.lineWidth = annotation.lineWidth
+                annotation.color.setStroke()
+                path.stroke()
+            }
         case .text:
             guard let point = annotation.points.first else { return }
             let layout = textLayout(for: annotation.text, at: point, lineWidth: annotation.lineWidth,
-                                    textWidth: annotation.textWidth)
+                                    textWidth: annotation.textWidth, fontSize: annotation.fontSize)
             guard !layout.rect.isEmpty else { return }
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: layout.font,
@@ -440,8 +509,22 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                                     size: CGSize(width: imageSize.width * displayScale,
                                                  height: imageSize.height * displayScale))
             NSBezierPath(rect: imageRect).addClip()
+            // In a flipped view AppKit lays the first line's glyphs slightly
+            // above the drawing rect. Give it a real screen-space safety area
+            // (small source fonts still need a few pixels when zoomed out),
+            // then keep that expanded rect inside the image clip.
+            let topPadding = max(4, ceil(layout.font.ascender * 0.18))
+            let bottomPadding = max(4, ceil(abs(layout.font.descender) * 0.35))
+            var contentRect = viewRect.offsetBy(dx: 0, dy: topPadding)
+            contentRect.size.height += topPadding + bottomPadding
+            if contentRect.maxY > imageRect.maxY {
+                contentRect.origin.y -= contentRect.maxY - imageRect.maxY
+            }
+            if contentRect.minY < imageRect.minY {
+                contentRect.origin.y = imageRect.minY
+            }
             NSAttributedString(string: annotation.text, attributes: attributes)
-                .draw(with: viewRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
+                .draw(with: contentRect, options: [.usesLineFragmentOrigin, .usesFontLeading])
             NSGraphicsContext.restoreGraphicsState()
         case .number:
             guard let point = annotation.points.first else { return }
@@ -667,7 +750,15 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private func handlePoints(_ a: Annotation) -> [CGPoint] {
         switch a.tool {
         case .pen, .select, .crop: return []
-        case .text, .number: return a.points.first.map { [$0] } ?? []
+        case .text:
+            guard let point = a.points.first else { return [] }
+            let rect = textLayout(for: a.text, at: point, lineWidth: a.lineWidth,
+                                  textWidth: a.textWidth, fontSize: a.fontSize).rect
+            return [CGPoint(x: rect.minX, y: rect.minY),
+                    CGPoint(x: rect.maxX, y: rect.minY),
+                    CGPoint(x: rect.maxX, y: rect.maxY),
+                    CGPoint(x: rect.minX, y: rect.maxY)]
+        case .number: return a.points.first.map { [$0] } ?? []
         default: return a.points.count >= 2 ? [a.points[0], a.points[1]] : []
         }
     }
@@ -684,7 +775,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).insetBy(dx: -8, dy: -8)
         case .text:
             guard let p = a.points.first else { return .zero }
-            return textLayout(for: a.text, at: p, lineWidth: a.lineWidth, textWidth: a.textWidth)
+            return textLayout(for: a.text, at: p, lineWidth: a.lineWidth,
+                              textWidth: a.textWidth, fontSize: a.fontSize)
                 .rect.insetBy(dx: -4, dy: -4)
         case .number:
             guard let p = a.points.first else { return .zero }
@@ -721,13 +813,19 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         case .arrow:
             guard a.points.count >= 2 else { return false }
             return distanceToSegment(point, a.points[0], a.points[1]) <= slack
-        case .rectangle:
+        case .rectangle, .ellipse:
             guard a.points.count >= 2 else { return false }
             let rect = imageRect(a.points[0], a.points[1])
+            if a.isFilled {
+                return rect.contains(point)
+            }
             let outer = rect.insetBy(dx: -slack, dy: -slack)
             let inner = rect.insetBy(dx: slack, dy: slack)
             if !outer.contains(point) { return false }
-            return !(inner.width > 0 && inner.height > 0 && inner.contains(point))
+            if a.tool == .rectangle {
+                return !(inner.width > 0 && inner.height > 0 && inner.contains(point))
+            }
+            return ellipseContains(point, in: outer) && !ellipseContains(point, in: inner)
         case .mosaic:
             guard a.points.count >= 2 else { return false }
             return imageRect(a.points[0], a.points[1]).contains(point)
@@ -750,6 +848,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         if lengthSquared == 0 { return hypot(p.x - a.x, p.y - a.y) }
         let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared))
         return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+
+    private func ellipseContains(_ point: CGPoint, in rect: CGRect) -> Bool {
+        guard rect.width > 0, rect.height > 0 else { return false }
+        let dx = (point.x - rect.midX) / (rect.width / 2)
+        let dy = (point.y - rect.midY) / (rect.height / 2)
+        return dx * dx + dy * dy <= 1
     }
 
     private func annotationHit(at point: CGPoint) -> (index: Int, handle: Int)? {
@@ -777,8 +882,9 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         NSColor.controlAccentColor.setStroke()
         border.stroke()
         // A number's handle is its body. Drawing the usual white handle on top
-        // of it hides the digit until the next repaint.
-        let handles = a.tool == .number || a.tool == .text ? [] : handlePoints(a)
+        // of it hides the digit until the next repaint. Text uses four corner
+        // handles so its wrapping width can be adjusted directly.
+        let handles = a.tool == .number ? [] : handlePoints(a)
         for hp in handles {
             let vp = viewPoint(hp)
             let handle = NSBezierPath(ovalIn: NSRect(x: vp.x - 5, y: vp.y - 5, width: 10, height: 10))
@@ -804,6 +910,31 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         lineWidth = w
         if let index = selectedIndex, annotations.indices.contains(index) {
             annotations[index].lineWidth = w
+            needsDisplay = true
+            onChange?()
+        }
+    }
+
+    func applyShapeFilled(_ filled: Bool) {
+        shapeFilled = filled
+        guard let index = selectedIndex, annotations.indices.contains(index),
+              annotations[index].tool == .rectangle || annotations[index].tool == .ellipse else {
+            needsDisplay = true
+            return
+        }
+        guard annotations[index].isFilled != filled else { return }
+        pushUndo()
+        annotations[index].isFilled = filled
+        needsDisplay = true
+        onChange?()
+    }
+
+    func applyTextFontSize(_ size: CGFloat) {
+        let value = min(112, max(8, size))
+        textFontSize = value
+        if let index = selectedIndex, annotations.indices.contains(index), annotations[index].tool == .text {
+            pushUndo()
+            annotations[index].fontSize = value
             needsDisplay = true
             onChange?()
         }
@@ -841,31 +972,74 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     private func mosaicImage(region: CGRect, style: MosaicStyle, strength: CGFloat) -> NSImage? {
         guard region.width >= 4, region.height >= 4, let source = sourceImage(for: region) else { return nil }
-        let ci = CIImage(cgImage: source)
-        let extent = ci.extent
+        guard let cg = Self.mosaicCGImage(source: source, style: style, strength: strength,
+                                          context: ciContext) else { return nil }
+        return NSImage(cgImage: cg, size: region.size)
+    }
+
+    private static func mosaicCGImage(source: CGImage, style: MosaicStyle, strength: CGFloat,
+                                      context: CIContext) -> CGImage? {
+        guard let output = mosaicCIImage(source: CIImage(cgImage: source), style: style, strength: strength) else {
+            return nil
+        }
+        return context.createCGImage(output, from: output.extent)
+    }
+
+    static func mosaicImage(source: CIImage, style: MosaicStyle, strength: CGFloat) -> CIImage? {
+        mosaicCIImage(source: source, style: style, strength: strength)
+    }
+
+    private static func mosaicCIImage(source: CIImage, style: MosaicStyle, strength: CGFloat) -> CIImage? {
+        let extent = source.extent
         let factor = min(10, max(1, strength))
-        var output: CIImage?
+        let output: CIImage?
         switch style {
         case .pixelate:
             let filter = CIFilter.pixellate()
-            filter.inputImage = ci
+            filter.inputImage = source
             filter.scale = Float(max(4, extent.width * factor / 96))
             filter.center = CGPoint(x: extent.midX, y: extent.midY)
             output = filter.outputImage
         case .blur:
             let filter = CIFilter.gaussianBlur()
-            filter.inputImage = ci.clampedToExtent()
+            filter.inputImage = source.clampedToExtent()
             filter.radius = Float(max(2, extent.width * factor / 120))
             output = filter.outputImage?.cropped(to: extent)
         case .hexagon:
             let filter = CIFilter.hexagonalPixellate()
-            filter.inputImage = ci
+            filter.inputImage = source
             filter.scale = Float(max(4, extent.width * factor / 96))
             filter.center = CGPoint(x: extent.midX, y: extent.midY)
             output = filter.outputImage
         }
-        guard let output, let cg = ciContext.createCGImage(output, from: extent) else { return nil }
-        return NSImage(cgImage: cg, size: region.size)
+        return output?.cropped(to: extent)
+    }
+
+    /// Renders annotations into a transparent image for video composition.
+    /// Coordinates are source-image pixels, matching the normal editor model.
+    static func renderedAnnotationsImage(annotations: [Annotation], size: CGSize) -> CGImage? {
+        guard size.width >= 1, size.height >= 1,
+              annotations.contains(where: { $0.tool != .mosaic }) else { return nil }
+        let width = Int(size.width.rounded()), height = Int(size.height.rounded())
+        let canvas = AnnotationCanvas(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        canvas.showsBaseImage = false
+        canvas.annotations = annotations.filter { $0.tool != .mosaic }
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+                                            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                            isPlanar: false, colorSpaceName: .deviceRGB,
+                                            bitmapFormat: .alphaFirst, bytesPerRow: width * 4,
+                                            bitsPerPixel: 32) else { return nil }
+        canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
+        return bitmap.cgImage
+    }
+
+    func loadAnnotations(_ saved: [Annotation]) {
+        finishTextEditing()
+        annotations = saved
+        selectedIndex = nil
+        undoStack.removeAll()
+        redoStack.removeAll()
+        needsDisplay = true
     }
 
     /// 取区域像素：优先底图裁剪；否则向覆盖层要「窗口之下」的截图。
@@ -881,10 +1055,17 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     // MARK: 鼠标
 
     override func mouseDown(with event: NSEvent) {
-        if activeField != nil { commitActiveField() }
+        if activeField != nil {
+            commitActiveField()
+            // The click that ends editing only commits the text. Do not let
+            // the same event continue into selection hit-testing and clear
+            // the newly selected annotation again.
+            return
+        }
+        textResizeStart = nil
         // The first click after finishing text only confirms its selection.
-        // A subsequent click can place another text annotation.
-        if tool == .text, awaitingTextSelectionClick {
+        // A subsequent click can select or move other annotations.
+        if awaitingTextSelectionClick {
             awaitingTextSelectionClick = false
             needsDisplay = true
             return
@@ -953,6 +1134,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             switch editHit(on: annotations[index], at: point) {
             case .handle(let h):
                 pushUndo()
+                textResizeStart = textResizeStart(at: index, handle: h)
                 dragState = .handle(h)
                 dragLast = point
                 onChange?()
@@ -972,6 +1154,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             if let hit = annotationHit(at: point) {
                 selectedIndex = hit.index
                 pushUndo()
+                textResizeStart = textResizeStart(at: hit.index, handle: hit.handle)
                 dragState = hit.handle >= 0 ? .handle(hit.handle) : .move
                 dragLast = point
                 onChange?()
@@ -988,10 +1171,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             }
         case .pen:
             current = Annotation(tool: .pen, points: [point], color: color, lineWidth: lineWidth)
-        case .arrow, .rectangle, .mosaic, .magnifier:
+        case .arrow, .rectangle, .ellipse, .mosaic, .magnifier:
             current = Annotation(tool: tool, points: [point, point], color: color,
                                  mosaicStyle: mosaicStyle, mosaicStrength: mosaicStrength,
-                                 lineWidth: lineWidth)
+                                 lineWidth: lineWidth, isFilled: shapeFilled)
         case .text:
             beginTextInput(at: point)
         case .number:
@@ -1043,7 +1226,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                 }
                 dragLast = point
             case .handle(let h):
-                if annotations[index].points.indices.contains(h) {
+                if annotations[index].tool == .text {
+                    resizeTextAnnotation(at: index, handle: h, to: point)
+                    onChange?()
+                } else if annotations[index].points.indices.contains(h) {
                     annotations[index].points[h] = annotations[index].tool == .magnifier
                         ? CGPoint(x: min(max(0, point.x), imageSize.width),
                                   y: min(max(0, point.y), imageSize.height)) : point
@@ -1061,6 +1247,59 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             current = active
         }
         needsDisplay = true
+    }
+
+    private func textResizeStart(at index: Int, handle: Int) -> TextResizeStart? {
+        guard annotations.indices.contains(index), annotations[index].tool == .text,
+              (0..<4).contains(handle), let point = annotations[index].points.first else { return nil }
+        let annotation = annotations[index]
+        let rect = textLayout(for: annotation.text, at: point, lineWidth: annotation.lineWidth,
+                              textWidth: annotation.textWidth, fontSize: annotation.fontSize).rect
+        let fontSize = min(112, annotation.fontSize ?? annotation.lineWidth * 7)
+        return TextResizeStart(index: index, handle: handle, rect: rect, fontSize: fontSize,
+                               textWidth: annotation.textWidth ?? rect.width)
+    }
+
+    /// Corner dragging scales the text box and its font together. This keeps
+    /// the visual proportions intact while the changed width still controls
+    /// the same character wrapping behavior as normal text editing.
+    private func resizeTextAnnotation(at index: Int, handle: Int, to point: CGPoint) {
+        guard let start = textResizeStart, start.index == index, start.handle == handle,
+              annotations.indices.contains(index), annotations[index].points.first != nil else { return }
+        let bounds = textBounds
+        let minimumWidth = min(24, max(1, bounds.width))
+        let horizontalScale: CGFloat
+        let verticalScale: CGFloat
+        if handle == 0 || handle == 3 {
+            horizontalScale = (start.rect.maxX - point.x) / max(1, start.rect.width)
+        } else {
+            horizontalScale = (point.x - start.rect.minX) / max(1, start.rect.width)
+        }
+        if handle == 0 || handle == 1 {
+            verticalScale = (start.rect.maxY - point.y) / max(1, start.rect.height)
+        } else {
+            verticalScale = (point.y - start.rect.minY) / max(1, start.rect.height)
+        }
+        // Use the axis that moved farther from its starting size so either
+        // horizontal or vertical corner dragging can enlarge or shrink it.
+        let rawScale = abs(horizontalScale - 1) >= abs(verticalScale - 1)
+            ? horizontalScale : verticalScale
+        let scale = min(4, max(0.25, rawScale))
+        let fontSize = min(112, max(8, start.fontSize * scale))
+        let scaledWidth = min(bounds.width, max(minimumWidth, start.textWidth * scale))
+        let anchorX = (handle == 0 || handle == 3) ? start.rect.maxX : start.rect.minX
+        let anchorY = (handle == 0 || handle == 1) ? start.rect.maxY : start.rect.minY
+        let previewHeight = textLayout(for: annotations[index].text, at: .zero,
+                                       lineWidth: annotations[index].lineWidth,
+                                       textWidth: scaledWidth, fontSize: fontSize).rect.height
+        let left = (handle == 0 || handle == 3) ? anchorX - scaledWidth : anchorX
+        let top = (handle == 0 || handle == 1) ? anchorY - previewHeight : anchorY
+        let clampedLeft = min(max(bounds.minX, left), max(bounds.minX, bounds.maxX - scaledWidth))
+        let clampedTop = min(max(bounds.minY, top), max(bounds.minY, bounds.maxY - previewHeight))
+        annotations[index].textWidth = scaledWidth
+        annotations[index].fontSize = fontSize
+        annotations[index].points[0].x = clampedLeft
+        annotations[index].points[0].y = clampedTop
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -1104,6 +1343,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         }
         if dragState != .none {
             dragState = .none
+            textResizeStart = nil
             onChange?()
             needsDisplay = true
             return
@@ -1224,6 +1464,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         return style
     }
 
+    private let textVerticalPadding: CGFloat = 8
+
     /// Measures text in image coordinates and constrains it to the source
     /// image. The same layout is used by drawing, hit testing, and editing so
     /// a wrapped annotation cannot be painted outside the screenshot.
@@ -1233,51 +1475,63 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         let measured = attributed.boundingRect(
             with: CGSize(width: max(1, width), height: 10_000_000),
             options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).integral
-        return CGSize(width: max(1, measured.width), height: max(1, measured.height))
+        )
+        // Keep the extra space in the shared measurement used by both the
+        // editor field and the committed drawing. It prevents ascenders and
+        // descenders from being clipped at the text box edge.
+        return CGSize(width: max(1, ceil(measured.width)),
+                      height: max(1, ceil(measured.height) + textVerticalPadding))
+    }
+
+    private func textMetrics(for text: String, lineWidth: CGFloat, textWidth: CGFloat) -> (fontSize: CGFloat, size: CGSize) {
+        let requested = min(112, max(8, lineWidth * 7))
+        let bounds = textBounds
+        let availableHeight = max(1, bounds.height)
+        var effective = requested
+        var measured = measuredTextSize(text,
+                                        font: NSFont.systemFont(ofSize: effective, weight: .bold),
+                                        width: textWidth)
+        if measured.height > availableHeight {
+            var low: CGFloat = 6
+            var high = requested
+            for _ in 0..<12 {
+                let candidate = (low + high) / 2
+                let candidateSize = measuredTextSize(text,
+                                                     font: NSFont.systemFont(ofSize: candidate, weight: .bold),
+                                                     width: textWidth)
+                if candidateSize.height <= availableHeight {
+                    low = candidate
+                } else {
+                    high = candidate
+                }
+            }
+            effective = low
+            measured = measuredTextSize(text,
+                                        font: NSFont.systemFont(ofSize: effective, weight: .bold),
+                                        width: textWidth)
+        }
+        return (effective, measured)
     }
 
     private func textLayout(for text: String, at point: CGPoint, lineWidth: CGFloat? = nil,
-                            textWidth: CGFloat? = nil) -> TextLayout {
-        let requestedFontSize = max(12, (lineWidth ?? self.lineWidth) * 7)
+                            textWidth: CGFloat? = nil, fontSize: CGFloat? = nil) -> TextLayout {
         let bounds = textBounds
         let anchor = CGPoint(x: min(max(bounds.minX, point.x), max(bounds.minX, bounds.maxX - 1)),
                              y: min(max(bounds.minY, point.y), max(bounds.minY, bounds.maxY - 1)))
         // A committed annotation uses the same box width as its editor. Older
         // annotations have no stored width and continue to use the full image.
         let availableWidth = min(max(1, bounds.width), max(1, textWidth ?? bounds.width))
-        let availableHeight = max(1, bounds.height)
-
-        // Wrap within the complete crop width, then reduce the requested size
-        // only when the full text would exceed the crop height. This preserves
-        // every character when a user increases the font near an edge.
-        var effectiveFontSize = requestedFontSize
-        var measured = measuredTextSize(text, font: NSFont.systemFont(ofSize: effectiveFontSize, weight: .bold),
-                                         width: availableWidth)
-        if measured.height > availableHeight {
-            var low: CGFloat = 6
-            var high = requestedFontSize
-            for _ in 0..<10 {
-                let candidate = (low + high) / 2
-                let candidateSize = measuredTextSize(text,
-                                                     font: NSFont.systemFont(ofSize: candidate, weight: .bold),
-                                                     width: availableWidth)
-                if candidateSize.height <= availableHeight { low = candidate } else { high = candidate }
-            }
-            effectiveFontSize = low
-            measured = measuredTextSize(text,
-                                        font: NSFont.systemFont(ofSize: effectiveFontSize, weight: .bold),
-                                        width: availableWidth)
-        }
+        let metrics = textMetrics(for: text, lineWidth: fontSize.map { $0 / 7 } ?? lineWidth ?? self.lineWidth,
+                                  textWidth: availableWidth)
 
         // Keep the full text-box width for drawing. Using measured.width here
         // would make AppKit reflow the text with a narrower rectangle and lose
         // the exact soft wraps that were visible while editing.
         let size = CGSize(width: availableWidth,
-                          height: min(availableHeight, measured.height))
+                          height: min(max(1, bounds.height), metrics.size.height))
         let origin = CGPoint(x: min(anchor.x, max(bounds.minX, bounds.maxX - size.width)),
                              y: min(anchor.y, max(bounds.minY, bounds.maxY - size.height)))
-        let font = NSFont.systemFont(ofSize: effectiveFontSize * displayScale, weight: .bold)
+        let font = NSFont.systemFont(ofSize: metrics.fontSize * displayScale, weight: .bold)
         return TextLayout(rect: CGRect(origin: origin, size: size), font: font)
     }
 
@@ -1286,23 +1540,25 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         let point = pendingTextPoint
         let bounds = textBounds
         let widthInImage = min(320 / scale, max(1, bounds.width))
-        let fontSize = max(12, lineWidth * 7)
-        let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
-        let attributed = NSAttributedString(string: text.isEmpty ? " " : text,
-                                             attributes: [.font: font, .paragraphStyle: textParagraphStyle])
-        let measured = attributed.boundingRect(
-            with: CGSize(width: widthInImage, height: 10_000_000),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        ).integral
+        let metrics = textMetrics(for: text.isEmpty ? " " : text,
+                                  lineWidth: textFontSize / 7, textWidth: widthInImage)
         let width = widthInImage * scale
-        let height = max(38, measured.height + 10) * scale
+        // Width is expressed in image points and can scale with the canvas,
+        // but the field still needs a real screen-space minimum height. If the
+        // canvas is fitted below 100%, scaling the old 38pt minimum made the
+        // field shorter than its own glyphs and clipped half of a line.
+        let screenFont = NSFont.systemFont(ofSize: metrics.fontSize * scale, weight: .bold)
+        let topPadding = max(4, ceil(screenFont.ascender * 0.18))
+        let bottomPadding = max(4, ceil(abs(screenFont.descender) * 0.35))
+        let height = max(44, metrics.size.height * scale + topPadding + bottomPadding)
         let imageViewRect = NSRect(origin: displayOrigin,
                                    size: CGSize(width: bounds.width * scale, height: bounds.height * scale))
         let origin = viewPoint(point)
+        let fieldHeight = min(height, imageViewRect.height)
         let clampedX = min(max(imageViewRect.minX, origin.x), max(imageViewRect.minX, imageViewRect.maxX - width))
-        let clampedY = min(max(imageViewRect.minY, origin.y), max(imageViewRect.minY, imageViewRect.maxY - height))
-        return NSRect(x: clampedX, y: clampedY, width: width,
-                      height: min(height, imageViewRect.height))
+        let clampedY = min(max(imageViewRect.minY, origin.y + topPadding),
+                           max(imageViewRect.minY, imageViewRect.maxY - fieldHeight))
+        return NSRect(x: clampedX, y: clampedY, width: width, height: fieldHeight)
     }
 
     private func beginTextInput(at point: CGPoint) {
@@ -1313,7 +1569,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = NSFont.systemFont(ofSize: max(12, lineWidth * 7) * max(displayScale, 0.01), weight: .bold)
+        let scale = max(displayScale, 0.01)
+        let widthInImage = min(320 / scale, max(1, textBounds.width))
+        let metrics = textMetrics(for: " ", lineWidth: textFontSize / 7, textWidth: widthInImage)
+        field.font = NSFont.systemFont(ofSize: metrics.fontSize * scale, weight: .bold)
         field.textColor = color
         field.placeholderString = L("输入文字")
         field.usesSingleLineMode = false
@@ -1331,6 +1590,11 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
         guard let field = activeField else { return }
         field.frame = editingFrame(for: field.stringValue)
+        let scale = max(displayScale, 0.01)
+        let widthInImage = max(1, field.bounds.width / scale)
+        let metrics = textMetrics(for: field.stringValue.isEmpty ? " " : field.stringValue,
+                                  lineWidth: textFontSize / 7, textWidth: widthInImage)
+        field.font = NSFont.systemFont(ofSize: metrics.fontSize * scale, weight: .bold)
         needsDisplay = true
     }
 
@@ -1346,7 +1610,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         return true
     }
 
-    private func commitActiveField() {
+    private func commitActiveField(switchToSelection: Bool = true) {
         guard let field = activeField else { return }
         let text = field.stringValue
         let textColor = field.textColor ?? color
@@ -1358,9 +1622,12 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         field.delegate = nil
         field.removeFromSuperview()
         if !text.isEmpty {
-            commit(Annotation(tool: .text, points: [point], text: text, textWidth: textWidth, color: textColor))
-            awaitingTextSelectionClick = true
+            commit(Annotation(tool: .text, points: [point], text: text, textWidth: textWidth,
+                              fontSize: textFontSize, color: textColor))
+            awaitingTextSelectionClick = switchToSelection
+            if switchToSelection { tool = .select }
             window?.makeFirstResponder(self)
+            onChange?()
         }
         needsDisplay = true
     }

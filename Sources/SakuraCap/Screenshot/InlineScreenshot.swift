@@ -30,12 +30,17 @@ final class InlineScreenshotController: NSObject {
     private var zoomLabel: NSTextField?
     private var colorPicker: AnnotationColorPicker?
     private var widthSlider: NSSlider?
+    private var fontSizePopup: NSPopUpButton?
+    private var fontSizeLabel: NSTextField?
+    private var widthLabel: NSTextField?
     private var mosaicSlider: NSSlider?
     private var mosaicPicker: NSSegmentedControl?
     private var colorProperties: NSStackView?
     private var mosaicProperties: NSStackView?
+    private var shapeFillPicker: NSSegmentedControl?
+    private var shapeProperties: NSStackView?
     private var quickButtons: [NSButton] = []
-    private let tools = AnnotationTool.allCases.filter { $0 != .magnifier }
+    private let tools = AnnotationTool.toolbarCases.filter { $0 != .magnifier }
 
     var isActive: Bool { preparing || !windows.isEmpty }
     private var panels: [NSPanel] { [toolbar, quickRail, properties].compactMap { $0 } }
@@ -303,7 +308,33 @@ final class InlineScreenshotController: NSObject {
         width.widthAnchor.constraint(equalToConstant: 100).isActive = true
         width.setAccessibilityLabel(L("粗细"))
         widthSlider = width
-        colorProperties = row([color, separator(), NSTextField(labelWithString: L("粗细")), width])
+        let fontLabel = NSTextField(labelWithString: L("字号"))
+        let fontPopup = NSPopUpButton()
+        for size in AnnotationCanvas.textFontSizes {
+            fontPopup.addItem(withTitle: "\(Int(size))")
+            fontPopup.lastItem?.representedObject = size
+            fontPopup.lastItem?.tag = Int(size)
+        }
+        fontPopup.target = self
+        fontPopup.action = #selector(fontSizeChanged(_:))
+        fontPopup.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        fontSizeLabel = fontLabel
+        fontSizePopup = fontPopup
+        let widthTitle = NSTextField(labelWithString: L("粗细"))
+        widthLabel = widthTitle
+        colorProperties = row([color, separator(), fontLabel, fontPopup,
+                               separator(), widthTitle, width])
+        let shapeFill = NSSegmentedControl()
+        shapeFill.segmentCount = 2
+        shapeFill.trackingMode = .selectOne
+        shapeFill.segmentStyle = .rounded
+        shapeFill.setWidth(30, forSegment: 0)
+        shapeFill.setWidth(30, forSegment: 1)
+        shapeFill.target = self
+        shapeFill.action = #selector(shapeFillChanged(_:))
+        shapeFillPicker = shapeFill
+        updateShapeFillControl(for: .rectangle)
+        shapeProperties = row([shapeFill])
         let styles = NSSegmentedControl(labels: MosaicStyle.allCases.map(\.label), trackingMode: .selectOne,
                                         target: self, action: #selector(mosaicStyleChanged(_:)))
         styles.selectedSegment = 0
@@ -313,7 +344,9 @@ final class InlineScreenshotController: NSObject {
         strength.setAccessibilityLabel(L("马赛克程度"))
         mosaicSlider = strength
         mosaicProperties = row([styles, separator(), NSTextField(labelWithString: L("程度")), strength])
-        let propertyStack = row([colorProperties!, mosaicProperties!])
+        // Keep the mosaic segment first in the hierarchy for existing UI
+        // automation; shape controls are contextual and follow it.
+        let propertyStack = row([colorProperties!, mosaicProperties!, shapeProperties!])
         properties = panel(propertyStack, identifier: "inline.properties")
     }
 
@@ -389,6 +422,16 @@ final class InlineScreenshotController: NSObject {
         }
     }
 
+    private func updateShapeFillControl(for tool: AnnotationTool) {
+        let names = tool == .ellipse ? ["circle", "circle.fill"] : ["rectangle", "rectangle.fill"]
+        let labels = tool == .ellipse ? [L("空心椭圆"), L("实心椭圆")] : [L("空心矩形"), L("实心矩形")]
+        for index in 0..<2 {
+            shapeFillPicker?.setImage(NSImage(systemSymbolName: names[index], accessibilityDescription: labels[index]),
+                                      forSegment: index)
+            shapeFillPicker?.setToolTip(labels[index], forSegment: index)
+        }
+    }
+
     private func refreshControls() {
         let canvas = activeView?.canvas
         let selected = activeView?.selection != nil
@@ -410,9 +453,22 @@ final class InlineScreenshotController: NSObject {
         zoomLabel?.stringValue = "\(Int(((canvas?.zoom ?? 1) * 100).rounded()))%"
         let propertyTool = canvas?.selectedAnnotation?.tool ?? canvas?.tool ?? .select
         let mosaic = propertyTool == .mosaic
+        let text = propertyTool == .text
+        let shape = propertyTool == .rectangle || propertyTool == .ellipse
         colorProperties?.isHidden = mosaic
+        shapeProperties?.isHidden = !shape
+        if shape {
+            updateShapeFillControl(for: propertyTool)
+            shapeFillPicker?.selectedSegment = (canvas?.selectedAnnotation?.isFilled ?? canvas?.shapeFilled ?? false) ? 1 : 0
+        }
         mosaicProperties?.isHidden = !mosaic
+        fontSizeLabel?.isHidden = !text
+        fontSizePopup?.isHidden = !text
+        widthSlider?.isHidden = text
+        widthLabel?.isHidden = text
         widthSlider?.doubleValue = Double(canvas?.selectedAnnotation?.lineWidth ?? canvas?.lineWidth ?? 4)
+        let fontSize = canvas?.currentTextFontSize ?? 28
+        fontSizePopup?.selectItem(withTitle: "\(Int(fontSize.rounded()))")
         colorPicker?.selectedColor = canvas?.selectedAnnotation?.color ?? canvas?.color ?? .systemRed
         mosaicSlider?.doubleValue = Double(canvas?.currentMosaicStrength ?? 4)
         mosaicPicker?.selectedSegment = canvas?.selectedAnnotation?.mosaicStyle.rawValue ?? canvas?.mosaicStyle.rawValue ?? 0
@@ -435,7 +491,7 @@ final class InlineScreenshotController: NSObject {
             if selected && !hiddenControls && suspensionCount == 0 { panel.orderFrontRegardless() } else { panel.orderOut(nil) }
         }
         let needsProperties = selected && !hiddenControls && suspensionCount == 0 && activeView?.adjustingSelection == false &&
-            [.pen, .arrow, .rectangle, .text, .number, .mosaic].contains(propertyTool)
+            [.pen, .arrow, .rectangle, .ellipse, .text, .number, .mosaic].contains(propertyTool)
         if let properties, let content = properties.contentView, let toolbar, needsProperties {
             content.layoutSubtreeIfNeeded()
             let stack = content.subviews[0]
@@ -459,6 +515,11 @@ final class InlineScreenshotController: NSObject {
         activeView?.window?.makeFirstResponder(activeView?.canvas)
     }
 
+    @objc private func shapeFillChanged(_ sender: NSSegmentedControl) {
+        activeView?.canvas.applyShapeFilled(sender.selectedSegment == 1)
+        refreshControls()
+    }
+
     @objc private func toolChanged() {
         guard let picker = toolPicker, tools.indices.contains(picker.selectedSegment), let view = activeView else { return }
         let tool = tools[picker.selectedSegment]
@@ -467,6 +528,11 @@ final class InlineScreenshotController: NSObject {
         refreshControls()
     }
     @objc private func widthChanged(_ sender: NSSlider) { activeView?.canvas.applyLineWidth(CGFloat(sender.doubleValue)) }
+    @objc private func fontSizeChanged(_ sender: NSPopUpButton) {
+        guard let value = sender.selectedItem?.representedObject as? CGFloat else { return }
+        activeView?.canvas.applyTextFontSize(value)
+        refreshControls()
+    }
     @objc private func mosaicChanged(_ sender: NSSlider) { activeView?.canvas.applyMosaicStrength(CGFloat(sender.doubleValue)) }
     @objc private func mosaicStyleChanged(_ sender: NSSegmentedControl) {
         if let style = MosaicStyle(rawValue: sender.selectedSegment) { activeView?.canvas.applyMosaicStyle(style) }
@@ -579,10 +645,15 @@ final class InlineScreenshotController: NSObject {
         zoomLabel = nil
         colorPicker = nil
         widthSlider = nil
+        fontSizePopup = nil
+        fontSizeLabel = nil
+        widthLabel = nil
         mosaicSlider = nil
         mosaicPicker = nil
         colorProperties = nil
         mosaicProperties = nil
+        shapeFillPicker = nil
+        shapeProperties = nil
         quickButtons.removeAll()
         let previous = previousApp
         previousApp = nil

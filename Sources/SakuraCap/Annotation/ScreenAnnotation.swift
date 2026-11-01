@@ -18,6 +18,9 @@ final class ScreenAnnotationController: NSObject {
     private var widthLabel: NSTextField?
     private var widthSlider: NSSlider?
     private var widthValue: NSTextField?
+    private var fontSizeLabel: NSTextField?
+    private var fontSizePopup: NSPopUpButton?
+    private var shapeFillSegment: NSSegmentedControl?
     private var mosaicControls: NSStackView?
     private var widthControls: NSStackView?
     private var mosaicSegment: NSSegmentedControl?
@@ -28,7 +31,7 @@ final class ScreenAnnotationController: NSObject {
     private var keyMonitor: Any?
     private var screenObserver: NSObjectProtocol?
     private var passingThrough = false
-    private let tools: [AnnotationTool] = [.select, .pen, .arrow, .rectangle, .text, .number, .mosaic]
+    private let tools: [AnnotationTool] = AnnotationTool.toolbarCases.filter { $0.availableLive }
 
     var isActive: Bool { toolbar != nil }
 
@@ -127,6 +130,17 @@ final class ScreenAnnotationController: NSObject {
         picker.toolTip = L("选择工具后在屏幕上绘制；Esc 退出")
         toolPicker = picker
 
+        let shapeFill = NSSegmentedControl()
+        shapeFill.segmentCount = 2
+        shapeFill.trackingMode = .selectOne
+        shapeFill.segmentStyle = .rounded
+        shapeFill.setWidth(30, forSegment: 0)
+        shapeFill.setWidth(30, forSegment: 1)
+        shapeFill.target = self
+        shapeFill.action = #selector(shapeFillChanged(_:))
+        shapeFillSegment = shapeFill
+        updateShapeFillControl(for: .rectangle)
+
         let color = AnnotationColorPicker()
         color.onSelect = { [weak self] chosen in
             guard let self else { return }
@@ -181,6 +195,21 @@ final class ScreenAnnotationController: NSObject {
         widthRow.spacing = 6
         widthControls = widthRow
 
+        let fontTitle = NSTextField(labelWithString: L("字号"))
+        let fontPopup = NSPopUpButton()
+        for size in AnnotationCanvas.textFontSizes {
+            fontPopup.addItem(withTitle: "\(Int(size))")
+            fontPopup.lastItem?.representedObject = size
+            fontPopup.lastItem?.tag = Int(size)
+        }
+        fontPopup.target = self
+        fontPopup.action = #selector(fontSizeChanged(_:))
+        fontPopup.widthAnchor.constraint(equalToConstant: 58).isActive = true
+        let fontRow = NSStackView(views: [fontTitle, fontPopup])
+        fontRow.spacing = 6
+        fontSizeLabel = fontTitle
+        fontSizePopup = fontPopup
+
         let styles = NSSegmentedControl()
         styles.segmentCount = MosaicStyle.allCases.count
         styles.trackingMode = .selectOne
@@ -202,10 +231,11 @@ final class ScreenAnnotationController: NSObject {
                                             NSTextField(labelWithString: L("程度")), strength, strengthNumber])
         mosaicRow.spacing = 6
         mosaicControls = mosaicRow
-        let properties = NSStackView(views: [widthRow, mosaicRow])
+        let properties = NSStackView(views: [shapeFill, widthRow, fontRow, mosaicRow])
         properties.orientation = .vertical
         properties.alignment = .centerX
         mosaicRow.isHidden = true
+        fontRow.isHidden = true
         let stack = NSStackView(views: [top, properties])
         stack.alignment = .centerX
         stack.orientation = .vertical
@@ -263,12 +293,28 @@ final class ScreenAnnotationController: NSObject {
         return button
     }
 
+    private func updateShapeFillControl(for tool: AnnotationTool) {
+        let names = tool == .ellipse ? ["circle", "circle.fill"] : ["rectangle", "rectangle.fill"]
+        let labels = tool == .ellipse ? [L("空心椭圆"), L("实心椭圆")] : [L("空心矩形"), L("实心矩形")]
+        for index in 0..<2 {
+            shapeFillSegment?.setImage(NSImage(systemSymbolName: names[index], accessibilityDescription: labels[index]),
+                                       forSegment: index)
+            shapeFillSegment?.setToolTip(labels[index], forSegment: index)
+        }
+    }
+
     @objc private func toolChanged() {
         guard let picker = toolPicker, tools.indices.contains(picker.selectedSegment) else { return }
         canvases.forEach {
             $0.endMeasure()
             $0.tool = tools[picker.selectedSegment]
         }
+        refreshControls()
+    }
+
+    @objc private func shapeFillChanged(_ sender: NSSegmentedControl) {
+        let filled = sender.selectedSegment == 1
+        canvases.forEach { $0.applyShapeFilled(filled) }
         refreshControls()
     }
 
@@ -295,6 +341,12 @@ final class ScreenAnnotationController: NSObject {
         let value = CGFloat(sender.doubleValue)
         widthValue?.stringValue = "\(Int(value.rounded()))"
         canvases.forEach { $0.applyLineWidth(value) }
+    }
+
+    @objc private func fontSizeChanged(_ sender: NSPopUpButton) {
+        guard let value = sender.selectedItem?.representedObject as? CGFloat else { return }
+        canvases.forEach { $0.applyTextFontSize(value) }
+        refreshControls()
     }
 
     @objc private func mosaicChanged(_ sender: NSSegmentedControl) {
@@ -342,11 +394,27 @@ final class ScreenAnnotationController: NSObject {
         colorPicker?.isEnabled = !passingThrough
         let mosaic = tools.indices.contains(toolPicker?.selectedSegment ?? -1)
             && tools[toolPicker!.selectedSegment] == .mosaic
+        let text = tools.indices.contains(toolPicker?.selectedSegment ?? -1)
+            && tools[toolPicker!.selectedSegment] == .text
         mosaicControls?.isHidden = !mosaic
-        widthControls?.isHidden = mosaic
+        let propertyTool = editingCanvas()?.selectedAnnotation?.tool
+            ?? (tools.indices.contains(toolPicker?.selectedSegment ?? -1) ? tools[toolPicker!.selectedSegment] : .select)
+        let shape = propertyTool == .rectangle || propertyTool == .ellipse
+        shapeFillSegment?.isHidden = !shape
+        if shape {
+            updateShapeFillControl(for: propertyTool)
+            shapeFillSegment?.selectedSegment = (editingCanvas()?.selectedAnnotation?.isFilled
+                                                  ?? editingCanvas()?.shapeFilled ?? false) ? 1 : 0
+        }
+        widthControls?.isHidden = mosaic || text
+        fontSizeLabel?.superview?.isHidden = !text
         mosaicSegment?.isEnabled = !passingThrough
         mosaicSlider?.isEnabled = !passingThrough
         widthSlider?.isEnabled = !passingThrough
+        fontSizePopup?.isEnabled = !passingThrough
+        if let fontSize = editingCanvas()?.currentTextFontSize {
+            fontSizePopup?.selectItem(withTitle: "\(Int(fontSize.rounded()))")
+        }
         deleteButton?.isEnabled = !passingThrough && !(editingCanvas()?.annotations.isEmpty ?? true)
         measureButton?.isEnabled = !passingThrough
         // A completed measurement remains visible for reference, but the
@@ -383,12 +451,15 @@ final class ScreenAnnotationController: NSObject {
         widthLabel = nil
         widthSlider = nil
         widthValue = nil
+        fontSizeLabel = nil
+        fontSizePopup = nil
         mosaicControls = nil
         widthControls = nil
         mosaicSegment = nil
         mosaicSlider = nil
         mosaicValue = nil
         passButton = nil
+        shapeFillSegment = nil
         lastEditedCanvas = nil
     }
 }

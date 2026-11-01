@@ -45,7 +45,7 @@ struct WorkbenchAnnotation: Identifiable, Equatable {
     let id: UUID
     var sourceIn: Double
     var sourceOut: Double
-    var marks: [VideoMark] = []
+    var marks: [Annotation] = []
 }
 
 /// 音量段：在某条音轨的源时间段内降低音量（0 = 静音）。
@@ -192,7 +192,9 @@ enum WorkbenchEngine {
         let focuses = document.focuses
         let layers = document.annotations.filter { $0.id != annotationID && !$0.marks.isEmpty }.map { segment in
             (start: segment.sourceIn, end: segment.sourceOut,
-             overlay: VideoAnnotationCanvas.image(marks: segment.marks, size: renderSize).map { CIImage(cgImage: $0) },
+             overlay: AnnotationCanvas.renderedAnnotationsImage(
+                annotations: segment.marks.filter { $0.tool != .mosaic }, size: renderSize
+             ).map { CIImage(cgImage: $0) },
              mosaic: segment.marks.filter { $0.tool == .mosaic })
         }
         guard !focuses.isEmpty || !layers.isEmpty else { return nil }
@@ -226,16 +228,23 @@ enum WorkbenchEngine {
             var output = image.transformed(by: transform).cropped(to: bounds)
             for layer in layers where sourceSeconds >= layer.start && sourceSeconds < layer.end {
                 for mark in layer.mosaic {
-                    let p = VideoAnnotationCanvas.rect(for: mark, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-                    let region = CGRect(x: bounds.minX + p.minX * bounds.width,
-                                        y: bounds.minY + (1 - p.maxY) * bounds.height,
-                                        width: p.width * bounds.width, height: p.height * bounds.height).integral
+                    guard mark.points.count >= 2 else { continue }
+                    let p = CGRect(x: min(mark.points[0].x, mark.points[1].x),
+                                   y: min(mark.points[0].y, mark.points[1].y),
+                                   width: abs(mark.points[1].x - mark.points[0].x),
+                                   height: abs(mark.points[1].y - mark.points[0].y))
+                    // AnnotationCanvas uses a flipped top-left coordinate space;
+                    // CIImage uses a bottom-left origin for composition regions.
+                    let region = CGRect(x: bounds.minX + p.minX,
+                                        y: bounds.maxY - p.maxY,
+                                        width: p.width, height: p.height).integral
                         .intersection(bounds)
                     guard region.width >= 2, region.height >= 2 else { continue }
-                    if let pixels = VideoAnnotationCanvas.mosaic(image: output, style: mark.mosaicStyle,
-                                                                  region: region, scale: max(10, bounds.width / 110)) {
-                        output = pixels.composited(over: output).cropped(to: bounds)
-                    }
+                    let source = output.cropped(to: region)
+                    guard let mosaic = AnnotationCanvas.mosaicImage(source: source,
+                                                                     style: mark.mosaicStyle,
+                                                                     strength: mark.mosaicStrength) else { continue }
+                    output = mosaic.composited(over: output).cropped(to: bounds)
                 }
                 if let overlay = layer.overlay {
                     let scaled = overlay.transformed(by: CGAffineTransform(scaleX: bounds.width / outputSize.width,
