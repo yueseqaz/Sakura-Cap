@@ -28,6 +28,36 @@
 "继续录制（%@）" = "Resume (%@)";
 "打开文件夹" = "Open Folder";
 "裁剪视频…" = "Trim Video…";
+"水印" = "Watermark";
+"输入水印文字" = "Enter watermark text";
+"水印设置" = "Watermark Settings";
+"单个水印" = "Single watermark";
+"全屏水印" = "Full-screen watermark";
+"左上" = "Top left";
+"顶部居中" = "Top center";
+"右上" = "Top right";
+"左侧居中" = "Center left";
+"正中" = "Center";
+"右侧居中" = "Center right";
+"左下" = "Bottom left";
+"底部居中" = "Bottom center";
+"右下" = "Bottom right";
+"内容" = "Content";
+"方式" = "Mode";
+"位置" = "Position";
+"透明度" = "Opacity";
+"字号 / 高度" = "Size";
+"旋转" = "Rotation";
+"平铺间距" = "Tile spacing";
+"颜色" = "Color";
+"选择图片水印…" = "Choose image watermark…";
+"清除" = "Clear";
+"未选择图片（可选）" = "No image selected (optional)";
+"文字和图片可以同时使用；全屏水印会按斜向网格铺满画面。" = "Text and images can be combined; full-screen watermarks tile diagonally across the canvas.";
+"应用" = "Apply";
+"移除水印" = "Remove watermark";
+"添加文字或图片水印" = "Add a text or image watermark";
+"编辑水印" = "Edit watermark";
 
 /* 悬浮控制条 / 状态 */
 "准备就绪" = "Ready";

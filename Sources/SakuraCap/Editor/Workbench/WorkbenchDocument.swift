@@ -67,6 +67,8 @@ struct WorkbenchDocument: Equatable {
     var audioGains: [WorkbenchAudioGain] = []
     /// 字幕条：与【时间轴时间】对齐（转写自当前合成），可在时间轴字幕轨上编辑
     var subtitles: [SubtitleCue] = []
+    /// A global watermark follows the edited video timeline and is rendered at export.
+    var watermark: WatermarkConfiguration?
 
     var duration: Double { clips.reduce(0) { $0 + $1.duration } }
 
@@ -200,7 +202,8 @@ enum WorkbenchEngine {
              ).map { CIImage(cgImage: $0) },
              mosaic: segment.marks.filter { $0.tool == .mosaic })
         }
-        guard !focuses.isEmpty || !layers.isEmpty else { return nil }
+        let watermarkImage = document.watermark.flatMap { WatermarkRenderer.image(for: $0, size: renderSize) }
+        guard !focuses.isEmpty || !layers.isEmpty || watermarkImage != nil else { return nil }
 
         let outputSize = renderSize
         return AVVideoComposition(asset: base) { request in
@@ -255,6 +258,9 @@ enum WorkbenchEngine {
                         .transformed(by: CGAffineTransform(translationX: bounds.minX, y: bounds.minY))
                     output = scaled.composited(over: output).cropped(to: bounds)
                 }
+            }
+            if let watermarkImage {
+                output = CIImage(cgImage: watermarkImage).composited(over: output).cropped(to: bounds)
             }
             request.finish(with: output, context: nil)
         }

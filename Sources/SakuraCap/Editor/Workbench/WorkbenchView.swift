@@ -92,6 +92,21 @@ struct WorkbenchView: View {
                     .buttonStyle(.bordered)
                     .disabled(model.isExporting)
                     .help(L("把当前帧存为 PNG 并打开标注"))
+                Menu {
+                    Button(L("全屏水印")) { model.chooseWatermark(.tiled) }
+                    Button(L("单个水印")) { model.chooseWatermark(.single) }
+                    Button(L("图片水印")) { model.chooseWatermarkImage() }
+                    if model.watermark != nil {
+                        Divider()
+                        Button(L("移除水印"), role: .destructive) { model.removeWatermark() }
+                    }
+                } label: {
+                    Image(systemName: "seal")
+                    Text(L("水印"))
+                }
+                .menuStyle(.borderedButton)
+                .disabled(model.isExporting)
+                .help(L("添加或切换水印"))
                 Button { model.exportGIFTapped() } label: { Text(L("GIF")) }
                     .buttonStyle(.bordered)
                     .disabled(model.isExporting || model.duration <= 0)
@@ -238,6 +253,67 @@ struct WorkbenchView: View {
             }
             Text(L("在轨道上拖拽创建聚焦 / 标注 / 音量段；点击片段或音轨编辑属性。"))
                 .font(SettingsAppearance.detailFont).foregroundStyle(.secondary)
+            if let watermark = model.watermark {
+                watermarkProperties(watermark)
+            }
+        }
+    }
+
+    private func watermarkProperties(_ watermark: WatermarkConfiguration) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle(L("水印"))
+            TextField(L("文字"), text: Binding(
+                get: { watermark.text },
+                set: { var value = watermark; value.text = $0; model.updateWatermark(value) }))
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Text(L("粗细")).font(SettingsAppearance.detailFont)
+                Slider(value: Binding(
+                    get: { watermark.fontWeight },
+                    set: { var value = watermark; value.fontWeight = $0; model.updateWatermark(value) }), in: -1...1)
+                Text(String(format: "%.1f", watermark.fontWeight)).monospacedDigit()
+                    .font(SettingsAppearance.detailFont)
+            }
+            HStack {
+                Text(L("透明度")).font(SettingsAppearance.detailFont)
+                Slider(value: Binding(
+                    get: { watermark.opacity },
+                    set: { var value = watermark; value.opacity = $0; model.updateWatermark(value) }), in: 0.05...1)
+                Text("\(Int(watermark.opacity * 100))%").monospacedDigit()
+                    .font(SettingsAppearance.detailFont)
+            }
+            HStack {
+                Text(L("大小")).font(SettingsAppearance.detailFont)
+                Slider(value: Binding(
+                    get: { watermark.scale },
+                    set: { var value = watermark; value.scale = $0; model.updateWatermark(value) }), in: 0.25...4)
+                Text(String(format: "%.1f×", watermark.scale)).monospacedDigit()
+                    .font(SettingsAppearance.detailFont)
+            }
+            HStack {
+                Text(L("旋转")).font(SettingsAppearance.detailFont)
+                Slider(value: Binding(
+                    get: { watermark.rotation },
+                    set: { var value = watermark; value.rotation = $0; model.updateWatermark(value) }), in: -180...180)
+                Text("\(Int(watermark.rotation.rounded()))°").monospacedDigit()
+                    .font(SettingsAppearance.detailFont)
+            }
+            if watermark.mode == .tiled {
+                HStack {
+                    Text(L("间距")).font(SettingsAppearance.detailFont)
+                    Slider(value: Binding(
+                        get: { watermark.spacing },
+                        set: { var value = watermark; value.spacing = $0; model.updateWatermark(value) }), in: 1...4)
+                    Text(String(format: "%.1f", watermark.spacing)).monospacedDigit()
+                        .font(SettingsAppearance.detailFont)
+                }
+            }
+            if watermark.imagePath != nil {
+                Button(L("更换图片")) { model.chooseWatermarkImage() }
+                    .buttonStyle(.bordered)
+            }
+            Button(L("移除水印"), role: .destructive) { model.removeWatermark() }
+                .buttonStyle(.bordered)
         }
     }
 

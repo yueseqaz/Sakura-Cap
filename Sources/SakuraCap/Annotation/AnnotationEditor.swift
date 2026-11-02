@@ -11,17 +11,21 @@ final class AnnotationEditorController: NSObject {
     static let shared = AnnotationEditorController()
     private var editors: [AnnotationEditorWindow] = []
 
-    func open(image: CGImage, suggestedName: String, source: AnnotationImageSource) {
+    @discardableResult
+    func open(image: CGImage, suggestedName: String, source: AnnotationImageSource,
+              onReady: ((AnnotationEditorWindow) -> Void)? = nil) -> AnnotationEditorWindow {
         NSApp.activate(ignoringOtherApps: true)
         let editor = AnnotationEditorWindow(image: image, suggestedName: suggestedName, source: source) { [weak self] window in
             self?.editors.removeAll { $0 === window }
         }
         editors.append(editor)
         editor.makeKeyAndOrderFront(nil)
+        onReady?(editor)
+        return editor
     }
 }
 
-final class AnnotationEditorWindow: NSWindow {
+final class AnnotationEditorWindow: NSWindow, NSTextFieldDelegate {
     private let canvas = AnnotationCanvas(frame: .zero)
     private let image: CGImage
     private let suggestedName: String
@@ -53,6 +57,7 @@ final class AnnotationEditorWindow: NSWindow {
     private let uploadButton = NSButton()
     private let eyedropperButton = NSButton()
     private let measureButton = NSButton()
+    private let watermarkButton = NSButton()
 
     private lazy var actions = AnnotationEditorActions(canvas: canvas, suggestedName: suggestedName,
         renderImage: { [weak self] in
@@ -84,6 +89,10 @@ final class AnnotationEditorWindow: NSWindow {
             return
         }
         super.keyDown(with: event)
+    }
+
+    func openWatermarkPanel() {
+        watermarkTapped()
     }
 
     private let allTools = AnnotationTool.toolbarCases.filter { $0 != .magnifier }
@@ -315,6 +324,7 @@ final class AnnotationEditorWindow: NSWindow {
             (translateButton, "character.bubble", L("翻译"), #selector(translateTapped)),
             (askAIButton, "sparkles", L("问 AI"), #selector(askAITapped)),
             (uploadButton, "icloud.and.arrow.up", L("上传图床"), #selector(uploadTapped)),
+            (watermarkButton, "seal.fill", L("水印"), #selector(watermarkTapped)),
         ] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 17, weight: .regular))
@@ -323,7 +333,8 @@ final class AnnotationEditorWindow: NSWindow {
             // neighboring controls on compact or resized editor windows.
             button.title = ""
             button.imagePosition = .imageOnly
-            button.bezelStyle = .rounded
+            button.isBordered = false
+            button.focusRingType = .none
             SettingsAppearance.styleToolbarButton(button)
             button.toolTip = label
             button.setAccessibilityLabel(label)
@@ -338,7 +349,7 @@ final class AnnotationEditorWindow: NSWindow {
         translateButton.toolTip = L("点击选择识别当前区域或重新框选")
         askAIButton.toolTip = L("把这张图片发给 AI（或先 OCR）")
         uploadButton.toolTip = L("上传整图（含标注）到图床，链接按设置格式复制到剪贴板")
-        let stack = NSStackView(views: [ocrButton, barcodeButton, translateButton, askAIButton, uploadButton])
+        let stack = NSStackView(views: [ocrButton, barcodeButton, translateButton, askAIButton, uploadButton, watermarkButton])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 8
@@ -395,7 +406,12 @@ final class AnnotationEditorWindow: NSWindow {
         SettingsAppearance.setToolActive(ocrButton, activeRecognition == .ocr, inactiveColor: .labelColor)
         SettingsAppearance.setToolActive(barcodeButton, activeRecognition == .barcode, inactiveColor: .labelColor)
         SettingsAppearance.setToolActive(translateButton, activeRecognition == .translate, inactiveColor: .labelColor)
+        // Keep the AI and watermark actions on the same borderless icon rail
+        // as 上传图床; their default NSButton bezel otherwise leaves a faint
+        // rounded outline that makes the two newer actions look different.
+        SettingsAppearance.setToolActive(askAIButton, false, inactiveColor: .labelColor)
         SettingsAppearance.setToolActive(uploadButton, false, inactiveColor: .labelColor)
+        SettingsAppearance.setToolActive(watermarkButton, false, inactiveColor: .labelColor)
         SettingsAppearance.setToolActive(eyedropperButton, canvas.isPickingColor, inactiveColor: .labelColor)
         SettingsAppearance.setToolActive(measureButton, canvas.isMeasuring, inactiveColor: .labelColor)
         let showMosaic = canvas.tool == .mosaic
@@ -417,6 +433,11 @@ final class AnnotationEditorWindow: NSWindow {
         widthSlider.isHidden = showMosaic || showText
         widthValue.isHidden = showMosaic || showText
         widthLabel.isHidden = showMosaic || showText
+        if let watermark = canvas.watermark {
+            let weight = max(-1, min(1, watermark.fontWeight))
+            widthSlider.doubleValue = Double(1 + (weight + 0.5) / 1.5 * 19)
+            widthValue.stringValue = "\(Int(widthSlider.doubleValue.rounded()))"
+        }
         fontSizeLabel.isHidden = !showText
         fontSizePopup.isHidden = !showText
         let fontSize = canvas.currentTextFontSize
@@ -478,6 +499,62 @@ final class AnnotationEditorWindow: NSWindow {
     @objc private func pinTapped() { actions.pinTapped() }
     @objc private func eyedropperTapped() { actions.eyedropperTapped(); refresh() }
     @objc private func measureTapped() { actions.measureTapped(); refresh() }
+    @objc private func watermarkTapped() {
+        canvas.finishTextEditing()
+        let menu = NSMenu()
+        for (title, tag) in [(L("全屏水印"), 0), (L("单个水印"), 1), (L("图片水印"), 2)] {
+            let item = NSMenuItem(title: title, action: #selector(watermarkMenuItem(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = tag
+            menu.addItem(item)
+        }
+        if let event = NSApp.currentEvent, event.window === watermarkButton.window {
+            NSMenu.popUpContextMenu(menu, with: event, for: watermarkButton)
+        } else {
+            watermarkMenuItem(menu.items[1])
+        }
+    }
+
+    @objc private func watermarkMenuItem(_ sender: NSMenuItem) {
+        var config = canvas.watermark ?? WatermarkConfiguration()
+        config.colorHex = canvas.color.hexString
+        switch sender.tag {
+        case 0:
+            config.mode = .tiled
+            config.text = config.text.isEmpty ? "Sakura-Cap" : config.text
+        case 1:
+            config.mode = .single
+            config.text = config.text.isEmpty ? "Sakura-Cap" : config.text
+        case 2:
+            config.mode = .single
+            config.text = ""
+            config.imagePath = nil
+        default:
+            return
+        }
+        canvas.applyWatermark(config)
+        canvas.beginWatermarkEditing()
+        if sender.tag == 2 {
+            watermarkImageTapped()
+        } else {
+            // The copy is edited directly on the image; there is no second
+            // text field in the bottom toolbar anymore.
+            canvas.beginWatermarkTextEditing()
+        }
+        refresh()
+    }
+
+    @objc private func watermarkImageTapped() {
+        guard var watermark = canvas.watermark else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.message = L("选择图片水印")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        watermark.imagePath = url.path
+        canvas.previewWatermark(watermark)
+        refresh()
+    }
     @objc private func askAITapped() { actions.askAITapped() }
     @objc private func ocrTapped() {
         guard !showRecognitionMenu(for: .ocr, from: ocrButton) else { return }

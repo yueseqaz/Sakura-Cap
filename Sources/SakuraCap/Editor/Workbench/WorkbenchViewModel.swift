@@ -697,6 +697,49 @@ final class WorkbenchViewModel: ObservableObject {
         refreshOverlays()
     }
 
+    // MARK: - 水印
+
+    var watermark: WatermarkConfiguration? { document.watermark }
+
+    func chooseWatermark(_ mode: WatermarkMode) {
+        guard !isAudioOnly else { return }
+        var config = document.watermark ?? WatermarkConfiguration()
+        config.mode = mode
+        config.colorHex = config.colorHex.isEmpty ? "#FFFFFF" : config.colorHex
+        if config.text.isEmpty && config.imagePath == nil { config.text = "Sakura-Cap" }
+        pushUndo()
+        document.watermark = config
+        refreshOverlays()
+    }
+
+    func chooseWatermarkImage() {
+        guard !isAudioOnly else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.message = L("选择图片水印")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        var config = document.watermark ?? WatermarkConfiguration()
+        config.mode = .single
+        config.imagePath = url.path
+        config.text = ""
+        pushUndo()
+        document.watermark = config
+        refreshOverlays()
+    }
+
+    func updateWatermark(_ value: WatermarkConfiguration) {
+        document.watermark = value
+        refreshOverlays()
+    }
+
+    func removeWatermark() {
+        guard document.watermark != nil else { return }
+        pushUndo()
+        document.watermark = nil
+        refreshOverlays()
+    }
+
     // MARK: - 点击自动聚焦（实验特性）
 
     /// 录制时记录的点击（仅「录制后自动打开」的工作台有值；手动打开的文件没有）
@@ -982,6 +1025,7 @@ final class WorkbenchViewModel: ObservableObject {
         if document.annotations.contains(where: { !$0.marks.isEmpty }) { return true }
         if !document.audioGains.isEmpty { return true }
         if !document.subtitles.isEmpty { return true }
+        if document.watermark != nil { return true }
         return false
     }
 

@@ -102,6 +102,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             commitActiveField(switchToSelection: false)
             // 切换到绘制工具时清掉选中，避免下一个图形先被当成“编辑旧标注”
             if tool != .select {
+                endWatermarkEditing()
                 selectedIndex = nil
                 // A toolbar switch is an explicit new action, so it should
                 // not consume its first click as text-selection confirmation.
@@ -139,6 +140,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
     /// 直播覆盖层用：截取某区域「本窗口之下」的画面，供马赛克取样
     var captureSource: ((CGRect) -> CGImage?)?
+    /// Optional watermark rendered above the base image and below drawing annotations.
+    var watermark: WatermarkConfiguration? {
+        didSet {
+            updateWatermarkFieldFrame()
+            needsDisplay = true
+        }
+    }
 
     /// 变更回调（用于刷新撤销/重做按钮状态、编辑器脏标记）
     var onChange: (() -> Void)?
@@ -149,12 +157,15 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private struct Snapshot {
         let baseImage: CGImage?
         let annotations: [Annotation]
+        let watermark: WatermarkConfiguration?
         let exportRegion: CGRect?
         let restoresExportRegion: Bool
     }
     private var undoStack: [Snapshot] = []
     private var redoStack: [Snapshot] = []
     private var activeField: NSTextField?
+    private var watermarkField: NSTextField?
+    private var watermarkFieldImageRect: CGRect?
     private var pendingTextPoint: CGPoint = .zero
     private var awaitingTextSelectionClick = false
     private(set) var cropRect: CGRect? // 图片坐标
@@ -195,6 +206,16 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private var panStartView: CGPoint = .zero
     private var panStartOffset: CGPoint = .zero
     private enum DragState: Equatable { case none, move, handle(Int) }
+    private enum WatermarkDrag { case move, rotate, resize(Int), sphere }
+    private var watermarkEditing = false
+    private var watermarkDrag: WatermarkDrag?
+    private var watermarkDragOffset: CGPoint = .zero
+    private var watermarkDragStartScale: CGFloat = 1
+    private var watermarkDragStartDistance: CGFloat = 1
+    private var watermarkSphereStartPoint: CGPoint = .zero
+    private var watermarkSphereStartRotation: CGFloat = 0
+    private var watermarkSphereStartTilt: CGFloat = 0
+    private var watermarkSphereStartSpacing: CGFloat = 1.8
 
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
 
@@ -448,6 +469,14 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
                 .draw(in: NSRect(origin: displayOrigin, size: CGSize(width: imageSize.width * displayScale,
                                                                      height: imageSize.height * displayScale)))
         }
+        if let watermark, let image = WatermarkRenderer.image(for: watermark, size: imageSize),
+           let canvasImage = WatermarkRenderer.verticallyFlipped(image) {
+            NSImage(cgImage: canvasImage, size: imageSize)
+                .draw(in: NSRect(origin: displayOrigin, size: CGSize(width: imageSize.width * displayScale,
+                                                                     height: imageSize.height * displayScale)),
+                      from: .zero, operation: .sourceOver, fraction: 1)
+        }
+        if watermarkEditing, watermark != nil { drawWatermarkSelection() }
         var all = annotations
         if let current { all.append(current) }
         for annotation in all { draw(annotation) }
@@ -896,11 +925,119 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         }
     }
 
+    private func watermarkRect(_ config: WatermarkConfiguration) -> CGRect {
+        let size = WatermarkRenderer.markSize(config)
+        let anchor = config.customPosition ?? config.position.normalizedPoint
+        return CGRect(x: anchor.x * imageSize.width - size.width * anchor.x,
+                      y: anchor.y * imageSize.height - size.height * anchor.y,
+                      width: size.width, height: size.height)
+    }
+
+    private func watermarkRotatedPoint(_ point: CGPoint, around center: CGPoint, degrees: CGFloat) -> CGPoint {
+        let radians = degrees * .pi / 180
+        let dx = point.x - center.x
+        let dy = point.y - center.y
+        return CGPoint(x: center.x + dx * cos(radians) - dy * sin(radians),
+                       y: center.y + dx * sin(radians) + dy * cos(radians))
+    }
+
+    private func watermarkCorners(_ rect: CGRect, rotation: CGFloat) -> [CGPoint] {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        return [CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+                CGPoint(x: rect.maxX, y: rect.maxY), CGPoint(x: rect.minX, y: rect.maxY)]
+            .map { watermarkRotatedPoint($0, around: center, degrees: rotation) }
+    }
+
+    private func watermarkRotationHandle(_ rect: CGRect, rotation: CGFloat) -> CGPoint {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let top = CGPoint(x: rect.midX, y: rect.minY - 28 / max(displayScale, 0.01))
+        return watermarkRotatedPoint(top, around: center, degrees: rotation)
+    }
+
+    private func drawWatermarkSphere(at point: CGPoint) {
+        let radius = 16 / max(displayScale, 0.01)
+        let viewPoint = self.viewPoint(point)
+        let sphere = NSRect(x: viewPoint.x - radius * displayScale,
+                            y: viewPoint.y - radius * displayScale,
+                            width: radius * 2 * displayScale,
+                            height: radius * 2 * displayScale)
+        let gradient = NSGradient(colors: [NSColor.white.withAlphaComponent(0.95),
+                                            NSColor.controlAccentColor,
+                                            NSColor.controlAccentColor.withAlphaComponent(0.45)])
+        gradient?.draw(in: sphere, relativeCenterPosition: CGPoint(x: -0.35, y: -0.4))
+        let clip = NSBezierPath(ovalIn: sphere)
+        NSGraphicsContext.saveGraphicsState()
+        clip.addClip()
+        NSColor.white.withAlphaComponent(0.35).setStroke()
+        let latitude = NSBezierPath(ovalIn: sphere.insetBy(dx: 2 * displayScale,
+                                                            dy: radius * 0.7 * displayScale))
+        latitude.lineWidth = max(0.7, displayScale)
+        latitude.stroke()
+        NSColor.white.withAlphaComponent(0.28).setStroke()
+        let longitude = NSBezierPath(ovalIn: sphere.insetBy(dx: radius * 0.62 * displayScale,
+                                                             dy: 2 * displayScale))
+        longitude.lineWidth = max(0.7, displayScale)
+        longitude.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+        NSColor.white.withAlphaComponent(0.8).setFill()
+        NSBezierPath(ovalIn: NSRect(x: sphere.minX + sphere.width * 0.23,
+                                    y: sphere.minY + sphere.height * 0.22,
+                                    width: sphere.width * 0.16,
+                                    height: sphere.height * 0.16)).fill()
+        NSColor.controlAccentColor.withAlphaComponent(0.95).setStroke()
+        let border = NSBezierPath(ovalIn: sphere)
+        border.lineWidth = max(1, displayScale)
+        border.stroke()
+    }
+
+    private func drawWatermarkSelection() {
+        guard let config = watermark else { return }
+        let rect = watermarkRect(config)
+        let corners = watermarkCorners(rect, rotation: config.rotation).map(viewPoint)
+        let border = NSBezierPath()
+        border.move(to: corners[0])
+        for corner in corners.dropFirst() { border.line(to: corner) }
+        border.close()
+        border.lineWidth = 1
+        border.setLineDash([5, 3], count: 2, phase: 0)
+        NSColor.controlAccentColor.setStroke()
+        border.stroke()
+        let top = viewPoint(watermarkRotatedPoint(CGPoint(x: rect.midX, y: rect.minY),
+                                                  around: CGPoint(x: rect.midX, y: rect.midY),
+                                                  degrees: config.rotation))
+        let handle = viewPoint(watermarkRotationHandle(rect, rotation: config.rotation))
+        let stem = NSBezierPath()
+        stem.move(to: top)
+        stem.line(to: handle)
+        stem.lineWidth = 1
+        NSColor.controlAccentColor.setStroke()
+        stem.stroke()
+        drawWatermarkSphere(at: watermarkRotationHandle(rect, rotation: config.rotation))
+        for corner in corners {
+            let point = corner
+            let cornerKnob = NSBezierPath(ovalIn: NSRect(x: point.x - 5, y: point.y - 5, width: 10, height: 10))
+            NSColor.white.setFill()
+            cornerKnob.fill()
+            NSColor.controlAccentColor.setStroke()
+            cornerKnob.stroke()
+        }
+    }
+
     func applyColor(_ c: NSColor) {
         color = c
+        var didChange = false
+        if var currentWatermark = watermark, currentWatermark.colorHex != c.hexString {
+            currentWatermark.colorHex = c.hexString
+            pushUndo()
+            watermark = currentWatermark
+            didChange = true
+        }
         if let index = selectedIndex, annotations.indices.contains(index) {
             pushUndo()
             annotations[index].color = c
+            didChange = true
+        }
+        if didChange {
             needsDisplay = true
             onChange?()
         }
@@ -908,6 +1045,15 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
 
     func applyLineWidth(_ w: CGFloat) {
         lineWidth = w
+        if var currentWatermark = watermark, watermarkEditing {
+            // Reuse the existing 粗细 control for watermark text. The slider
+            // range is intentionally broad enough to reach both light and
+            // black system font weights.
+            currentWatermark.fontWeight = max(-1, min(1, -0.5 + (w - 1) / 19 * 1.5))
+            pushUndo()
+            watermark = currentWatermark
+            onChange?()
+        }
         if let index = selectedIndex, annotations.indices.contains(index) {
             annotations[index].lineWidth = w
             needsDisplay = true
@@ -1042,6 +1188,94 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
+    func applyWatermark(_ value: WatermarkConfiguration?) {
+        guard watermark != value else { return }
+        pushUndo()
+        watermark = value
+        onChange?()
+    }
+
+    func beginWatermarkEditing() {
+        watermarkEditing = true
+        selectedIndex = nil
+        needsDisplay = true
+    }
+
+    func endWatermarkEditing() {
+        commitWatermarkText()
+        watermarkEditing = false
+        watermarkDrag = nil
+        watermarkDragOffset = .zero
+        needsDisplay = true
+    }
+
+    /// Updates the visible watermark while a settings control is being dragged.
+    /// Live previews intentionally do not add one undo snapshot per slider tick.
+    func previewWatermark(_ value: WatermarkConfiguration) {
+        watermark = value
+        onChange?()
+    }
+
+    func beginWatermarkTextEditing() {
+        guard let config = watermark else { return }
+        commitActiveField(switchToSelection: false)
+        commitWatermarkText()
+        watermarkEditing = true
+        selectedIndex = nil
+        window?.makeKey()
+        let rect = watermarkRect(config)
+        watermarkFieldImageRect = rect
+        let field = NSTextField(frame: watermarkFieldFrame(rect))
+        field.stringValue = config.text
+        field.font = NSFont.systemFont(ofSize: max(12, config.fontSize * displayScale),
+                                       weight: NSFont.Weight(rawValue: max(-1, min(1, config.fontWeight))))
+        field.textColor = config.color
+        field.backgroundColor = NSColor.black.withAlphaComponent(0.16)
+        field.isBordered = true
+        field.focusRingType = .none
+        field.alignment = .center
+        field.placeholderString = L("输入水印文字")
+        field.usesSingleLineMode = true
+        field.cell?.isScrollable = true
+        field.delegate = self
+        addSubview(field)
+        watermarkField = field
+        window?.makeFirstResponder(field)
+        field.selectText(nil)
+        updateWatermarkFieldFrame()
+        needsDisplay = true
+    }
+
+    private func watermarkFieldFrame(_ rect: CGRect) -> NSRect {
+        let viewRect = NSRect(origin: viewPoint(rect.origin),
+                              size: CGSize(width: rect.width * displayScale,
+                                           height: rect.height * displayScale))
+        return viewRect.insetBy(dx: 2, dy: 2)
+    }
+
+    private func updateWatermarkFieldFrame() {
+        guard let watermarkField, let config = watermark else { return }
+        let rect = watermarkFieldImageRect ?? watermarkRect(config)
+        watermarkField.frame = watermarkFieldFrame(rect)
+        watermarkField.font = NSFont.systemFont(ofSize: max(12, config.fontSize * displayScale),
+                                                weight: NSFont.Weight(rawValue: max(-1, min(1, config.fontWeight))))
+        watermarkField.textColor = config.color
+    }
+
+    private func commitWatermarkText() {
+        guard let field = watermarkField else { return }
+        let text = field.stringValue
+        watermarkField = nil
+        watermarkFieldImageRect = nil
+        field.delegate = nil
+        field.removeFromSuperview()
+        guard var config = watermark else { return }
+        config.text = text
+        watermark = config
+        onChange?()
+        needsDisplay = true
+    }
+
     /// 取区域像素：优先底图裁剪；否则向覆盖层要「窗口之下」的截图。
     private func sourceImage(for region: CGRect) -> CGImage? {
         let rect = region.integral
@@ -1055,6 +1289,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     // MARK: 鼠标
 
     override func mouseDown(with event: NSEvent) {
+        if watermarkField != nil {
+            commitWatermarkText()
+            return
+        }
         if activeField != nil {
             commitActiveField()
             // The click that ends editing only commits the text. Do not let
@@ -1077,6 +1315,44 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             panStartView = viewPoint
             panStartOffset = panOffset
             return
+        }
+        if watermarkEditing, let config = watermark {
+            let rect = watermarkRect(config)
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            let handle = watermarkRotationHandle(rect, rotation: config.rotation)
+            let sphereRadius = 20 / max(displayScale, 0.01)
+            if hypot(point.x - handle.x, point.y - handle.y) <= sphereRadius {
+                pushUndo()
+                watermarkDrag = .sphere
+                watermarkSphereStartPoint = point
+                watermarkSphereStartRotation = config.rotation
+                watermarkSphereStartTilt = config.tilt
+                watermarkSphereStartSpacing = config.spacing
+                return
+            }
+            let radius = 14 / max(displayScale, 0.01)
+            let corners = watermarkCorners(rect, rotation: config.rotation)
+            if let corner = corners.enumerated().first(where: {
+                hypot(point.x - $0.element.x, point.y - $0.element.y) <= radius
+            }) {
+                pushUndo()
+                watermarkDrag = .resize(corner.offset)
+                watermarkDragStartScale = config.scale
+                watermarkDragStartDistance = max(1, hypot(point.x - rect.midX, point.y - rect.midY))
+                return
+            }
+            let unrotatedPoint = watermarkRotatedPoint(point, around: center, degrees: -config.rotation)
+            if rect.insetBy(dx: -radius, dy: -radius).contains(unrotatedPoint) {
+                if event.clickCount >= 2 {
+                    beginWatermarkTextEditing()
+                    return
+                }
+                pushUndo()
+                watermarkDrag = .move
+                watermarkDragOffset = CGPoint(x: point.x - rect.midX, y: point.y - rect.midY)
+                return
+            }
+            endWatermarkEditing()
         }
         // The canvas may be larger than a small screenshot. Do not create
         // annotations in the editor's empty area outside the source image.
@@ -1196,6 +1472,35 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             return
         }
         let point = imagePoint(convert(event.locationInWindow, from: nil))
+        if let drag = watermarkDrag, var config = watermark {
+            let rect = watermarkRect(config)
+            switch drag {
+            case .move:
+                let center = CGPoint(x: point.x - watermarkDragOffset.x,
+                                     y: point.y - watermarkDragOffset.y)
+                config.customPosition = CGPoint(x: max(0, min(1, center.x / max(imageSize.width, 1))),
+                                                y: max(0, min(1, center.y / max(imageSize.height, 1))))
+            case .rotate:
+                let angle = atan2(point.y - rect.midY, point.x - rect.midX) * 180 / .pi + 90
+                config.rotation = max(-180, min(180, angle))
+            case .resize:
+                let distance = hypot(point.x - rect.midX, point.y - rect.midY)
+                let ratio = max(0.25, min(6, distance / watermarkDragStartDistance))
+                config.scale = max(0.25, min(6, watermarkDragStartScale * ratio))
+            case .sphere:
+                let dx = point.x - watermarkSphereStartPoint.x
+                let dy = point.y - watermarkSphereStartPoint.y
+                config.rotation = max(-180, min(180, watermarkSphereStartRotation + dx * 0.7))
+                config.tilt = max(-45, min(45, watermarkSphereStartTilt + dy * 0.45))
+                if config.mode == .tiled {
+                    config.spacing = max(1, min(4, watermarkSphereStartSpacing + dy * 0.012))
+                }
+            }
+            watermark = config
+            onChange?()
+            needsDisplay = true
+            return
+        }
         if let drag = measureDrag {
             switch drag {
             case .start: measureStart = point
@@ -1324,6 +1629,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
             needsDisplay = true
             return
         }
+        if watermarkDrag != nil {
+            watermarkDrag = nil
+            watermarkDragOffset = .zero
+            onChange?()
+            needsDisplay = true
+            return
+        }
         measureDrag = nil
         if let action = recognitionAction {
             let point = imagePoint(convert(event.locationInWindow, from: nil))
@@ -1380,7 +1692,8 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     // MARK: 撤销 / 重做
 
     private func snapshot(restoringExportRegion: Bool = false) -> Snapshot {
-        Snapshot(baseImage: baseImage, annotations: annotations, exportRegion: exportRegion,
+        Snapshot(baseImage: baseImage, annotations: annotations, watermark: watermark,
+                 exportRegion: exportRegion,
                  restoresExportRegion: restoringExportRegion)
     }
 
@@ -1392,6 +1705,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     private func restore(_ state: Snapshot) {
         baseImage = state.baseImage
         annotations = state.annotations
+        watermark = state.watermark
         if state.restoresExportRegion { exportRegion = state.exportRegion }
         selectedIndex = nil
         needsDisplay = true
@@ -1588,6 +1902,14 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
     }
 
     func controlTextDidChange(_ obj: Notification) {
+        if let watermarkField, obj.object as? NSTextField === watermarkField,
+           var config = watermark {
+            config.text = watermarkField.stringValue
+            watermark = config
+            updateWatermarkFieldFrame()
+            needsDisplay = true
+            return
+        }
         guard let field = activeField else { return }
         field.frame = editingFrame(for: field.stringValue)
         let scale = max(displayScale, 0.01)
@@ -1598,7 +1920,13 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) { commitActiveField() }
+    func controlTextDidEndEditing(_ obj: Notification) {
+        if obj.object as? NSTextField === watermarkField {
+            commitWatermarkText()
+        } else {
+            commitActiveField()
+        }
+    }
 
     /// NSTextField normally treats Return as its action key. Let the field
     /// editor insert a newline instead; clicking away or switching tools still
@@ -1632,7 +1960,10 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
-    func finishTextEditing() { commitActiveField() }
+    func finishTextEditing() {
+        commitActiveField()
+        commitWatermarkText()
+    }
 
     // MARK: 导出（把标注烘焙进底图，供图片编辑器保存/复制）
 
@@ -1642,6 +1973,7 @@ final class AnnotationCanvas: NSView, NSTextFieldDelegate {
         guard let baseImage else { return nil }
         let copy = AnnotationCanvas(frame: NSRect(origin: .zero, size: imageSize))
         copy.baseImage = baseImage
+        copy.watermark = watermark
         copy.usesExportCrop = usesExportCrop
         copy.exportRegion = exportRegion
         copy.annotations = annotations
