@@ -24,6 +24,7 @@
 	<array>
 		<string>en</string>
 		<string>zh-Hans</string>
+		<string>ja</string>
 	</array>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>

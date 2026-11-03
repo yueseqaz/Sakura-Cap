@@ -8,6 +8,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     case system
     case chinese = "zh-Hans"
     case english = "en"
+    case japanese = "ja"
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case .system: return L("跟随系统")
         case .chinese: return L("简体中文")
         case .english: return "English"
+        case .japanese: return "日本語"
         }
     }
 
@@ -27,6 +29,8 @@ enum AppLanguage: String, CaseIterable, Identifiable {
             defaults.set(["zh-Hans"], forKey: "AppleLanguages")
         case .english:
             defaults.set(["en"], forKey: "AppleLanguages")
+        case .japanese:
+            defaults.set(["ja"], forKey: "AppleLanguages")
         }
         defaults.synchronize()
     }

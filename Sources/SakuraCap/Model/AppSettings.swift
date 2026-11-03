@@ -231,11 +231,13 @@ final class AppSettings: ObservableObject {
         if let raw = d.string(forKey: Keys.cameraCorner), let corner = PiPCorner(rawValue: raw) { cameraPiPCorner = corner }
         if let raw = d.string(forKey: Keys.outputResolution), let r = OutputResolution(rawValue: raw) { outputResolution = r }
         dndDuringRecording = d.bool(forKey: Keys.dnd)
+        // 快捷指令名称是用户在「快捷指令」App 里实际创建的名字，不随界面语言改写；
+        // 只有用户编辑过才落盘，落盘后原样读回。
         if let s = d.string(forKey: Keys.dndOn) {
-            dndOnShortcut = localizedDefaultShortcut(s, key: "Sakura-Cap 开启勿扰")
+            dndOnShortcut = s
         }
         if let s = d.string(forKey: Keys.dndOff) {
-            dndOffShortcut = localizedDefaultShortcut(s, key: "Sakura-Cap 关闭勿扰")
+            dndOffShortcut = s
         }
         autoTrimAfterRecording = d.object(forKey: Keys.autoTrim) == nil ? true : d.bool(forKey: Keys.autoTrim)
         countdownEnabled = d.object(forKey: Keys.countdown) == nil ? true : d.bool(forKey: Keys.countdown)
@@ -294,19 +296,6 @@ final class AppSettings: ObservableObject {
 
     /// Keep the built-in Do Not Disturb shortcut names in sync with the UI
     /// language, while preserving names that the user has customized.
-    private func localizedDefaultShortcut(_ value: String, key: String) -> String {
-        let legacy = key == "Sakura-Cap 开启勿扰"
-            ? "Sakura-Cap 开启勿扰"
-            : "Sakura-Cap 关闭勿扰"
-        let english = key == "Sakura-Cap 开启勿扰"
-            ? "Sakura-Cap Enable Do Not Disturb"
-            : "Sakura-Cap Disable Do Not Disturb"
-        guard value == legacy || value == english else { return value }
-        let localized = L(key)
-        if value != localized { d.set(localized, forKey: key == "Sakura-Cap 开启勿扰" ? Keys.dndOn : Keys.dndOff) }
-        return localized
-    }
-
     /// 写入：空值删键；非空值 base64 编码后存（与旧明文同域不同键，避免误判）
     private func storeObfuscated(_ value: String, key: String) {
         if value.isEmpty {
